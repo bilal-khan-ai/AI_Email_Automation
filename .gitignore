@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+.env
+chromaDB/
+chroma_db/
+uploads/
+data/
+*.sqlite3
+*.db
+Books/

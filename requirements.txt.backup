@@ -1,0 +1,75 @@
+# requirements.txt (Windows-friendly, pinned)
+#
+# IMPORTANT:
+# - This project currently DOES NOT install cleanly on Python 3.13 because spaCy/Presidio
+#   (and some of their compiled deps) don't have reliable cp313 wheels yet and will fall back
+#   to building from source (needs Visual Studio Build Tools). Prefer Python 3.12.x.
+#
+# Recommended: Python 3.12.x (or 3.11.x) + venv.
+#
+# --- Core web app ---
+Flask==3.0.3
+Flask-Session==0.6.0
+Flask-SocketIO==5.3.6
+python-socketio==5.11.2
+eventlet==0.35.2
+
+requests==2.32.3
+python-dotenv==1.2.1
+beautifulsoup4==4.12.3
+
+# lxml often tries to compile on Windows if you pin an older version.
+# Use a newer version that publishes wheels for newer Python versions.
+lxml==5.3.2
+
+# --- Azure / Microsoft Graph ---
+azure-identity==1.25.2
+msgraph-sdk==1.54.0
+msgraph-core==1.3.8
+requests==2.32.3
+
+
+# --- Database ---
+psycopg2-binary==2.9.11
+
+# --- Vector DB / embeddings ---
+chromadb==1.5.0
+sentence-transformers==5.2.2
+
+# --- OpenAI ---
+openai==1.97.0
+
+# --- Office docs / tables / PDFs ---
+python-docx==1.2.0
+openpyxl==3.1.5
+pandas==3.0.0
+numpy==2.4.2
+python-pptx==1.0.2
+pypdf==6.7.0
+pdf2image==1.17.0
+tabulate==0.9.0
+
+# --- Images / OCR / VLM ---
+pillow==12.1.1
+opencv-python-headless==4.13.0.92
+easyocr==1.7.2
+python-bidi==0.6.7
+pyclipper==1.4.0
+PyYAML==6.0.3
+scikit-image==0.26.0
+scipy==1.17.0
+shapely==2.1.2
+
+# Torch stack (Please find the required torch here https://pytorch.org/get-started/locally/)
+torch==2.10.0+cu126 --extra-index-url https://download.pytorch.org/whl/cu126
+torchvision==0.25.0
+transformers==5.1.0
+
+# --- PII / Presidio ---
+# spaCy does NOT reliably install on Python 3.13 yet; require <=3.12. as of Feb 2026.
+spacy==3.7.5; python_version < "3.13"
+presidio-analyzer==2.2.355; python_version < "3.13"
+presidio-anonymizer==2.2.355; python_version < "3.13"
+
+# spaCy English model (only for Python <3.13)
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl ; python_version < "3.13"
