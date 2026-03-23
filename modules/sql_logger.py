@@ -4,7 +4,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_READ_COMMITTED
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import os
 from contextlib import contextmanager
 import threading
@@ -56,9 +56,15 @@ class PostgreSQLConnectionManager:
                 options='-c statement_timeout=30000'
             )
             logger.info(f"✅ PostgreSQL connection pool initialized: {self.host}:{self.port}/{self.database}")
+        except psycopg2.Error as e:
+            logger.error(f"❌ PostgreSQL connection error: {e}")
+            logger.error(f"   Connection parameters: Host={self.host}, Port={self.port}, DB={self.database}, User={self.user}")
+            self.pool = None # Set pool to None to allow fallback to single connections
+            # Do not re-raise here if the intention is to allow fallback
         except Exception as e:
-            logger.error(f"❌ Failed to initialize connection pool: {e}")
-            self.pool = None
+            logger.error(f"❌ Unexpected error initializing connection pool: {e}")
+            self.pool = None # Set pool to None to allow fallback to single connections
+            # Do not re-raise here if the intention is to allow fallback
     
     @contextmanager
     def get_connection(self):
@@ -839,16 +845,16 @@ class SQLLogger:
             logger.error(f"❌ Error searching tickets with query '{query}': {e}")
             return []
     
-    def update_ticket_fields(self, row_number: int, fields: dict) -> bool:
+    def update_ticket_fields(self, identifier: Union[int, str], fields: dict) -> bool:
         """
-        Update specific fields in a ticket by database row ID.
+        Update specific fields in a ticket by database ID or ticket_id.
         
         Args:
-            row_number: Database ID (primary key)
+            identifier: Database primary key (int) or ticket_id (str)
             fields: Dict of field names to values
             
         Returns:
-            bool: True if successful, False otherwise
+            bool: True if successful (at least one row updated), False otherwise
         """
         try:
             if not fields:
@@ -864,22 +870,29 @@ class SQLLogger:
                         set_parts.append(sql.Identifier(key))
                         values.append(value)
                     
-                    query = sql.SQL("UPDATE tickets SET {} WHERE id = %s").format(
+                    # Determine which column to filter by based on identifier type
+                    if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+                        where_col = "id"
+                    else:
+                        where_col = "ticket_id"
+                        
+                    query = sql.SQL("UPDATE tickets SET {} WHERE {} = %s").format(
                         sql.SQL(", ").join(
-                            sql.SQL("{} = %s").format(identifier) 
-                            for identifier in set_parts
-                        )
+                            sql.SQL("{} = %s").format(ident) 
+                            for ident in set_parts
+                        ),
+                        sql.Identifier(where_col)
                     )
                     
-                    values.append(row_number)
+                    values.append(identifier)
                     cur.execute(query, values)
                     
                     if cur.rowcount > 0:
-                        logger.info(f"✅ Updated ticket row {row_number} | Fields: {list(fields.keys())}")
+                        logger.info(f"✅ Updated ticket {identifier} | Fields: {list(fields.keys())}")
+                        return True
                     else:
-                        logger.warning(f"⚠️  No ticket found with row ID {row_number}")
-            
-            return True
+                        logger.warning(f"⚠️  No ticket found with identifier {identifier}")
+                        return False
             
         except Exception as e:
             logger.error(f"❌ Error updating ticket row {row_number}: {e}")
@@ -902,7 +915,7 @@ class SQLLogger:
             row['last_message_at'] = row['last_message_at'].isoformat()
 
         if isinstance(row.get('deleted_at'), datetime):
-            row['deleted_at'] = row['last_updated'].isoformat()
+            row['deleted_at'] = row['deleted_at'].isoformat()
 
         # Parse RAG provenance if present
         if row.get('rag_provenance') and isinstance(row['rag_provenance'], str):

@@ -494,7 +494,7 @@ def send_to_customer():
         if assigned_to:
             update_payload['assigned_to'] = assigned_to
 
-        sql_logger.update_ticket_fields(ticket_id, update_payload)
+        sql_logger.update_ticket_fields(ticket['id'], update_payload)
 
         socketio.emit('email_sent', {
             'ticket_id': ticket_id
