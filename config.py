@@ -35,7 +35,7 @@ class Config:
     TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', 5))
     AUTO_GENERATE_RESPONSES = os.getenv('AUTO_GENERATE_RESPONSES', 'True').lower() == 'true'
     PROCESSING_DAYS_BACK = int(os.getenv('PROCESSING_DAYS_BACK',2))
-    DAYS_TO_KEEP_TICKET = int(os.getenv('DAYS_TO_KEEP_TICKET', 14))
+    DAYS_TO_KEEP_TICKET = int(os.getenv('DAYS_TO_KEEP_TICKET', 30))
     
     # Test mode settings
     TEST_MODE = os.getenv('TEST_MODE', 'True').lower() == 'true'

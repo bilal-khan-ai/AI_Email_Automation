@@ -22,9 +22,7 @@ import base64
 import numpy as np
 from PIL import Image
 from contextlib import contextmanager
-from typing import Optional, List
-import openai
-from config import Config
+from typing import Optional
 
 # Lazy imports to avoid heavy module loading
 try:
@@ -202,11 +200,6 @@ class ImageProcessor:
             except Exception as e:
                 logger.error(f"Failed to init EasyOCR: {e}")
         
-        # OpenAI client for GPT-4o-mini vision
-        self.openai_client = None
-        if Config.OPENAI_API_KEY:
-            self.openai_client = openai.OpenAI(api_key=Config.OPENAI_API_KEY)
-
         # Noise filtering keywords
         self.NOISE_KEYWORDS = [
             "logo", "icon", "symbol", "trademark", "social media",
@@ -240,11 +233,12 @@ class ImageProcessor:
             if image is None:
                 return ""
             
-            # Step 2: GPT-4o-mini Vision Inference (Offloaded to OpenAI)
-            if self.openai_client:
-                caption = self._run_gpt4o_vision(image_bytes)
-            else:
-                logger.warning("⚠️ OpenAI client not configured, skipping vision-based captioning")
+            # Step 2: BLIP Inference (with automatic cleanup)
+            with blip_context(self.vram_manager, self.force_cpu) as (processor, model, device):
+                if processor is not None and model is not None:
+                    caption = self._run_blip_inference(image, processor, model, device)
+            
+            # At this point, BLIP is completely unloaded and VRAM is freed
             
             # Step 3: OCR Inference (CPU-only, independent)
             if self.ocr_reader is not None:
@@ -286,39 +280,43 @@ class ImageProcessor:
                 except Exception:
                     pass
     
-    def _run_gpt4o_vision(self, image_bytes: bytes) -> str:
+    def _run_blip_inference(self, image: Image.Image, processor, model, device: str) -> str:
         """
-        Run GPT-4o-mini vision inference on an image.
-        Offloads VRAM-intensive processing to OpenAI.
+        Run BLIP inference on a single image.
+        
+        Args:
+            image: PIL Image
+            processor: BLIP processor
+            model: BLIP model (already on target device)
+            device: 'cuda' or 'cpu'
+            
+        Returns:
+            str: Caption text, or empty string on error
         """
         try:
-            # Encode image to base64
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": "Describe this image contextually for a support ticket system. Focus on any visible issues, error messages, or products. Be concise (max 2 sentences)."},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=100
-            )
-            
-            caption = response.choices[0].message.content
-            return caption.strip()
-            
+            with torch.no_grad():
+                # Prepare inputs
+                inputs = processor(images=image, return_tensors="pt")
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+                
+                # Generate caption
+                output = model.generate(**inputs)
+                caption = processor.decode(output[0].cpu(), skip_special_tokens=True)
+                
+                # Clean up intermediate tensors
+                del inputs
+                del output
+                
+                # Force VRAM cleanup if on GPU
+                if device == "cuda":
+                    torch.cuda.empty_cache()
+                
+                return caption
+        
         except Exception as e:
-            logger.error(f"GPT-4o-mini vision inference failed: {e}")
+            logger.error(f"BLIP inference failed: {e}")
+            if "cuda" in str(e).lower() or "out of memory" in str(e).lower():
+                self.vram_manager.disable_gpu()
             return ""
     
     def _run_ocr_inference(self, image: Image.Image) -> str:

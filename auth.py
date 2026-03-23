@@ -463,13 +463,18 @@ def init_auth(app):
 
 
 def login_required(f):
+    """
+    Decorator to require authentication for routes.
+    
+    Usage:
+        @app.route('/dashboard')
+        @login_required
+        def dashboard():
+            return render_template('dashboard.html')
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
-            # Check if this is an API request
-            if request.path.startswith('/api/'):
-                return {'error': 'Unauthorized', 'message': 'Please log in first'}, 401
-            
             flash('Please log in to access this page.', 'warning')
             return redirect(url_for('login', next=request.url))
         return f(*args, **kwargs)
@@ -477,17 +482,22 @@ def login_required(f):
 
 
 def admin_required(f):
+    """
+    Decorator to require admin role for routes.
+    
+    Usage:
+        @app.route('/admin/users')
+        @admin_required
+        def manage_users():
+            return render_template('users.html')
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
-            if request.path.startswith('/api/'):
-                return {'error': 'Unauthorized', 'message': 'Please log in first'}, 401
             flash('Please log in to access this page.', 'warning')
             return redirect(url_for('login', next=request.url))
         
         if session['user'].get('role') != 'admin':
-            if request.path.startswith('/api/'):
-                return {'error': 'Forbidden', 'message': 'Admin access required'}, 403
             flash('You do not have permission to access this page.', 'danger')
             return redirect(url_for('index'))
         

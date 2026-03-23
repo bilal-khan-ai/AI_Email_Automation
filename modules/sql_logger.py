@@ -132,13 +132,6 @@ class SQLLogger:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    # 0. ENABLE PGVECTOR
-                    try:
-                        cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
-                        logger.info("✅ pgvector extension enabled")
-                    except Exception as ve:
-                        logger.warning(f"⚠️  Could not enable pgvector: {ve}. Ensure the extension is installed on the server.")
-
                     # 1. PARENT TABLE: TICKETS
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS tickets (
@@ -151,7 +144,6 @@ class SQLLogger:
                             assigned_to TEXT DEFAULT 'Unassigned',
                             ai_draft TEXT,
                             rag_provenance JSONB,
-                            embedding vector(384),
                             created_at TIMESTAMPTZ NOT NULL,
                             last_updated TIMESTAMPTZ NOT NULL,
                             deleted_at TIMESTAMPTZ
@@ -169,26 +161,12 @@ class SQLLogger:
                             timestamp TIMESTAMPTZ,
                             attachments TEXT,
                             is_internal BOOLEAN DEFAULT FALSE,
-                            embedding vector(384),
                             deleted_at TIMESTAMPTZ,
                             FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
                         )
                     """)
                     
-                    # 3. KNOWLEDGE BASE (General embeddings)
-                    cur.execute("""
-                        CREATE TABLE IF NOT EXISTS knowledge_base (
-                            id SERIAL PRIMARY KEY,
-                            source_id TEXT UNIQUE,
-                            content TEXT,
-                            metadata JSONB,
-                            embedding vector(384),
-                            source_type TEXT, -- 'documentation', 'manual', etc.
-                            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                        )
-                    """)
-
-                    # 4. INDEXES
+                    # 3. INDEXES
                     cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_conv_id 
                         ON tickets(conversation_id)
@@ -212,18 +190,6 @@ class SQLLogger:
                     cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_ticket_updated 
                         ON tickets(last_updated DESC)
-                    """)
-
-                    # 4. VECTOR INDEXES (IVFFlat or HNSW)
-                    # We use HNSW for better performance as vectors are added
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_ticket_embedding 
-                        ON tickets USING hnsw (embedding vector_cosine_ops)
-                    """)
-
-                    cur.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_msg_embedding 
-                        ON ticket_messages USING hnsw (embedding vector_cosine_ops)
                     """)
                     
                     # New indexes for soft-delete support

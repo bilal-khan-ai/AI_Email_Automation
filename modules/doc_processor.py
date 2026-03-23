@@ -42,8 +42,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from api.services.image_processor import ImageProcessor
-    from api.services.tables_processor import TablesProcessor
+    from modules.image_processor import ImageProcessor
+    from modules.tables_processor import TablesProcessor
 
 logger = logging.getLogger(__name__)
 
