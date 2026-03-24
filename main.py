@@ -204,12 +204,12 @@ class SupportAgent:
             self.ai.authenticate()
         
         # 5. Init Image Processor
-        self.img_processor = ImageProcessor()
+        self.img_processor = ImageProcessor(ai_agent=self.ai)
         
 
         # 5b. Init Table/Document Processors (local preprocessing)
         self.tables_processor = TablesProcessor()
-        self.doc_processor = DocProcessor(image_processor=self.img_processor)
+        self.doc_processor = DocProcessor(image_processor=self.img_processor, tables_processor=self.tables_processor)
         # 6. Init Subject Matcher
         self.subject_matcher = SubjectMatcher(similarity_threshold=0.75)
 
@@ -509,9 +509,9 @@ class SupportAgent:
                     continue
 
                 if is_img:
-                    desc = self.img_processor.process_image(att_bytes)
+                    desc = self.img_processor.process_image(att_bytes, filename=name)
                     if desc:
-                        attachment_descs.append(f"[Attachment: {name}] {desc}")
+                        attachment_descs.append(desc) # desc already has attachment name in it now in my ImageProcessor impl
                 elif is_table:
                     res = self.tables_processor.process_bytes(att_bytes, filename=name)
                     txt = (res or {}).get("combined_text", "")
@@ -541,6 +541,12 @@ class SupportAgent:
             
             if existing:
                 ticket_id = existing['ticket_id']
+                
+                # RE-OPEN LOGIC: If ticket was soft-deleted, re-open it
+                if existing.get('deleted_at'):
+                    logger.info(f"🔄 Ticket {ticket_id} was soft-deleted. Re-opening due to new customer email.")
+                    self.sql.reopen_ticket(ticket_id)
+                
                 logger.info(
                     f"🔗 Linked to existing ticket {ticket_id} | "
                     f"ConvID match | Sender: {sender}"
@@ -604,6 +610,11 @@ class SupportAgent:
             if existing:
                 ticket_id = existing['ticket_id']
                 
+                # RE-OPEN LOGIC: Even for internal replies, we should clear soft-delete
+                if existing.get('deleted_at'):
+                    logger.info(f"🔄 Ticket {ticket_id} was soft-deleted. Restoring due to internal reply.")
+                    self.sql.reopen_ticket(ticket_id)
+
                 logger.info(
                     f"📨 Internal reply to ticket {ticket_id} | "
                     f"Sender: {sender}"

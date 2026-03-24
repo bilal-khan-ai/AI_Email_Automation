@@ -124,10 +124,6 @@ def process_emails(vector_db: VectorDatabase, graph: GraphConnector, img_process
                 if ct in ("image/jpeg", "image/png", "image/jpg"):
                     image_candidates.append(att)
 
-            # Lazy-load BLIP only if there are image attachments to process
-            if image_candidates:
-                img_processor.load_blip(force_cpu=FORCE_CPU)
-
             # Process each image candidate
             for att in image_candidates:
                 img_bytes = graph.get_attachment_sync(
@@ -143,13 +139,6 @@ def process_emails(vector_db: VectorDatabase, graph: GraphConnector, img_process
                         f"File {att.get('name', 'img')}: {desc}"
                     )
                     img_count += 1
-
-            # After all attachments for this email are processed, flush BLIP from GPU before embeddings
-            if img_processor.blip_loaded:
-                img_processor.unload_blip()
-
-            # Load / ensure embedding model is ready (this will prefer GPU if available)
-            vector_db.load_embedding_model(force_cpu=FORCE_CPU)
 
             # If there is nothing (no body and no images), skip DB addition
             if not clean_body.strip() and not image_descriptions:
@@ -201,10 +190,17 @@ def main():
         logger.error("Graph authentication failed")
         sys.exit(1)
 
-    logger.info("Initializing Image Processor (controls BLIP lazy-load)...")
-    img_processor = ImageProcessor(force_cpu=FORCE_CPU)
+    logger.info("Initializing Image Processor (Cloud-based/OpenAI Vision)...")
+    img_processor = ImageProcessor() # No force_cpu argument anymore, uses AI agent if attached
+    # Note: in standalone ingest we might need an AI agent if we want Vision.
+    # But for just text ingestion, it's fine.
+    # To enable vision in ingest, we'd need to init AI agent.
+    from modules.openai_agent import OpenAIAgent
+    ai = OpenAIAgent(Config.OPENAI_API_KEY)
+    ai.authenticate()
+    img_processor.set_ai_agent(ai)
 
-    logger.info("Initializing Vector DB (embedding model is lazy-loaded)...")
+    logger.info("Initializing Vector DB...")
     vector_db = VectorDatabase(
         Config.CHROMA_DB_PATH,
         Config.COLLECTION_NAME,

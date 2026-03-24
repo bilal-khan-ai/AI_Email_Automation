@@ -6,126 +6,112 @@ This document provides a quick reference for the project's file structure, core 
 
 ## Root Directory
 
-### [main.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/main.py)
+### [main.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/main.py)
 Core application entry point and lifecycle manager for the Support Agent.
 
-- **SupportAgent Initialization**: Orchestrates all modules (SQL, Graph, Vector DBs, AI, Processors). `[Line 86]`
-- **Signal Handling**: Graceful shutdown on SIGINT/SIGTERM. `[Lines 45-66]`
-- **Ticket Cleanup Daemon**: Background thread for soft and hard deletion of tickets. `[Lines 195, 763]`
-- **Email Ingestion (`ingest_email`)**: Handles PII redaction, attachment extraction, and ticket linking. `[Line 234]`
-- **AI Response Generation (`generate_ai_response`)**: Dual RAG search and GPT-4 response drafting. `[Line 458]`
-- **Live Polling Loop (`run_live`)**: Periodic fetching of new emails from MS Graph. `[Line 866]`
-- **Backlog Processing (`run_backlog`)**: One-time scan of historical emails. `[Line 830]`
+- **SupportAgent Initialization**: Orchestrates all modules (SQL, Graph, Vector DBs, AI, Processors). `[Line 154]`
+- **Signal Handling**: Graceful shutdown on SIGINT/SIGTERM. `[Lines 235-242]`
+- **Ticket Cleanup Daemon**: Background thread for soft and hard deletion of tickets. `[Lines 244-301]`
+- **Email Ingestion (`ingest_email`)**: Handles PII redaction, attachment extraction (images/docs/tables), and ticket linking. `[Line 419]`
+- **AI Response Generation (`generate_ai_response`)**: Dual RAG search (Docs + Experience) and GPT-4o-mini response drafting. `[Line 638]`
+- **Live Polling Loop (`run_live`)**: Periodic fetching of new emails from MS Graph. `[Line 798]`
 
-### [auth.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/auth.py)
+### [auth.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/auth.py)
 User authentication, authorization, and session management.
 
 - **UserManager Class**: Database-backed user management with PostgreSQL. `[Line 42]`
-- **Password Hashing**: Secure storage using SHA-256 and unique salts. `[Line 101, 142]`
-- **Role-Based Access Control (RBAC)**: Supports 'admin' and 'user' roles. `[Line 62]`
-- **Login Required Decorator**: Route protection for authenticated sessions. `[Line 534]`
-- **Admin Required Decorator**: Restricted access for administrative tasks. `[Line 552]`
-- **Initial Admin Creation**: Automatic creation of default 'admin' user if none exists. `[Line 156]`
+- **Password Hashing**: Secure storage using SHA-256 and unique salts.
+- **Role-Based Access Control (RBAC)**: Supports 'admin' and 'user' roles.
+- **Login Required**: Route protection for authenticated sessions.
 
-### [dashboard_socketio.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/dashboard_socketio.py)
+### [dashboard_socketio.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/dashboard_socketio.py)
 Real-time WebSocket events for the multi-user dashboard.
 
-- **SocketIO Initialization**: Integrated with Flask for bi-directional communication. `[Line 47]`
-- **Ticket Locking**: Prevents concurrent edits by different users. `[Line 156]`
-- **Live Stats Calculation**: Real-time aggregation of open, closed, and total ticket counts. `[Line 96]`
-- **Manual Email Responses**: Logic for sending emails directly from the dashboard. `[Line 245]`
-- **Ticket Status/Assignment Updates**: Instant broadcasting of ticket changes to all clients. `[Lines 340, 520]`
-- **Attachment Download Handling**: Secure retrieval of message attachments for users. `[Line 620]`
+- **SocketIO Initialization**: Integrated with Flask for bi-directional communication. `[Line 24]`
+- **Ticket Locking**: Prevents concurrent edits by different users. `[Line 626]`
+- **Live Stats Calculation**: Real-time aggregation of open, closed, and total ticket counts. `[Line 91]`
+- **Manual Email Responses**: Logic for sending emails directly from the dashboard. `[Line 435]`
+- **Ticket Status/Assignment Updates**: Instant broadcasting of ticket changes to all clients. `[Lines 378, 381]`
 
-### [config.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/config.py)
-Centralized configuration manager utilizing environment variables.
+### [config.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/config.py)
+Centralized configuration manager utilizing environment variables (`.env`).
 
-- **Credential Management**: Azure, OpenAI, and Database connection strings. `[Lines 8-31]`
-- **Polling & Cleanup Intervals**: Configurable timers for system tasks. `[Lines 34, 47]`
-- **Feature Flags**: Toggles for auto-responses and test mode. `[Lines 36, 41]`
+- **Credential Management**: Azure, OpenAI, and PostgreSQL connection strings.
+- **Feature Flags**: Toggles for auto-responses (`AUTO_GENERATE_RESPONSES`) and test mode (`TEST_MODE`).
+- **Cleanup Settings**: Configurable intervals for the cleanup daemon.
 
 ---
 
 ## Modules Directory (`/modules`)
 
-### [sql_logger.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/sql_logger.py)
+### [sql_logger.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/sql_logger.py)
 PostgreSQL backend for ticket persistence and logging.
 
-- **Schema Initialization**: Automated setup of `tickets` and `messages` tables with indices. `[Line 105]`
-- **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion. `[Lines 135, 780]`
-- **Ticket Retrieval**: Optimized queries for active tickets and full message threads. `[Lines 320, 395]`
-- **Metadata Management**: Logging of AI entities, draft statuses, and lock states. `[Lines 150, 605]`
+- **Schema Initialization**: Automated setup of `tickets` and `messages` tables.
+- **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion.
+- **Metadata Management**: Logging of AI entities, draft statuses, and lock states.
 
-### [vector_db.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/vector_db.py)
-Semantic search and retrieval using ChromaDB.
+### [vector_db.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/vector_db.py)
+Semantic search and retrieval using ChromaDB with dynamic CPU/GPU handling.
 
-- **VRAM Management**: Context-managed loading/unloading of embedding models to save GPU memory. `[Lines 26, 92]`
-- **Soft-Delete Mechanism**: Parallel `_deleted` collection to filter search results. `[Lines 135, 345]`
-- **Batch Processing**: Efficient ingestion of multiple emails with progress tracking. `[Line 211]`
-- **BookVectorDB Class**: Specialized instance for authoritative technical documentation. `[Line 511]`
+- **Dynamic Device Selection**: Automatically detects CUDA GPU; falls back to CPU for text embeddings. `[Line 53]`
+- **VRAM Management**: Context-managed loading/unloading of embedding models to ensure zero lingering VRAM usage. `[Line 26]`
+- **Soft-Delete Mechanism**: Parallel `_deleted` collection to filter search results. `[Line 130]`
+- **BookVectorDB**: Specialized instance for authoritative technical documentation. `[Line 505]`
 
-### [openai_agent.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/openai_agent.py)
-AI orchestration for response generation and data analysis.
+### [openai_agent.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/openai_agent.py)
+AI orchestration for response generation, image analysis, and data categorization.
 
-- **Enhanced RAG Strategy**: Integration of documentation, past experiences, and thread history. `[Line 85]`
-- **Reasoning Framework**: System prompts enforcing documentation priority and sendability checks. `[Lines 140, 480]`
-- **Summarization & Sentiment**: AI-driven analysis of message content and intent. `[Lines 315, 355]`
-- **Token Management**: Context window optimization and summary-fallback for long threads. `[Line 230]`
+- **Cloud Vision**: analyze_image() uses `gpt-4o` or `gpt-4o-mini` for OCR and visual analysis. `[Line 617]`
+- **Enhanced RAG Strategy**: Integration of documentation (authoritative) and experience (advisory). `[Line 153]`
+- **Reasoning Framework**: System prompts enforcing documentation priority and sendability checks. `[Lines 235, 334]`
+- **Model Standard**: Uses `gpt-4o-mini` for cost-effective summarization and categorization.
 
-### [graph_connector.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/graph_connector.py)
+### [graph_connector.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/graph_connector.py)
 Resilient Microsoft Graph API integration.
 
-- **Asyncio Worker Thread**: Handles async Graph calls synchronously for thread safety. `[Line 164]`
-- **Exponential Backoff**: Automatic retry logic with jitter for API resilience. `[Lines 58, 109]`
-- **Email/Attachment Ingestion**: Robust methods for fetching and decoding MS Graph data. `[Lines 324, 364]`
+- **Exponential Backoff**: Automatic retry logic with jitter for API resilience.
+- **Email/Attachment Ingestion**: Robust methods for fetching and decoding MS Graph data.
 
-### [doc_processor.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/doc_processor.py)
+### [doc_processor.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/doc_processor.py)
 Extraction logic for `.docx` and `.pdf` attachments.
 
-- **Docx Parsing**: Text extraction and image retrieval from XML structure. `[Line 144]`
-- **PDF Extraction**: Text per-page retrieval and OCR fallback for scanned pages. `[Lines 235, 287]`
-- **Tables Integration**: Programmable detection of tabular data within documents. `[Line 324]`
+- **Docx Parsing**: Text extraction and embedded image retrieval. `[Line 144]`
+- **PDF Extraction**: Text per-page retrieval and OCR fallback (via ImageProcessor). `[Lines 238, 291]`
+- **Table Detection**: Heuristic detection of tabular data within PDF text. `[Line 328]`
 
-### [image_processor.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/image_processor.py)
-Visual analysis and OCR for image attachments.
+### [image_processor.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/image_processor.py)
+Visual analysis and OCR for image attachments - **Fully Cloud Integrated**.
 
-- **VRAM Cleanup Manager**: Aggressive GPU memory release after every inference. `[Line 38]`
-- **BLIP Captioning**: Generates visual descriptions of screenshots and photos. `[Line 237]`
-- **EasyOCR Integration**: CPU-bound text extraction from images. `[Lines 194, 243]`
+- **OpenAI Vision Offloading**: Removed local BLIP and EasyOCR; all vision tasks routed to OpenAI. `[Line 99]`
+- **Noise Filtering**: Local keywords skip low-quality icons/logos to save tokens. `[Line 42]`
+- **Normalization**: Lightweight CPU-based image preprocessing (resizing/RGB conversion). `[Line 120]`
 
-### [tables_processor.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/tables_processor.py)
-Summarization of tabular files (`.xlsx`, `.csv`, `.tsv`).
+### [tables_processor.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/tables_processor.py)
+Domain-agnostic summarization of tabular files (`.xlsx`, `.csv`, `.tsv`).
 
-- **Domain-Agnostic Parsing**: Converts raw data into high-signal summaries for LLM prompts. `[Line 313]`
-- **Messy Header Recovery**: Heuristics to find correct headers in complex spreadsheets. `[Lines 115, 185]`
-- **Anomaly Detection**: Statistics-based signals for missingness, outliers, and duplicates. `[Line 506]`
+- **Compact Summaries**: Converts raw data into high-signal text for LLM prompts. `[Line 313]`
+- **Anomaly Detection**: Stats-based signals for missingness, outliers, and duplicates. `[Line 506]`
 
-### [pii_redactor.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/modules/pii_redactor.py)
+### [pii_redactor.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/pii_redactor.py)
 Data privacy protection using Microsoft Presidio.
 
-- **Indian PII Recognizers**: Custom patterns for PAN, Aadhaar, and Bank Account numbers. `[Lines 39-90]`
-- **Generic Redaction**: Email, Phone, IP Address, and Location scrubbing. `[Lines 121-143]`
+- **Indian PII Recognizers**: Custom patterns for PAN, Aadhaar, and Bank Account numbers.
+- **Generic Redaction**: Email, Phone, IP Address, and Location scrubbing.
 
 ---
 
 ## Utility Directory (`/utility`)
 
-- **bookstack_ingest.py**: Bulk ingestion for technical documentation.
-- **ingest.py**: Command-line tool for historical email ingestion.
+- **ingest.py**: Command-line tool for historical email ingestion (Resilient & Cloud-Vision ready).
+- **bookstack_ingest.py**: Bulk ingestion for technical documentation into the authoritative DB.
 - **kb_diagnostic.py**: Knowledge base verification and query testing tool.
-- **cleanup_vectors.py**: Maintenance tool for vector database optimization.
+- **cleanup_vectors.py**: Maintenance tool for vector database optimization and hard deletion.
 
 ---
 
-## Templates Directory (`/templates`)
-
-- **dashboard.html**: Premium, real-time ticket management interface.
-- **admin_users.html**: Portal for managing staff access and roles.
-- **login.html**: Secure entry point for the application.
-
----
-
-## Management Tools
-
-### [manage_users.py](file:///c:/Users/Bilal/OneDrive%20-%20Greenware%20Solutions%20LLP/AI_Email_Automation/manage_users.py)
-CLI for administrative user operations (create, delete, list, password-reset). `[Line 41]`
+## Project Status
+- **Cloud Migration**: Completed. BLIP and EasyOCR offloaded to OpenAI Vision.
+- **Hardware Ready**: CPU-only VM compatible (requirements.txt uses CPU torch).
+- **GPU Optimized**: Code detects and uses CUDA if available for local embeddings.
+- **AI Models**: Standardized on production-ready `gpt-4o-mini`.

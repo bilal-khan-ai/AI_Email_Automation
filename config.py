@@ -45,8 +45,8 @@ class Config:
     # Cleanup daemon settings
     ENABLE_TICKET_CLEANUP_DAEMON = os.getenv('ENABLE_TICKET_CLEANUP_DAEMON', 'True').lower() == 'true'
     CLEANUP_DAEMON_INTERVAL_SECONDS = int(os.getenv('CLEANUP_DAEMON_INTERVAL_SECONDS', 3600))
-    SOFT_DELETE_CLOSED_AFTER_DAYS = int(os.getenv('SOFT_DELETE_CLOSED_AFTER_DAYS', DAYS_TO_KEEP_TICKET))
-    HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 7))
+    SOFT_DELETE_CLOSED_AFTER_DAYS = int(os.getenv('SOFT_DELETE_CLOSED_AFTER_DAYS', 1))
+    HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 6))
     CLEANUP_BATCH_SIZE = int(os.getenv('CLEANUP_BATCH_SIZE', 100))
     
     # Table processing settings

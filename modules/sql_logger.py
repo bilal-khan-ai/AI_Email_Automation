@@ -152,8 +152,20 @@ class SQLLogger:
                             rag_provenance JSONB,
                             created_at TIMESTAMPTZ NOT NULL,
                             last_updated TIMESTAMPTZ NOT NULL,
-                            deleted_at TIMESTAMPTZ
+                            deleted_at TIMESTAMPTZ,
+                            reopened BOOLEAN DEFAULT FALSE
                         )
+                    """)
+                    
+                    # Ensure reopened column exists (for existing databases)
+                    cur.execute("""
+                        DO $$ 
+                        BEGIN 
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='reopened') THEN 
+                                ALTER TABLE tickets ADD COLUMN reopened BOOLEAN DEFAULT FALSE;
+                            END IF;
+                        END $$;
                     """)
                     
                     # 2. CHILD TABLE: MESSAGES
@@ -408,6 +420,41 @@ class SQLLogger:
             
         except Exception as e:
             logger.error(f"❌ Error soft-deleting ticket {ticket_id}: {e}")
+            return False
+    
+    def reopen_ticket(self, ticket_id: str) -> bool:
+        """
+        Re-open a soft-deleted ticket.
+        
+        Args:
+            ticket_id: Ticket ID to re-open
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    now = datetime.now()
+                    
+                    cur.execute("""
+                        UPDATE tickets 
+                        SET deleted_at = NULL, 
+                            status = 'Open',
+                            reopened = TRUE,
+                            last_updated = %s
+                        WHERE ticket_id = %s
+                    """, (now, ticket_id))
+                    
+                    if cur.rowcount > 0:
+                        logger.info(f"🔄 Re-opened ticket {ticket_id}")
+                        return True
+                    else:
+                        logger.warning(f"⚠️  Ticket {ticket_id} not found for re-opening")
+                        return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error re-opening ticket {ticket_id}: {e}")
             return False
     
     def soft_delete_message(self, message_id: str) -> bool:
@@ -672,7 +719,6 @@ class SQLLogger:
                     cur.execute("""
                         SELECT * FROM tickets 
                         WHERE conversation_id = %s
-                        AND deleted_at IS NULL
                         LIMIT 1
                     """, (conversation_id,))
                     
@@ -680,7 +726,8 @@ class SQLLogger:
                     
                     if row:
                         result = self._convert_ticket_row(dict(row))
-                        logger.debug(f"ℹ️  Found ticket {result['ticket_id']} by conversation_id {conversation_id}")
+                        status = "soft-deleted" if result.get('deleted_at') else "active"
+                        logger.debug(f"ℹ️  Found {status} ticket {result['ticket_id']} by conversation_id {conversation_id}")
                         return result
                     
                     return None

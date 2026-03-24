@@ -46,19 +46,17 @@ def embedding_model_context(force_cpu: bool = False):
     
     try:
         from sentence_transformers import SentenceTransformer
+        import torch
         
+        # Determine device
         if force_cpu:
             device = "cpu"
         else:
-            try:
-                import torch
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-            except Exception:
-                device = "cpu"
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         
         logger.info(f"⚙️  Loading embedding model (all-MiniLM-L6-v2) on {device}...")
         model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
-        logger.info("✅ Embedding model loaded")
+        logger.info(f"✅ Embedding model loaded on {device}")
         
         yield model, device
     
@@ -107,14 +105,14 @@ class VectorDatabase:
     - Better logging with operation context
     """
     
-    def __init__(self, db_path: str, collection_name: str, force_cpu: bool = False):
+    def __init__(self, db_path: str, collection_name: str, force_cpu: bool = True):
         """
         Initialize ChromaDB client.
         
         Args:
             db_path: Path to ChromaDB storage
             collection_name: Collection name
-            force_cpu: Force CPU for embeddings (no GPU)
+            force_cpu: Force CPU for embeddings (default: True per system policy)
         """
         self.db_path = db_path
         self.collection_name = collection_name
@@ -168,7 +166,7 @@ class VectorDatabase:
         try:
             # Check if already soft-deleted
             if self._is_deleted(email_id):
-                logger.warning(f"⚠️  Skipping add for deleted email {email_id[:20]}...")
+                logger.warning(f"⚠️  Skipping add for already deleted email (ID: {email_id[:20]})")
                 return False
             
             # Prepare text content
@@ -199,13 +197,13 @@ class VectorDatabase:
             )
             
             logger.info(
-                f"✅ Added email to vector DB: {email_id[:20]}... | "
-                f"Ticket: {metadata.get('ticket_id', 'N/A')}"
+                f"✅ Added email to vector DB: {email_id[:20]} | "
+                f"Ticket: {meta.get('ticket_id', 'N/A')}"
             )
             return True
         
         except Exception as e:
-            logger.error(f"❌ Error adding email {email_id[:20]}...: {e}")
+            logger.error(f"❌ Error adding email (ID: {email_id[:20]}): {e}")
             return False
     
     def add_emails_batch(self, emails: List[Dict]) -> int:
@@ -515,9 +513,14 @@ class BookVectorDB:
             settings=Settings(anonymized_telemetry=False, allow_reset=True)
         )
         
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
         self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2"
+            model_name="all-MiniLM-L6-v2",
+            device=device
         )
+        logger.info(f"📚 BookVectorDB: Initialized with {device}")
     
     def get_bookstack_collection(self):
         """Get or create the bookstack_db collection."""

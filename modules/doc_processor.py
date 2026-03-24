@@ -203,7 +203,10 @@ class DocProcessor:
 
                 if self.image_processor is not None:
                     try:
-                        desc = self.image_processor.process_image(b) or ""
+                        # Extract filename from zip path
+                        img_name = n.split("/")[-1]
+                        desc = self.image_processor.process_image(b, filename=img_name) or ""
+                        # Note: our new ImageProcessor already includes [Attachment: name] in 'desc'
                         img_info["description"] = desc.strip()
                     except Exception as e:
                         img_info["description"] = ""
@@ -305,11 +308,12 @@ class DocProcessor:
                         pil_img.close()
                         
                         # Process via ImageProcessor
-                        desc = self.image_processor.process_image(img_bytes) or ""
+                        page_filename = f"{filename}_page_{i+1}.png"
+                        desc = self.image_processor.process_image(img_bytes, filename=page_filename) or ""
                         
                         if desc:
                             images.append({
-                                "name": f"pdf_page_{i+1}.png",
+                                "name": page_filename,
                                 "size": f"{pil_img.width}x{pil_img.height}" if hasattr(pil_img, 'width') else "unknown",
                                 "description": desc.strip()
                             })

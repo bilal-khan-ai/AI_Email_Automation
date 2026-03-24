@@ -11,7 +11,7 @@ Improvements:
 
 import logging
 from openai import OpenAI
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, cast
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ class OpenAIAgent:
     def __init__(self, api_key: str):
         """Initialize OpenAI client"""
         self.api_key = api_key
-        self.client = None
+        self.client: Optional[OpenAI] = None
         
     def authenticate(self):
         """Authenticate with OpenAI API"""
@@ -33,7 +33,7 @@ class OpenAIAgent:
             logger.error(f"❌ OpenAI authentication failed: {e}")
             return False
     
-    def _format_thread_context(self, messages: List[Dict], max_old_messages: int = 5) -> Tuple[str, str]:
+    def _format_thread_context(self, messages: List[Dict[str, Any]], max_old_messages: int = 5) -> Tuple[str, str]:
         """
         Format thread messages into structured context.
         
@@ -62,7 +62,7 @@ Message:
 """.strip()
         
         # Previous messages are thread history
-        previous_messages = messages[:-1]
+        previous_messages = list(messages[:-1])
         
         if not previous_messages:
             return "", latest_question
@@ -81,7 +81,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
 """
             
             # Format recent messages in full detail
-            recent_formatted = []
+            recent_formatted: List[str] = []
             for msg in recent_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
                 recent_formatted.append(f"""
@@ -92,7 +92,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             thread_history = older_summary + "\n\n" + "\n\n".join(recent_formatted)
         else:
             # Format all previous messages
-            formatted = []
+            formatted: List[str] = []
             for msg in previous_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
                 formatted.append(f"""
@@ -104,7 +104,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
         
         return thread_history, latest_question
     
-    def _format_rag_context(self, context_emails: List[Dict]) -> Tuple[str, List[Dict]]:
+    def _format_rag_context(self, context_emails: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Format RAG context emails and extract provenance.
         
@@ -120,7 +120,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
         provenance = []
         formatted_parts = []
         
-        for i, email in enumerate(context_emails[:3], 1):  # Use top 3
+        for i, email in enumerate(list(context_emails[:3]), 1):  # Use top 3
             content = email.get('content', '')
             metadata = email.get('metadata', {})
             distance = email.get('distance', 0.0)
@@ -133,7 +133,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             provenance.append({
                 'rank': i,
                 'subject': subject,
-                'similarity_score': round(similarity_score, 3),
+                'similarity_score': round(float(similarity_score), 3),
                 'metadata': metadata
             })
             
@@ -152,13 +152,13 @@ Subject: {subject}
     
     def generate_response(
         self, 
-        messages: List[Dict],
-        context_emails: List[Dict] = None,          # LEGACY parameter
-        documentation_context: List[Dict] = None,    # NEW parameter
-        experience_context: List[Dict] = None,       # NEW parameter
+        messages: List[Dict[str, Any]],
+        context_emails: Optional[List[Dict[str, Any]]] = None,          # LEGACY parameter
+        documentation_context: Optional[List[Dict[str, Any]]] = None,    # NEW parameter
+        experience_context: Optional[List[Dict[str, Any]]] = None,       # NEW parameter
         customer_email: str = "", 
         subject: str = ""
-    ) -> Tuple[Optional[str], Optional[List[Dict]]]:
+    ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
         """
         Generate AI response using GPT-4.1 mini with enhanced reasoning and sendability gate.
         
@@ -408,9 +408,11 @@ SIMILAR PAST SUPPORT CASES (for reference):
 Please draft a professional email response that addresses the customer's question. Make sure it's not wordy and it's to the point."""
 
             # 6. Call OpenAI API
-            logger.info(f"📤 Calling GPT-4.1-mini for ticket {ticket_id}...")
+            logger.info(f"📤 Calling GPT-4o-mini for ticket {ticket_id}...")
+            if self.client is None:
+                raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -438,7 +440,7 @@ Please draft a professional email response that addresses the customer's questio
             logger.error(f"❌ Error generating AI response for ticket {ticket_id}: {e}")
             return None, None
     
-    def summarize_ticket(self, customer_question: str) -> str:
+    def summarize_ticket(self, customer_question: str) -> Optional[str]:
         """
         Generate a brief summary of a support ticket
         Args:
@@ -451,8 +453,10 @@ Please draft a professional email response that addresses the customer's questio
             raise Exception("Not authenticated. Call authenticate() first.")
         
         try:
+            if self.client is None:
+                raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "Summarize the following support ticket in 1-2 concise sentences."},
                     {"role": "user", "content": customer_question}
@@ -485,8 +489,10 @@ Please draft a professional email response that addresses the customer's questio
         try:
             prompt = f"Subject: {subject}\n\nQuestion: {customer_question}"
             
+            if self.client is None:
+                raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": """Categorize this support ticket into ONE of these categories:
 - Technical Issue
@@ -513,7 +519,7 @@ Respond with ONLY the category name, nothing else."""},
             logger.error(f"❌ Error categorizing ticket: {e}")
             return "Other"
         
-    def _format_documentation_context(self, docs: List[Dict]) -> Tuple[str, List[Dict]]:
+    def _format_documentation_context(self, docs: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Format authoritative documentation (BookStack) with provenance.
         
@@ -529,7 +535,7 @@ Respond with ONLY the category name, nothing else."""},
         provenance = []
         formatted_parts = []
         
-        for i, doc in enumerate(docs[:3], 1):  # Use top 3
+        for i, doc in enumerate(list(docs[:3]), 1):  # Use top 3
             content = doc.get('content', '')
             metadata = doc.get('metadata', {})
             distance = doc.get('distance', 0.0)
@@ -545,7 +551,7 @@ Respond with ONLY the category name, nothing else."""},
                 'source': 'documentation',
                 'book': book,
                 'section': section,
-                'similarity_score': round(similarity_score, 3),
+                'similarity_score': round(float(similarity_score), 3),
                 'metadata': metadata
             })
             
@@ -562,7 +568,7 @@ Source: {book} - {section}
         
         return formatted_context, provenance
     
-    def _format_experience_context(self, emails: List[Dict]) -> Tuple[str, List[Dict]]:
+    def _format_experience_context(self, emails: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Format past support experience emails with provenance.
         
@@ -578,7 +584,7 @@ Source: {book} - {section}
         provenance = []
         formatted_parts = []
         
-        for i, email in enumerate(emails[:3], 1):  # Use top 3
+        for i, email in enumerate(list(emails[:3]), 1):  # Use top 3
             content = email.get('content', '')
             metadata = email.get('metadata', {})
             distance = email.get('distance', 0.0)
@@ -592,7 +598,7 @@ Source: {book} - {section}
                 'rank': i,
                 'source': 'experience',
                 'subject': subject,
-                'similarity_score': round(similarity_score, 3),
+                'similarity_score': round(float(similarity_score), 3),
                 'metadata': metadata
             })
             
@@ -608,3 +614,54 @@ Subject: {subject}
         formatted_context = "\n\n---\n\n".join(formatted_parts)
         
         return formatted_context, provenance
+    def analyze_image(self, image_bytes: bytes, model: str = "gpt-4o-mini") -> Optional[str]:
+        """
+        Analyze an image using OpenAI Vision.
+        
+        Args:
+            image_bytes: Raw image data
+            model: The model to use ('gpt-4o' or 'gpt-4o-mini')
+            
+        Returns:
+            str: Analysis result or None on error
+        """
+        if not self.client:
+            raise Exception("Not authenticated. Call authenticate() first.")
+        
+        try:
+            # Encode image to base64
+            import base64
+            base64_image = base64.b64encode(image_bytes).decode('utf-8')
+            
+            # Determine prompt based on model
+            if model == "gpt-4o":
+                prompt = "Extract all tabular data from this image and format it as a markdown table. Be extremely precise with numbers and headers."
+            else:
+                prompt = "What is in this image? If it's a technical error or screenshot, extract the error message and key details. If it's a general image, provide a brief description."
+            
+            if self.client is None:
+                raise Exception("Client is None")
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}",
+                                },
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=2000,
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing image with {model}: {e}")
+            return None

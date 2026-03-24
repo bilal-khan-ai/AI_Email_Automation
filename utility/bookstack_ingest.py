@@ -13,6 +13,7 @@ from openai import OpenAI
 import chromadb
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
+import torch
 from config import Config
 
 # --- CONFIGURATION ---
@@ -121,7 +122,11 @@ class DocumentArchitect:
 class VectorStore:
     def __init__(self, path: str):
         self.client = chromadb.PersistentClient(path=path, settings=Settings(allow_reset=True))
-        self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2",
+            device=device
+        )
         self.collection = self.client.get_or_create_collection("bookstack_db", embedding_function=self.ef)
 
     def save_chunks(self, chunks: List[Dict], book_name: str):
