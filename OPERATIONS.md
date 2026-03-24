@@ -12,7 +12,7 @@
 6.  Context embedded into vector DB
 7.  RAG retrieves documentation + past cases
 8.  AI draft generated
-9.  Agent reviews and sends via dashboard
+9.  Staff reviews and sends via dashboard
 
 ------------------------------------------------------------------------
 

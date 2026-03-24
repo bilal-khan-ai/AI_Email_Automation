@@ -1,0 +1,20 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.vscode/
+
+# Local databases and storage
+data/
+chroma_db/
+chromaDB/
+
+# Output directories
+uploads/
+Books/
+
+# OS generated files
+.DS_Store
+Thumbs.db
