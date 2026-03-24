@@ -11,7 +11,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from modules.sql_logger import SQLLogger
 from modules.graph_connector import GraphConnector
 import auth
-from auth import init_auth, login_required, socketio_login_required, admin_required, get_current_user, is_admin
+from auth import init_auth, login_required, socketio_login_required, socketio_admin_required, admin_required, get_current_user, is_admin
 from config import Config
 
 app = Flask(__name__)
@@ -88,15 +88,10 @@ def normalize_legacy_status(status: str) -> str:
         return 'Open'
 
 
-def calculate_stats(tickets):
+def calculate_stats(tickets, user=None):
     """
     Calculate ticket statistics with Open/Closed semantics.
-    
-    Args:
-        tickets: List of ticket dicts
-        
-    Returns:
-        Dict with total, open, closed counts
+    If user is staff, stats will naturally be filtered by the tickets passed in.
     """
     total = len(tickets)
     open_count = sum(1 for t in tickets if normalize_legacy_status(t.get('status')) == 'Open')
@@ -116,9 +111,9 @@ def background_thread():
     while True:
         time.sleep(5)  # Check every 5 seconds
         try:
-            tickets = sql_logger.get_active_tickets()
-            stats = calculate_stats(tickets)
-            socketio.emit('stats_update', stats)
+            # Stats update for all is now problematic because stats are role-based.
+            # We skip global stats update broadcast and let individual clients refresh or use specific events.
+            pass
         except Exception as e:
             print(f"Error in background thread: {e}")
 
@@ -161,10 +156,13 @@ def login():
             
             flash(f'Welcome back, {username}!', 'success')
             
-            # Redirect to next page or dashboard
+            # Redirect based on role
             next_page = request.args.get('next')
             if next_page:
                 return redirect(next_page)
+            
+            if user['role'] == 'admin':
+                return redirect(url_for('management'))
             return redirect(url_for('index'))
         else:
             flash('Invalid username or password', 'danger')
@@ -183,15 +181,42 @@ def logout():
 
 
 # ============================================================================
-# ADMIN ROUTES - User Management (Admin Only)
-# ============================================================================
-
-@app.route('/admin/users')
+@app.route('/management')
 @admin_required
-def admin_users():
-    """Admin page to manage users"""
+def management():
+    """Admin management page"""
     users = auth.user_manager.list_users()
-    return render_template('admin_users.html', users=users)
+    # Filter only staff members for metrics
+    staff_members = [u for u in users if u['role'] == 'staff']
+    staff_usernames = [u['username'] for u in staff_members]
+    
+    # Get stats for all tickets for admin overview
+    all_tickets = sql_logger.get_active_tickets()
+    global_stats = calculate_stats(all_tickets)
+    
+    return render_template('management.html', 
+                          user=get_current_user(), 
+                          users=users, 
+                          staff_members=staff_members,
+                          global_stats=global_stats)
+
+
+@app.route('/admin/users/toggle-status/<username>', methods=['POST'])
+@admin_required
+def admin_toggle_user_status(username):
+    """Enable/Disable a user (admin only)"""
+    if username == session.get('user', {}).get('username'):
+        flash('❌ You cannot disable your own account', 'danger')
+        return redirect(url_for('management'))
+    
+    if auth.user_manager.toggle_user_status(username):
+        user = auth.user_manager.get_user(username)
+        status = "enabled" if user['is_active'] else "disabled"
+        flash(f'✅ User "{username}" has been {status}', 'success')
+    else:
+        flash(f'❌ Failed to toggle status for user "{username}"', 'danger')
+    
+    return redirect(url_for('management'))
 
 
 @app.route('/admin/users/create', methods=['POST'])
@@ -200,18 +225,18 @@ def admin_create_user():
     """Create a new user (admin only)"""
     username = request.form.get('username')
     password = request.form.get('password')
-    role = request.form.get('role', 'user')
+    role = request.form.get('role', 'staff')
     
     if not username or not password:
         flash('Username and password are required', 'danger')
-        return redirect(url_for('admin_users'))
+        return redirect(url_for('management'))
     
     if auth.user_manager.create_user(username, password, role):
         flash(f'✅ User "{username}" created successfully (Role: {role})', 'success')
     else:
         flash(f'❌ Failed to create user "{username}" (username may already exist)', 'danger')
     
-    return redirect(url_for('admin_users'))
+    return redirect(url_for('management'))
 
 
 @app.route('/admin/users/<username>/delete', methods=['POST'])
@@ -221,14 +246,14 @@ def admin_delete_user(username):
     # Prevent deleting yourself
     if username == session.get('user', {}).get('username'):
         flash('❌ You cannot delete your own account', 'danger')
-        return redirect(url_for('admin_users'))
+        return redirect(url_for('management'))
     
     if auth.user_manager.delete_user(username):
-        flash(f'✅ User "{username}" has been disabled', 'success')
+        flash(f'✅ User "{username}" has been deleted', 'success')
     else:
         flash(f'❌ Failed to delete user "{username}"', 'danger')
     
-    return redirect(url_for('admin_users'))
+    return redirect(url_for('management'))
 
 
 @app.route('/admin/users/<username>/change-password', methods=['POST'])
@@ -239,16 +264,14 @@ def admin_change_password(username):
     
     if not new_password:
         flash('New password is required', 'danger')
-        return redirect(url_for('admin_users'))
+        return redirect(url_for('management'))
     
     if auth.user_manager.update_password(username, new_password):
         flash(f'✅ Password changed for user "{username}"', 'success')
     else:
         flash(f'❌ Failed to change password for user "{username}"', 'danger')
     
-    return redirect(url_for('admin_users'))
-
-
+    return redirect(url_for('management'))
 # ============================================================================
 # DASHBOARD ROUTES - Protected by Authentication
 # ============================================================================
@@ -257,21 +280,33 @@ def admin_change_password(username):
 @login_required
 def index():
     """Main dashboard page - requires authentication"""
-    # Generate a unique session ID for this user (for ticket locking)
-    if 'user_id' not in session:
-        username = session.get('user', {}).get('username', 'unknown')
-        session['user_id'] = f"{username}_{secrets.token_hex(4)}"
-    
-    # Pass user info to template
     user = get_current_user()
-    return render_template('dashboard.html', user=user, is_admin=is_admin())
+    
+    # Redirect admins to management by default, unless they explicitly want the dashboard view
+    if user['role'] == 'admin' and request.args.get('view') != 'staff':
+        return redirect(url_for('management'))
+    
+    # Get staff list for assignment dropdown
+    users = auth.user_manager.list_users()
+    staff_members = [u for u in users if u['role'] == 'staff']
+    
+    # Pass whether the user is an admin to the template
+    return render_template('dashboard.html', user=user, staff_members=staff_members, is_admin=(user['role'] == 'admin'))
 
 
 @app.route('/api/tickets')
 @login_required
 def get_tickets():
-    """Get all tickets with normalized statuses"""
-    tickets = sql_logger.get_active_tickets()
+    """Get tickets with normalized statuses, filtered for staff if applicable"""
+    user = get_current_user()
+    
+    # If staff, only show their assigned tickets
+    if user.get('role') == 'staff':
+        tickets = sql_logger.get_active_tickets(assigned_to=user['username'])
+    else:
+        # Admins see everything (though they usually use management page, 
+        # but if they visit dashboard they see all)
+        tickets = sql_logger.get_active_tickets()
 
     # Normalize statuses and add lock information
     for ticket in tickets:
@@ -401,10 +436,16 @@ def toggle_ticket_status():
     new_status = 'Closed' if current_status == 'Open' else 'Open'
 
     # Update status
-    success = sql_logger.update_ticket_fields(ticket_db_id, {
+    update_data = {
         'status': new_status,
         'last_updated': datetime.now().isoformat()
-    })
+    }
+    
+    # If closing, reset the reopened flag
+    if new_status == 'Closed':
+        update_data['reopened'] = False
+
+    success = sql_logger.update_ticket_fields(ticket_db_id, update_data)
 
     if success:
         # Release lock if closing
@@ -706,8 +747,6 @@ def handle_refresh_tickets():
         'tickets': tickets,
         'stats': stats
     })
-
-
 @socketio.on('typing_update')
 @socketio_login_required
 def handle_typing_update(data):
@@ -725,6 +764,40 @@ def handle_typing_update(data):
             'username': username,
             'is_typing': is_typing
         }, skip_sid=request.sid, broadcast=True)
+
+
+@socketio.on('get_staff_metrics')
+@socketio_admin_required
+def handle_get_staff_metrics(data):
+    """Get metrics for all staff members with time range"""
+    time_range = data.get('time_range', 'all')
+    
+    users = auth.user_manager.list_users()
+    staff_usernames = [u['username'] for u in users if u['role'] == 'staff']
+    
+    metrics = sql_logger.get_all_staff_metrics(staff_usernames, time_range)
+    emit('staff_metrics_update', {'metrics': metrics, 'time_range': time_range})
+
+
+@socketio.on('reassign_ticket')
+@socketio_admin_required
+def handle_reassign_ticket(data):
+    """Change assignment of a ticket (admin only)"""
+    ticket_id = data.get('ticket_id')
+    new_assignee = data.get('assigned_to')
+    
+    if not ticket_id or not new_assignee:
+        return
+    
+    success = sql_logger.update_ticket_fields(ticket_id, {'assigned_to': new_assignee})
+    
+    if success:
+        # Broadcast to everyone
+        socketio.emit('ticket_reassigned', {
+            'ticket_id': ticket_id,
+            'assigned_to': new_assignee,
+            'updated_by': session.get('user', {}).get('username')
+        })
 
 
 if __name__ == '__main__':

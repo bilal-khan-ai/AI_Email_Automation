@@ -20,18 +20,22 @@ Core application entry point and lifecycle manager for the Support Agent.
 User authentication, authorization, and session management.
 
 - **UserManager Class**: Database-backed user management with PostgreSQL. `[Line 42]`
-- **Password Hashing**: Secure storage using SHA-256 and unique salts.
-- **Role-Based Access Control (RBAC)**: Supports 'admin' and 'user' roles.
-- **Login Required**: Route protection for authenticated sessions.
+- **Role-Based Access Control (RBAC)**: Supports roles:
+    - **Admin**: Full management access to users and metrics.
+    - **Staff**: Regular support access to assigned tickets.
+- **Account Toggling**: Enable/Disable staff accounts without deleting history. `[Line 328]`
+- **Login Required**: Route protection and role-specific redirection.
 
 ### [dashboard_socketio.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/dashboard_socketio.py)
 Real-time WebSocket events for the multi-user dashboard.
 
-- **SocketIO Initialization**: Integrated with Flask for bi-directional communication. `[Line 24]`
+- **Management Console (`/management`)**: Admin-only page for staff performance and user control.
+- **Staff Performance Grid**: Real-time cards showing Assigned, Open, and Closed tickets.
+- **Time Range Metrics**: Dropdown filtering (Today to All Time) powered by WebSockets. `[Line 715]`
+- **Staff-Specific Dashboard**: Staff only see tickets and stats assigned to their username. `[Line 308]`
 - **Ticket Locking**: Prevents concurrent edits by different users. `[Line 626]`
-- **Live Stats Calculation**: Real-time aggregation of open, closed, and total ticket counts. `[Line 91]`
-- **Manual Email Responses**: Logic for sending emails directly from the dashboard. `[Line 435]`
-- **Ticket Status/Assignment Updates**: Instant broadcasting of ticket changes to all clients. `[Lines 378, 381]`
+- **Live Ticket Reassignment**: Quick-action table for Admins to load-balance tickets. `[Line 728]`
+- **Manual Email Responses**: Logic for sending emails directly from the dashboard.
 
 ### [config.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/config.py)
 Centralized configuration manager utilizing environment variables (`.env`).
@@ -48,6 +52,8 @@ Centralized configuration manager utilizing environment variables (`.env`).
 PostgreSQL backend for ticket persistence and logging.
 
 - **Schema Initialization**: Automated setup of `tickets` and `messages` tables.
+- **Ticket Auto-Assignment (Load Balancer)**: `get_least_busy_staff()` finds active staff with lowest open ticket count. `[Line 824]`
+- **Staff Metrics**: Aggregated performance data with time-range filtering support (PostgreSQL-optimized). `[Line 901]`
 - **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion.
 - **Metadata Management**: Logging of AI entities, draft statuses, and lock states.
 
@@ -111,7 +117,8 @@ Data privacy protection using Microsoft Presidio.
 ---
 
 ## Project Status
-- **Cloud Migration**: Completed. BLIP and EasyOCR offloaded to OpenAI Vision.
-- **Hardware Ready**: CPU-only VM compatible (requirements.txt uses CPU torch).
-- **GPU Optimized**: Code detects and uses CUDA if available for local embeddings.
+- **Cloud Migration**: Completed.
+- **Role-Based Access Control (RBAC)**: Active (Admin/Staff roles).
+- **Ticket Auto-Assignment**: "Least Busy" load balancer implemented inside SQLLogger.
+- **Hardware Ready**: CPU-only VM compatible.
 - **AI Models**: Standardized on production-ready `gpt-4o-mini`.

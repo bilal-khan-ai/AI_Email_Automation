@@ -247,13 +247,17 @@ class SQLLogger:
                 with conn.cursor() as cur:
                     now = datetime.now()
                     
+                    # Auto-assign ticket to least busy staff
+                    assignee = self.get_least_busy_staff()
+                    
                     cur.execute("""
                         INSERT INTO tickets (
                             ticket_id, conversation_id, subject, 
-                            customer_email, created_at, last_updated
-                        ) VALUES (%s, %s, %s, %s, %s, %s)
+                            customer_email, created_at, last_updated,
+                            assigned_to
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (ticket_id) DO NOTHING
-                    """, (ticket_id, conversation_id, subject, customer_email, now, now))
+                    """, (ticket_id, conversation_id, subject, customer_email, now, now, assignee))
                     
                     created = cur.rowcount > 0
                     
@@ -819,20 +823,56 @@ class SQLLogger:
                     return messages
             
         except Exception as e:
-            logger.error(f"❌ Error fetching messages for ticket {ticket_id}: {e}")
+            logger.error(f"❌ Error retrieving messages: {e}")
             return []
-    
-    def get_active_tickets(self) -> List[Dict]:
+
+    def get_least_busy_staff(self) -> str:
+        """
+        Find the active staff member with the fewest open tickets.
+        
+        Returns:
+            Username of least busy staff, or 'Unassigned' if none available
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    # Query for least busy active staff
+                    # Statuses that count as 'Open': Open, Pending Review, Pending, In Progress
+                    query = """
+                        SELECT u.username
+                        FROM users u
+                        LEFT JOIN tickets t ON u.username = t.assigned_to 
+                            AND t.deleted_at IS NULL 
+                            AND t.status IN ('Open', 'Pending Review', 'Pending', 'In Progress')
+                        WHERE u.role = 'staff' AND u.is_active = True
+                        GROUP BY u.username
+                        ORDER BY COUNT(t.ticket_id) ASC
+                        LIMIT 1
+                    """
+                    cur.execute(query)
+                    result = cur.fetchone()
+                    
+                    if result:
+                        return result[0]
+                    return 'Unassigned'
+        except Exception as e:
+            logger.error(f"❌ Error finding least busy staff: {e}")
+            return 'Unassigned'
+
+    def get_active_tickets(self, assigned_to: Optional[str] = None) -> List[Dict]:
         """
         Get all active tickets (excludes soft-deleted).
         
+        Args:
+            assigned_to: Optional filter by assignee username
+            
         Returns:
             List of ticket dicts
         """
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                    cur.execute("""
+                    query = """
                         SELECT
                             t.*,
                             MAX(m.timestamp) AS last_message_at
@@ -841,17 +881,30 @@ class SQLLogger:
                             ON m.ticket_id = t.ticket_id
                             AND m.deleted_at IS NULL
                         WHERE t.deleted_at IS NULL
+                    """
+                    params = []
+                    
+                    if assigned_to:
+                        query += " AND t.assigned_to = %s"
+                        params.append(assigned_to)
+                        
+                    query += """
                         GROUP BY t.id
                         ORDER BY last_message_at DESC NULLS LAST;
-
-                    """)
+                    """
+                    
+                    cur.execute(query, params)
                     
                     rows = cur.fetchall()
                     tickets = [self._convert_ticket_row(dict(row)) for row in rows]
                     
-                    logger.debug(f"ℹ️  Retrieved {len(tickets)} active tickets")
+                    logger.debug(f"ℹ️  Retrieved {len(tickets)} active tickets (Filter: {assigned_to})")
                     return tickets
                     
+        except Exception as e:
+            logger.error(f"❌ Error fetching active tickets: {e}")
+            return []
+ 
         except Exception as e:
             logger.error(f"❌ Error fetching active tickets: {e}")
             return []
@@ -895,13 +948,6 @@ class SQLLogger:
     def update_ticket_fields(self, identifier: Union[int, str], fields: dict) -> bool:
         """
         Update specific fields in a ticket by database ID or ticket_id.
-        
-        Args:
-            identifier: Database primary key (int) or ticket_id (str)
-            fields: Dict of field names to values
-            
-        Returns:
-            bool: True if successful (at least one row updated), False otherwise
         """
         try:
             if not fields:
@@ -909,7 +955,6 @@ class SQLLogger:
             
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    # Build UPDATE statement dynamically
                     set_parts = []
                     values = []
                     
@@ -917,7 +962,6 @@ class SQLLogger:
                         set_parts.append(sql.Identifier(key))
                         values.append(value)
                     
-                    # Determine which column to filter by based on identifier type
                     if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
                         where_col = "id"
                     else:
@@ -942,8 +986,72 @@ class SQLLogger:
                         return False
             
         except Exception as e:
-            logger.error(f"❌ Error updating ticket row {row_number}: {e}")
+            logger.error(f"❌ Error updating ticket identifier {identifier}: {e}")
             return False
+
+    def get_staff_metrics(self, staff_username: str, time_range: str = 'all') -> Dict:
+        """
+        Get Assigned, Open, and Closed ticket counts for a specific staff member.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    time_filter, params = self._get_time_filter(time_range)
+                    
+                    # Base query
+                    query = """
+                        SELECT 
+                            COUNT(*) as assigned,
+                            COUNT(*) FILTER (WHERE status = 'Open') as open,
+                            COUNT(*) FILTER (WHERE status = 'Closed') as closed
+                        FROM tickets
+                        WHERE assigned_to = %s
+                        AND deleted_at IS NULL
+                    """
+                    
+                    if time_filter:
+                        query += f" AND {time_filter}"
+                    
+                    cur.execute(query, [staff_username] + params)
+                    row = cur.fetchone()
+                    
+                    return {
+                        'username': staff_username,
+                        'assigned': row[0] or 0,
+                        'open': row[1] or 0,
+                        'closed': row[2] or 0
+                    }
+        except Exception as e:
+            logger.error(f"❌ Error getting staff metrics for {staff_username}: {e}")
+            return {'username': staff_username, 'assigned': 0, 'open': 0, 'closed': 0}
+
+    def get_all_staff_metrics(self, staff_usernames: List[str], time_range: str = 'all') -> List[Dict]:
+        """
+        Get metrics for multiple staff members.
+        """
+        metrics = []
+        for username in staff_usernames:
+            metrics.append(self.get_staff_metrics(username, time_range))
+        return metrics
+
+    def _get_time_filter(self, time_range: str) -> (str, list):
+        """Helper to generate SQL time filter and params"""
+        now = datetime.now()
+        if time_range == 'today':
+            start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            return "created_at >= %s", [start]
+        elif time_range == 'week':
+            start = now - timedelta(days=now.weekday())
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+            return "created_at >= %s", [start]
+        elif time_range == 'month':
+            start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            return "created_at >= %s", [start]
+        elif time_range == 'year':
+            start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            return "created_at >= %s", [start]
+        else:
+            return "", []
     
     # Helper methods
     

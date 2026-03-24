@@ -62,7 +62,7 @@ class UserManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
                     is_active BOOLEAN DEFAULT TRUE,
-                    CHECK (role IN ('admin', 'user'))
+                    CHECK (role IN ('admin', 'staff', 'user'))
                 )
             """)
             
@@ -221,14 +221,14 @@ class UserManager:
             if conn:
                 self.pool.putconn(conn)
     
-    def create_user(self, username: str, password: str, role: str = 'user') -> bool:
+    def create_user(self, username: str, password: str, role: str = 'staff') -> bool:
         """
         Create a new user.
         
         Args:
             username: Username (must be unique)
             password: Plain text password (will be hashed)
-            role: User role ('admin' or 'user')
+            role: User role ('admin' or 'staff')
             
         Returns:
             True if user created, False otherwise
@@ -236,7 +236,7 @@ class UserManager:
         conn = None
         try:
             # Validate role
-            if role not in ['admin', 'user']:
+            if role not in ['admin', 'staff', 'user']:
                 logger.error(f"❌ Invalid role: {role}")
                 return False
             
@@ -317,23 +317,21 @@ class UserManager:
     
     def delete_user(self, username: str) -> bool:
         """
-        Delete a user (actually disables the user).
+        Hard delete a user from the database.
         
         Args:
             username: Username
             
         Returns:
-            True if user disabled, False otherwise
+            True if user deleted, False otherwise
         """
         conn = None
         try:
             conn = self.pool.getconn()
             cursor = conn.cursor()
             
-            # Disable user instead of deleting
             cursor.execute("""
-                UPDATE users
-                SET is_active = FALSE
+                DELETE FROM users
                 WHERE username = %s
             """, (username,))
             
@@ -343,13 +341,52 @@ class UserManager:
             
             conn.commit()
             
-            logger.info(f"✅ User disabled: {username}")
+            logger.info(f"✅ User deleted: {username}")
             return True
         
         except Exception as e:
             if conn:
                 conn.rollback()
-            logger.error(f"❌ Failed to disable user: {e}")
+            logger.error(f"❌ Failed to delete user: {e}")
+            return False
+        finally:
+            if conn:
+                self.pool.putconn(conn)
+
+    def toggle_user_status(self, username: str) -> bool:
+        """
+        Toggle user active status.
+        
+        Args:
+            username: Username
+            
+        Returns:
+            True if toggled, False otherwise
+        """
+        conn = None
+        try:
+            conn = self.pool.getconn()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE users
+                SET is_active = NOT is_active
+                WHERE username = %s
+            """, (username,))
+            
+            if cursor.rowcount == 0:
+                logger.error(f"❌ User not found: {username}")
+                return False
+            
+            conn.commit()
+            
+            logger.info(f"✅ User status toggled: {username}")
+            return True
+        
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"❌ Failed to toggle user status: {e}")
             return False
         finally:
             if conn:

@@ -272,6 +272,30 @@
         .ticket-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); z-index: 2; }
         .ticket-card.locked-by-other { border: 2px solid #e74c3c; opacity: 0.8; }
         
+        .ticket-card.reopened-tint {
+            background-color: rgba(255, 87, 87, 0.1) !important;
+            border-left: 5px solid #ff5757 !important;
+        }
+
+        body.dark-mode .ticket-card.reopened-tint {
+            background-color: rgba(255, 87, 87, 0.15) !important;
+        }
+
+        .important-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.3rem 0.6rem;
+            background: #ff5757;
+            color: white;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(255, 87, 87, 0.3);
+        }
+        
         .ticket-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
         .ticket-id-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
         
@@ -843,8 +867,25 @@
     </button>
 
     <div class="header">
-        <h1>🎫 Support Ticket Dashboard</h1>
-        <p>Real-time ticket monitoring and management</p>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
+            <div>
+                <h1>🎫 Support Ticket Dashboard</h1>
+                <p>Real-time ticket monitoring and management</p>
+                <div style="margin-top: 1rem; font-weight: 500; font-size: 0.9rem; opacity: 0.9;">
+                    👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{ 'Administrator' if user.role == 'admin' else 'Support Staff' }})
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                {% if user.role == 'admin' %}
+                <a href="{{ url_for('management') }}" class="btn btn-outline-light" style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                    🛡️ Management Console
+                </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm" style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem;">
+                    🚪 Logout
+                </a>
+            </div>
+        </div>
     </div>
     
     <div class="stats-grid">
@@ -905,13 +946,10 @@
                 <div class="assignment-dropdown" style="margin-left: auto;">
                     <select id="modal-assignment">
                         <option value="">Assign To...</option>
-                        <option value="Nikita Bubna">Nikita Bubna</option>
-                        <option value="Tehsin Ghoniya">Tehsin Ghoniya</option>
-                        <option value="Ruchi Kohli">Ruchi Kohli</option>
-                        <option value="Gaurav Kohli">Gaurav Kohli</option>
-                        <option value="Harit Gautam">Harit Gautam</option>
-                        <option value="Venkatesh Inbaraj">Venkatesh Inbaraj</option>
-                        <option value="Anjali Chavan">Anjali Chavan</option>
+                        <option value="Unassigned">Unassigned</option>
+                        {% for staff in staff_members %}
+                        <option value="{{ staff.username }}">{{ staff.username }}</option>
+                        {% endfor %}
                     </select>
                 </div>
             </div>
@@ -1447,16 +1485,26 @@
                 const status = normalizeStatus(ticket.status);
                 const statusClass = status.toLowerCase();
                 
-                // SLA checks
-                const showUnansweredBadge = isUnanswered24h(ticket);
-                const applyLongRunningTint = isLongRunningOpen(ticket);
+                // SLA checks (Disabled per 'only marked for important' requirement)
+                const showUnansweredBadge = false; // isUnanswered24h(ticket);
+                const applyLongRunningTint = false; // isLongRunningOpen(ticket);
                 
                 // Apply SLA card class
-                const slaCardClass = applyLongRunningTint ? 'sla-card-long-running' : '';
+                let slaCardClass = '';
+                
+                // Reopened logic
+                const isReopened = ticket.reopened === true;
+                if (isReopened) {
+                    slaCardClass += ' reopened-tint';
+                }
                 
                 // Unanswered badge HTML
                 const unansweredBadgeHtml = showUnansweredBadge ? 
                     '<span class="sla-badge-unanswered">⏰ Unanswered 24h+</span>' : '';
+                
+                // Important badge for reopened tickets
+                const importantBadgeHtml = isReopened ? 
+                    '<span class="important-badge">🚩 Important</span>' : '';
 
                 const isLocked = ticket.locked_by && ticket.locked_by !== null;
                 const lockClass = isLocked ? 'locked-by-other' : '';
@@ -1469,6 +1517,7 @@
                             <span class="ticket-id" title="${ticketId}">${displayId}</span>
                             ${lockBadge}
                             ${unansweredBadgeHtml}
+                            ${importantBadgeHtml}
                         </div>
                         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
                             <span class="ticket-status status-${statusClass}">${status}</span>
