@@ -62,6 +62,7 @@ class UserManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_login TIMESTAMP,
                     is_active BOOLEAN DEFAULT TRUE,
+                    is_assignable BOOLEAN DEFAULT TRUE,
                     CHECK (role IN ('admin', 'staff', 'user'))
                 )
             """)
@@ -70,6 +71,16 @@ class UserManager:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_username 
                 ON users(username)
+            """)
+            
+            # Migration: Ensure is_assignable column exists
+            cursor.execute("""
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_assignable') THEN
+                        ALTER TABLE users ADD COLUMN is_assignable BOOLEAN DEFAULT TRUE;
+                    END IF;
+                END $$;
             """)
             
             conn.commit()
@@ -248,9 +259,9 @@ class UserManager:
             
             # Create user
             cursor.execute("""
-                INSERT INTO users (username, password_hash, role)
-                VALUES (%s, %s, %s)
-            """, (username, password_hash, role))
+                INSERT INTO users (username, password_hash, role, is_assignable)
+                VALUES (%s, %s, %s, %s)
+            """, (username, password_hash, role, True))
             
             conn.commit()
             
@@ -330,6 +341,14 @@ class UserManager:
             conn = self.pool.getconn()
             cursor = conn.cursor()
             
+            # First, unassign any tickets assigned to this user
+            cursor.execute("""
+                UPDATE tickets 
+                SET assigned_to = 'Unassigned'
+                WHERE assigned_to = %s
+            """, (username,))
+            
+            # Then delete the user
             cursor.execute("""
                 DELETE FROM users
                 WHERE username = %s
@@ -341,7 +360,7 @@ class UserManager:
             
             conn.commit()
             
-            logger.info(f"✅ User deleted: {username}")
+            logger.info(f"✅ User deleted: {username} and tickets unassigned")
             return True
         
         except Exception as e:
@@ -391,6 +410,45 @@ class UserManager:
         finally:
             if conn:
                 self.pool.putconn(conn)
+
+    def toggle_assignable_status(self, username: str) -> bool:
+        """
+        Toggle user assignable status.
+        
+        Args:
+            username: Username
+            
+        Returns:
+            True if toggled, False otherwise
+        """
+        conn = None
+        try:
+            conn = self.pool.getconn()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE users
+                SET is_assignable = NOT is_assignable
+                WHERE username = %s
+            """, (username,))
+            
+            if cursor.rowcount == 0:
+                logger.error(f"❌ User not found: {username}")
+                return False
+            
+            conn.commit()
+            
+            logger.info(f"✅ User assignment status toggled: {username}")
+            return True
+        
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            logger.error(f"❌ Failed to toggle assignable status: {e}")
+            return False
+        finally:
+            if conn:
+                self.pool.putconn(conn)
     
     def list_users(self) -> list:
         """
@@ -405,7 +463,7 @@ class UserManager:
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT id, username, role, created_at, last_login, is_active
+                SELECT id, username, role, created_at, last_login, is_active, is_assignable
                 FROM users
                 ORDER BY created_at DESC
             """)
@@ -418,7 +476,8 @@ class UserManager:
                     'role': row[2],
                     'created_at': row[3].isoformat() if row[3] else None,
                     'last_login': row[4].isoformat() if row[4] else None,
-                    'is_active': row[5]
+                    'is_active': row[5],
+                    'is_assignable': row[6]
                 })
             
             return users
@@ -446,7 +505,7 @@ class UserManager:
             cursor = conn.cursor()
             
             cursor.execute("""
-                SELECT id, username, role, created_at, last_login, is_active
+                SELECT id, username, role, created_at, last_login, is_active, is_assignable
                 FROM users
                 WHERE username = %s
             """, (username,))
@@ -462,7 +521,8 @@ class UserManager:
                 'role': user[2],
                 'created_at': user[3].isoformat() if user[3] else None,
                 'last_login': user[4].isoformat() if user[4] else None,
-                'is_active': user[5]
+                'is_active': user[5],
+                'is_assignable': user[6]
             }
         
         except Exception as e:

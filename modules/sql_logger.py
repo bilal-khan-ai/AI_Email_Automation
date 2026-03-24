@@ -844,7 +844,7 @@ class SQLLogger:
                         LEFT JOIN tickets t ON u.username = t.assigned_to 
                             AND t.deleted_at IS NULL 
                             AND t.status IN ('Open', 'Pending Review', 'Pending', 'In Progress')
-                        WHERE u.role = 'staff' AND u.is_active = True
+                        WHERE u.is_active = True AND u.is_assignable = True
                         GROUP BY u.username
                         ORDER BY COUNT(t.ticket_id) ASC
                         LIMIT 1

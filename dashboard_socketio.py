@@ -212,9 +212,24 @@ def admin_toggle_user_status(username):
     if auth.user_manager.toggle_user_status(username):
         user = auth.user_manager.get_user(username)
         status = "enabled" if user['is_active'] else "disabled"
-        flash(f'✅ User "{username}" has been {status}', 'success')
+        flash(f'✅ Login access for "{username}" has been {status}', 'success')
     else:
-        flash(f'❌ Failed to toggle status for user "{username}"', 'danger')
+        flash(f'❌ Failed to toggle account status for user "{username}"', 'danger')
+    
+    return redirect(url_for('management'))
+
+
+@app.route('/admin/users/toggle-assignable/<username>', methods=['POST'])
+@admin_required
+def admin_toggle_user_assignment(username):
+    """Enable/Disable ticket assignment for a user (admin only)"""
+    # Admins ARE allowed to toggle their own assignment status
+    if auth.user_manager.toggle_assignable_status(username):
+        user = auth.user_manager.get_user(username)
+        status = "enabled" if user['is_assignable'] else "disabled"
+        flash(f'✅ Ticket assignment for "{username}" has been {status}', 'success')
+    else:
+        flash(f'❌ Failed to toggle assignment status for user "{username}"', 'danger')
     
     return redirect(url_for('management'))
 

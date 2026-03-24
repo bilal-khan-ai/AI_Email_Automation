@@ -253,8 +253,11 @@
             <div class="staff-metric-card" id="metric-{{ staff.username }}">
                 <div class="staff-name">
                     <span>👤</span> {{ staff.username }}
+                    {% if not staff.is_assignable %}
+                    <span class="badge bg-warning text-dark ms-auto" style="font-size: 0.6rem;">Opted-out</span>
+                    {% endif %}
                     {% if not staff.is_active %}
-                    <span class="badge bg-secondary ms-auto" style="font-size: 0.6rem;">Disabled</span>
+                    <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">Disabled</span>
                     {% endif %}
                 </div>
                 <div class="metric-stats">
@@ -294,7 +297,8 @@
                                 <tr>
                                     <th>Username</th>
                                     <th>Role</th>
-                                    <th>Status</th>
+                                    <th>Assignable</th>
+                                    <th>Login</th>
                                     <th>Last Active</th>
                                     <th>Actions</th>
                                 </tr>
@@ -312,9 +316,16 @@
                                         </span>
                                     </td>
                                     <td>
+                                        <form method="POST" action="{{ url_for('admin_toggle_user_assignment', username=user_row.username) }}">
+                                            <button type="submit" class="border-0 bg-transparent p-0" title="Toggle Ticket Assignment">
+                                                <div class="status-toggle {{ 'active' if user_row.is_assignable }}"></div>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
                                         <form method="POST" action="{{ url_for('admin_toggle_user_status', username=user_row.username) }}">
-                                            <button type="submit" class="border-0 bg-transparent p-0">
-                                                <div class="status-toggle {{ 'active' if user_row.is_active }}"></div>
+                                            <button type="submit" class="border-0 bg-transparent p-0" title="Toggle Login Access" {{ 'disabled' if user_row.username == user.username }}>
+                                                <div class="status-toggle {{ 'active' if user_row.is_active }} {{ 'opacity-50' if user_row.username == user.username }}"></div>
                                             </button>
                                         </form>
                                     </td>
@@ -322,21 +333,22 @@
                                         <small>{{ user_row.last_login[:16] if user_row.last_login else 'Never' }}</small>
                                     </td>
                                     <td>
-                                        <div class="dropdown">
-                                            <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                                Actions
-                                            </button>
-                                            <ul class="dropdown-menu">
-                                                <li><a class="dropdown-item" href="#" onclick="showChangePasswordModal('{{ user_row.username }}')">🔑 Reset Password</a></li>
-                                                {% if user_row.username != user.username %}
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li>
-                                                    <form method="POST" action="{{ url_for('admin_delete_user', username=user_row.username) }}" onsubmit="return confirm('WARNING: Are you sure you want to PERMANENTLY delete this user?')">
-                                                        <button type="submit" class="dropdown-item text-danger">🗑️ Hard Delete</button>
-                                                    </form>
-                                                </li>
-                                                {% endif %}
-                                            </ul>
+                                        <div class="d-flex gap-2">
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                    Actions
+                                                </button>
+                                                <ul class="dropdown-menu shadow">
+                                                    <li><a class="dropdown-item" href="#" onclick="showChangePasswordModal('{{ user_row.username }}')">🔑 Reset Password</a></li>
+                                                </ul>
+                                            </div>
+                                            {% if user_row.username != user.username %}
+                                            <form method="POST" action="{{ url_for('admin_delete_user', username=user_row.username) }}" onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Permanently Delete User">
+                                                    🗑️
+                                                </button>
+                                            </form>
+                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
@@ -452,6 +464,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const socket = io({ transports: ['websocket', 'polling'] });
+        const allUsers = {{ users | tojson }};
         const staffMembers = {{ staff_members | tojson }};
 
         // Initialize WebSockets
@@ -496,16 +509,28 @@
                     return;
                 }
 
+                // Calculate active assignees (anyone who is active AND assignable, or currently assigned)
+                const assignableUsers = allUsers.filter(u => u.is_active && u.is_assignable);
+
                 openTickets.forEach(ticket => {
                     const tr = document.createElement('tr');
+                    
+                    // Create list of options, ensuring the current assignee is always included 
+                    // even if they are currently not assignable
+                    let options = `<option value="Unassigned" ${ticket.assigned_to === 'Unassigned' ? 'selected' : ''}>Unassigned</option>`;
+                    
+                    const dropdownUsers = [...assignableUsers];
+                    if (ticket.assigned_to !== 'Unassigned' && !dropdownUsers.find(u => u.username === ticket.assigned_to)) {
+                        // Current assignee is not in the assignable list (e.g. they opted out), 
+                        // but they are still assigned, so add them as a special case
+                        dropdownUsers.push({ username: ticket.assigned_to, role: 'unknown (opted-out)' });
+                    }
+                    
                     tr.innerHTML = `
                         <td class="text-truncate" style="max-width: 600px;">${ticket.subject}</td>
                         <td>
                             <select class="form-select form-select-sm" onchange="reassignTicket('${ticket.ticket_id}', this.value)">
-                                <option value="Unassigned" ${ticket.assigned_to === 'Unassigned' ? 'selected' : ''}>Unassigned</option>
-                                ${staffMembers.map(s => `
-                                    <option value="${s.username}" ${ticket.assigned_to === s.username ? 'selected' : ''}>${s.username}</option>
-                                `).join('')}
+                                ${options}
                             </select>
                         </td>
                     `;
