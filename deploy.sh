@@ -37,6 +37,18 @@ ssh $SSH_USER@$VM_IP << EOF
     tar -xzvf deploy_pkg.tar.gz
     rm deploy_pkg.tar.gz
 
+    # CREATE TEMPORARY SWAP FILE (Crucial for small VMs)
+    if [ ! -f /swapfile ]; then
+        echo "Creating 4GB swap file for build stability..."
+        sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        echo "Swap file created and enabled."
+    else
+        echo "Swap file already exists."
+    fi
+
     # Install Docker if not present
     if ! command -v docker &> /dev/null; then
         echo "Docker not found. Installing Docker..."
