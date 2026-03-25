@@ -51,8 +51,8 @@ def main():
     create_parser = subparsers.add_parser('create', help='Create a new user')
     create_parser.add_argument('username', help='Username')
     create_parser.add_argument('password', help='Password')
-    create_parser.add_argument('--role', choices=['admin', 'user'], default='user',
-                             help='User role (default: user)')
+    create_parser.add_argument('--role', choices=['admin', 'staff', 'user'], default='staff',
+                             help='User role (default: staff)')
     
     # List users command
     list_parser = subparsers.add_parser('list', help='List all users')

@@ -268,15 +268,19 @@ class UserManager:
             logger.info(f"✅ User created: {username} (Role: {role})")
             return True
         
-        except psycopg2.IntegrityError:
+        except psycopg2.IntegrityError as e:
             if conn:
                 conn.rollback()
-            logger.error(f"❌ User already exists: {username}")
+            # More specific error check for unique violation
+            if 'unique constraint' in str(e).lower() and 'username' in str(e).lower():
+                logger.error(f"❌ User already exists: {username}")
+            else:
+                logger.error(f"❌ Database integrity error during user creation: {e}")
             return False
         except Exception as e:
             if conn:
                 conn.rollback()
-            logger.error(f"❌ Failed to create user: {e}")
+            logger.error(f"❌ Unexpected error creating user '{username}': {e}")
             return False
         finally:
             if conn:

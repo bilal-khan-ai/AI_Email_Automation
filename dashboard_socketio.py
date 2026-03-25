@@ -128,6 +128,12 @@ thread.start()
 # AUTHENTICATION ROUTES - Custom Username/Password Auth
 # ============================================================================
 
+# Silent route for browser-specific requests to reduce log noise
+@app.route('/.well-known/appspecific/com.chrome.devtools.json')
+def silent_404():
+    return jsonify({'error': 'Not Found'}), 404
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page with username/password authentication"""
@@ -186,8 +192,8 @@ def logout():
 def management():
     """Admin management page"""
     users = auth.user_manager.list_users()
-    # Filter only staff members for metrics
-    staff_members = [u for u in users if u['role'] == 'staff']
+    # Filter staff members (and assignable admins) for metrics
+    staff_members = [u for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
     staff_usernames = [u['username'] for u in staff_members]
     
     # Get stats for all tickets for admin overview
@@ -274,11 +280,18 @@ def admin_delete_user(username):
 @app.route('/admin/users/<username>/change-password', methods=['POST'])
 @admin_required
 def admin_change_password(username):
-    """Change user password (admin only)"""
+    """Change user password (admin only, restrictions apply)"""
     new_password = request.form.get('new_password')
+    current_user = get_current_user()
+    target_user = auth.user_manager.get_user(username)
     
     if not new_password:
         flash('New password is required', 'danger')
+        return redirect(url_for('management'))
+
+    # BLOCK: Admin to Admin password changing (unless it's yourself)
+    if target_user and target_user['role'] == 'admin' and username != current_user['username']:
+        flash('❌ You do not have permission to change another administrator\'s password', 'danger')
         return redirect(url_for('management'))
     
     if auth.user_manager.update_password(username, new_password):
@@ -287,6 +300,25 @@ def admin_change_password(username):
         flash(f'❌ Failed to change password for user "{username}"', 'danger')
     
     return redirect(url_for('management'))
+
+
+@app.route('/api/user/change-password', methods=['POST'])
+@login_required
+def user_change_password():
+    """Route for any logged-in user to change their own password"""
+    new_password = request.form.get('new_password')
+    current_user = get_current_user()
+    
+    if not new_password:
+        return jsonify({'error': 'New password is required'}), 400
+    
+    if len(new_password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters long'}), 400
+
+    if auth.user_manager.update_password(current_user['username'], new_password):
+        return jsonify({'success': True, 'message': 'Password updated successfully'})
+    else:
+        return jsonify({'error': 'Failed to update password'}), 500
 # ============================================================================
 # DASHBOARD ROUTES - Protected by Authentication
 # ============================================================================
@@ -788,7 +820,7 @@ def handle_get_staff_metrics(data):
     time_range = data.get('time_range', 'all')
     
     users = auth.user_manager.list_users()
-    staff_usernames = [u['username'] for u in users if u['role'] == 'staff']
+    staff_usernames = [u['username'] for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
     
     metrics = sql_logger.get_all_staff_metrics(staff_usernames, time_range)
     emit('staff_metrics_update', {'metrics': metrics, 'time_range': time_range})
@@ -813,6 +845,36 @@ def handle_reassign_ticket(data):
             'assigned_to': new_assignee,
             'updated_by': session.get('user', {}).get('username')
         })
+
+
+@socketio.on('trigger_auto_assign')
+@socketio_admin_required
+def handle_trigger_auto_assign():
+    """Auto-assign all open, unassigned tickets to the least busy staff"""
+    # Fetch all tickets assigned to "Unassigned"
+    tickets = sql_logger.get_active_tickets(assigned_to="Unassigned")
+    # Filter only Open tickets
+    open_unassigned = [t for t in tickets if normalize_legacy_status(t.get('status')) == 'Open']
+    
+    assigned_count = 0
+    for ticket in open_unassigned:
+        least_busy_staff = sql_logger.get_least_busy_staff()
+        if least_busy_staff and least_busy_staff != 'Unassigned':
+            success = sql_logger.update_ticket_fields(ticket['ticket_id'], {'assigned_to': least_busy_staff})
+            if success:
+                assigned_count += 1
+                # Broadcast the assignment
+                socketio.emit('ticket_reassigned', {
+                    'ticket_id': ticket['ticket_id'],
+                    'assigned_to': least_busy_staff,
+                    'updated_by': session.get('user', {}).get('username')
+                })
+    
+    if assigned_count > 0:
+        emit('auto_assign_complete', {'success': True, 'count': assigned_count})
+    else:
+        emit('auto_assign_complete', {'success': False, 'message': 'No open tickets found or no active staff available.'})
+
 
 
 if __name__ == '__main__':

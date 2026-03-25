@@ -325,20 +325,10 @@ class SupportAgent:
                     break
                 
                 try:
-                    # Get message IDs for vector DB
-                    msg_ids = self.sql.get_message_ids_for_ticket(ticket_id)
-                    
-                    # Soft-delete in SQL
+                    # Soft-delete in SQL only (keep in vector DB for knowledge)
                     if self.sql.soft_delete_ticket(ticket_id):
-                        # Soft-delete in vector DB
-                        if msg_ids:
-                            self.experience_db.soft_delete(msg_ids)
-                        
                         deleted_count += 1
-                        logger.info(
-                            f"🗑️  Soft-deleted ticket {ticket_id} | "
-                            f"Messages: {len(msg_ids)}"
-                        )
+                        logger.info(f"🗑️  Soft-deleted ticket {ticket_id} in SQL (preserved in knowledge base)")
                     
                 except Exception as e:
                     logger.error(f"❌ Failed to soft-delete ticket {ticket_id}: {e}")
@@ -370,21 +360,8 @@ class SupportAgent:
             
             deleted_count = 0
             
-            # First, delete from vector DB
-            for ticket_id in candidates:
-                if self._shutdown_requested:
-                    break
-                
-                try:
-                    msg_ids = self.sql.get_message_ids_for_ticket(ticket_id)
-                    
-                    if msg_ids:
-                        self.experience_db.hard_delete(msg_ids)
-                    
-                except Exception as e:
-                    logger.error(f"❌ Failed to delete vector docs for ticket {ticket_id}: {e}")
-            
-            # Then, delete from SQL (cascades to messages)
+            # Then, delete from SQL (cascades to messages). 
+            # Note: Knowledge base (ChromaDB) is preserved for RAG history.
             if candidates and not self._shutdown_requested:
                 deleted_count = self.sql.hard_delete_tickets(candidates)
             

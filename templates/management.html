@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Management Console - AI Email Automation</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -15,7 +17,7 @@
             --text-secondary: #7f8c8d;
             --border-color: #e0e0e0;
             --header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --shadow: rgba(0,0,0,0.05);
+            --shadow: rgba(0, 0, 0, 0.05);
             --accent: #667eea;
             --success: #2ecc71;
             --danger: #e74c3c;
@@ -32,7 +34,7 @@
             background: var(--header-bg);
             color: white;
             padding: 2rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             margin-bottom: 2rem;
         }
 
@@ -52,7 +54,7 @@
         }
 
         .card-header {
-            background: rgba(0,0,0,0.02);
+            background: rgba(0, 0, 0, 0.02);
             border-bottom: 1px solid var(--border-color);
             padding: 1.25rem 1.5rem;
             font-weight: 600;
@@ -115,8 +117,15 @@
             text-transform: uppercase;
         }
 
-        .badge-staff { background: #e7f3ff; color: #0066cc; }
-        .badge-admin { background: #ffe7e7; color: #cc0000; }
+        .badge-staff {
+            background: #e7f3ff;
+            color: #0066cc;
+        }
+
+        .badge-admin {
+            background: #ffe7e7;
+            color: #cc0000;
+        }
 
         .table-responsive {
             margin: 0;
@@ -136,13 +145,15 @@
             vertical-align: middle;
         }
 
-        .form-control, .form-select {
+        .form-control,
+        .form-select {
             border-radius: 8px;
             padding: 0.6rem 1rem;
             border: 2px solid var(--border-color);
         }
 
-        .form-control:focus, .form-select:focus {
+        .form-control:focus,
+        .form-select:focus {
             border-color: var(--accent);
             box-shadow: none;
         }
@@ -154,8 +165,14 @@
             transition: all 0.2s;
         }
 
-        .btn-primary { background-color: var(--accent); border: none; }
-        .btn-primary:hover { background-color: #5568d3; }
+        .btn-primary {
+            background-color: var(--accent);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background-color: #5568d3;
+        }
 
         .status-toggle {
             cursor: pointer;
@@ -201,20 +218,200 @@
             right: 1rem;
             z-index: 9999;
         }
+
+        /* Dark Mode Variables */
+        body.dark-mode {
+            --bg-primary: #1a1a1a;
+            --bg-card: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #a0a0a0;
+            --border-color: #404040;
+            --header-bg: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
+            --shadow: rgba(0, 0, 0, 0.3);
+            --accent: #818cf8;
+            /* Vibrant indigo */
+            --success: #34d399;
+            /* Emerald */
+            --danger: #ef4444;
+            /* Red */
+            --warning: #fbbf24;
+            /* Amber */
+        }
+
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: background 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        body.dark-mode .theme-toggle {
+            color: #e0e0e0;
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        /* Smooth transitions */
+        body {
+            transition: background 0.3s, color 0.3s;
+        }
+
+        .card,
+        .staff-metric-card {
+            transition: background 0.3s, transform 0.2s, box-shadow 0.2s;
+        }
+
+        /* Dark Mode Component Overrides */
+        body.dark-mode .card,
+        body.dark-mode .staff-metric-card,
+        body.dark-mode .modal-content {
+            background-color: var(--bg-card) !important;
+            color: var(--text-primary) !important;
+            border-color: var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark-mode .card-header {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary) !important;
+        }
+
+        body.dark-mode .table {
+            color: var(--text-primary) !important;
+            --bs-table-bg: transparent !important;
+            --bs-table-color: var(--text-primary) !important;
+        }
+
+        body.dark-mode .table tbody tr {
+            background-color: transparent !important;
+            color: var(--text-primary) !important;
+        }
+
+        body.dark-mode .table thead th {
+            background-color: rgba(0, 0, 0, 0.3) !important;
+            color: var(--text-secondary) !important;
+            border-bottom-color: var(--border-color);
+        }
+
+        body.dark-mode .table td {
+            border-bottom-color: var(--border-color);
+            color: var(--text-primary) !important;
+        }
+
+        body.dark-mode .table-hover tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.05) !important;
+        }
+
+        body.dark-mode .form-label {
+            color: var(--text-primary) !important;
+        }
+
+        body.dark-mode .form-control,
+        body.dark-mode .form-select {
+            background-color: #2b2b2b !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+
+        body.dark-mode .form-control::placeholder {
+            color: #888 !important;
+        }
+
+        body.dark-mode .metric-item {
+            background: rgba(0, 0, 0, 0.3) !important;
+        }
+
+        body.dark-mode .metric-value {
+            color: #fff !important;
+        }
+
+        body.dark-mode .badge-staff {
+            background: rgba(0, 102, 204, 0.2) !important;
+            color: #4da6ff !important;
+        }
+
+        body.dark-mode .badge-admin {
+            background: rgba(204, 0, 0, 0.2) !important;
+            color: #ff4d4d !important;
+        }
+
+        body.dark-mode .btn-light {
+            background-color: #3d3d3d !important;
+            border-color: #444 !important;
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .dropdown-menu {
+            background-color: #2d2d2d !important;
+            border-color: var(--border-color);
+        }
+
+        body.dark-mode .dropdown-item {
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .dropdown-item:hover {
+            background-color: #3d3d3d !important;
+            color: #fff !important;
+        }
+
+        body.dark-mode .status-toggle.active {
+            background: var(--success) !important;
+        }
+
+        body.dark-mode .staff-metric-card {
+            border-left-color: #6366f1 !important;
+            /* Indigo/Blue accent */
+        }
+
+        body.dark-mode .text-secondary,
+        body.dark-mode .small.text-secondary {
+            color: #a0a0a0 !important;
+        }
+
+        body.dark-mode .alert {
+            background-color: #2d2d2d !important;
+            border-color: var(--border-color);
+            color: #e0e0e0 !important;
+        }
     </style>
 </head>
+
 <body>
     <div class="header">
         <div class="container-fluid d-flex justify-content-between align-items-center">
             <div>
                 <h1>🛡️ Management Console</h1>
-                <p>Enterprise Support Administration</p>
+                <p>Support Administration</p>
+                <div style="font-weight: 500; font-size: 0.85rem; opacity: 0.9; margin-top: 0.5rem;">
+                    👤 Active Admin: <strong style="text-decoration: underline;">{{ user.username }}</strong>
+                </div>
             </div>
-            <div class="d-flex gap-3">
-                <a href="{{ url_for('index', view='staff') }}" class="btn btn-outline-light">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
+                </button>
+                <button onclick="showChangePasswordModal('{{ user.username }}')" class="btn btn-outline-light btn-sm"
+                    style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                    🔑 My Password
+                </button>
+                <a href="{{ url_for('index', view='staff') }}" class="btn btn-outline-light btn-sm"
+                    style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     📊 Staff Dashboard
                 </a>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light">
+                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm"
+                    style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem;">
                     🚪 Logout
                 </a>
             </div>
@@ -223,14 +420,15 @@
 
     <div class="container-main">
         {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category }} alert-dismissible fade show card" role="alert" style="margin-bottom: 1rem; border-left: 5px solid {{ 'green' if category=='success' else 'red' }}">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show card" role="alert"
+            style="margin-bottom: 1rem; border-left: 5px solid {{ 'green' if category=='success' else 'red' }}">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
         {% endwith %}
 
         <!-- Staff Performance Grid -->
@@ -311,40 +509,63 @@
                                         <div class="small text-secondary">ID: {{ user_row.id }}</div>
                                     </td>
                                     <td>
-                                        <span class="badge {{ 'badge-admin' if user_row.role == 'admin' else 'badge-staff' }}">
+                                        <span
+                                            class="badge {{ 'badge-admin' if user_row.role == 'admin' else 'badge-staff' }}">
                                             {{ user_row.role | upper }}
                                         </span>
                                     </td>
                                     <td>
-                                        <form method="POST" action="{{ url_for('admin_toggle_user_assignment', username=user_row.username) }}">
-                                            <button type="submit" class="border-0 bg-transparent p-0" title="Toggle Ticket Assignment">
-                                                <div class="status-toggle {{ 'active' if user_row.is_assignable }}"></div>
+                                        <form method="POST"
+                                            action="{{ url_for('admin_toggle_user_assignment', username=user_row.username) }}">
+                                            <button type="submit" class="border-0 bg-transparent p-0"
+                                                title="Toggle Ticket Assignment">
+                                                <div class="status-toggle {{ 'active' if user_row.is_assignable }}">
+                                                </div>
                                             </button>
                                         </form>
                                     </td>
                                     <td>
-                                        <form method="POST" action="{{ url_for('admin_toggle_user_status', username=user_row.username) }}">
-                                            <button type="submit" class="border-0 bg-transparent p-0" title="Toggle Login Access" {{ 'disabled' if user_row.username == user.username }}>
-                                                <div class="status-toggle {{ 'active' if user_row.is_active }} {{ 'opacity-50' if user_row.username == user.username }}"></div>
+                                        <form method="POST"
+                                            action="{{ url_for('admin_toggle_user_status', username=user_row.username) }}">
+                                            <button type="submit" class="border-0 bg-transparent p-0"
+                                                title="Toggle Login Access" {{ 'disabled' if
+                                                user_row.username==user.username }}>
+                                                <div
+                                                    class="status-toggle {{ 'active' if user_row.is_active }} {{ 'opacity-50' if user_row.username == user.username }}">
+                                                </div>
                                             </button>
                                         </form>
                                     </td>
                                     <td>
-                                        <small>{{ user_row.last_login[:16] if user_row.last_login else 'Never' }}</small>
+                                        <small>{{ user_row.last_login[:16] if user_row.last_login else 'Never'
+                                            }}</small>
                                     </td>
                                     <td>
                                         <div class="d-flex gap-2">
                                             <div class="dropdown">
-                                                <button class="btn btn-sm btn-light border dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                <button class="btn btn-sm btn-light border dropdown-toggle"
+                                                    type="button" data-bs-toggle="dropdown">
                                                     Actions
                                                 </button>
                                                 <ul class="dropdown-menu shadow">
-                                                    <li><a class="dropdown-item" href="#" onclick="showChangePasswordModal('{{ user_row.username }}')">🔑 Reset Password</a></li>
+                                                    {% if user_row.role != 'admin' or user_row.username == user.username
+                                                    %}
+                                                    <li><a class="dropdown-item" href="#"
+                                                            onclick="showChangePasswordModal('{{ user_row.username }}')">🔑
+                                                            Reset Password</a></li>
+                                                    {% else %}
+                                                    <li><span class="dropdown-item text-secondary small"
+                                                            title="Admin passwords can only be changed by the user themselves.">🔒
+                                                            Reset Restricted</span></li>
+                                                    {% endif %}
                                                 </ul>
                                             </div>
                                             {% if user_row.username != user.username %}
-                                            <form method="POST" action="{{ url_for('admin_delete_user', username=user_row.username) }}" onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Permanently Delete User">
+                                            <form method="POST"
+                                                action="{{ url_for('admin_delete_user', username=user_row.username) }}"
+                                                onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                    title="Permanently Delete User">
                                                     🗑️
                                                 </button>
                                             </form>
@@ -369,7 +590,8 @@
                         <form method="POST" action="{{ url_for('admin_create_user') }}">
                             <div class="mb-3">
                                 <label class="form-label">Username</label>
-                                <input type="text" name="username" class="form-control" placeholder="e.g. john_doe" required pattern="[a-zA-Z0-9_]+">
+                                <input type="text" name="username" class="form-control" placeholder="e.g. john_doe"
+                                    required pattern="[a-zA-Z0-9_]+">
                                 <div class="form-text">Letters, numbers, and underscores only.</div>
                             </div>
                             <div class="mb-3">
@@ -411,28 +633,35 @@
                 </div>
             </div>
         </div>
-        
+
         <!-- Ticket Reassignment Section -->
         <div class="card mt-4">
-           <div class="card-header">
-               <span>🔄 Quick Ticket Reassignment</span>
-               <button class="btn btn-sm btn-outline-primary" id="btnRefreshTickets">Refresh List</button>
-           </div>
-           <div class="card-body p-0">
-               <div class="table-responsive">
-                   <table class="table table-sm table-hover" id="reassignmentTable">
-                       <thead>
-                           <tr>
-                               <th>Subject</th>
-                               <th>Assigned To</th>
-                           </tr>
-                       </thead>
-                       <tbody id="reassignmentList">
-                           <tr><td colspan="2" class="text-center p-4 text-secondary">Loading active tickets...</td></tr>
-                       </tbody>
-                   </table>
-               </div>
-           </div>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>🔄 Quick Ticket Reassignment</span>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-success" id="btnAutoAssign"
+                        title="Automatically assign all open, unassigned tickets to the least busy staff">✨ Auto
+                        Assign</button>
+                    <button class="btn btn-sm btn-outline-primary" id="btnRefreshTickets">Refresh List</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="reassignmentTable">
+                        <thead>
+                            <tr>
+                                <th>Subject</th>
+                                <th>Assigned To</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reassignmentList">
+                            <tr>
+                                <td colspan="2" class="text-center p-4 text-secondary">Loading active tickets...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -464,8 +693,8 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         const socket = io({ transports: ['websocket', 'polling'] });
-        const allUsers = {{ users | tojson }};
-        const staffMembers = {{ staff_members | tojson }};
+        const allUsers = {{ users | tojson | safe }};
+        const staffMembers = {{ staff_members | tojson | safe }};
 
         // Initialize WebSockets
         socket.on('connect', () => {
@@ -489,10 +718,33 @@
             refreshMetrics(); // Counts might change
         });
 
+        // Theme Toggle Logic
+        function toggleTheme() {
+            const body = document.body;
+            const isDark = body.classList.toggle('dark-mode');
+            localStorage.setItem('darkMode', isDark);
+            updateThemeButton(isDark);
+        }
+
+        function updateThemeButton(isDark) {
+            const icon = document.getElementById('theme-icon');
+            const text = document.getElementById('theme-text');
+            if (icon) icon.textContent = isDark ? '☀️' : '🌙';
+            if (text) text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
+        }
+
+        // Initialize Theme
+        const savedTheme = localStorage.getItem('darkMode') === 'true';
+        if (savedTheme) {
+            document.body.classList.add('dark-mode');
+            updateThemeButton(true);
+        }
+
         function refreshMetrics() {
             const range = document.getElementById('timeRangeSelect').value;
             socket.emit('get_staff_metrics', { time_range: range });
         }
+
 
         async function refreshReassignmentList() {
             try {
@@ -514,18 +766,22 @@
 
                 openTickets.forEach(ticket => {
                     const tr = document.createElement('tr');
-                    
-                    // Create list of options, ensuring the current assignee is always included 
-                    // even if they are currently not assignable
+
+                    // Filter assignable users
+                    const assignableUsers = allUsers.filter(u => u.is_active && u.is_assignable);
+
                     let options = `<option value="Unassigned" ${ticket.assigned_to === 'Unassigned' ? 'selected' : ''}>Unassigned</option>`;
-                    
+
+                    // Ensure current assignee is in the list even if opted out
                     const dropdownUsers = [...assignableUsers];
                     if (ticket.assigned_to !== 'Unassigned' && !dropdownUsers.find(u => u.username === ticket.assigned_to)) {
-                        // Current assignee is not in the assignable list (e.g. they opted out), 
-                        // but they are still assigned, so add them as a special case
-                        dropdownUsers.push({ username: ticket.assigned_to, role: 'unknown (opted-out)' });
+                        dropdownUsers.push({ username: ticket.assigned_to });
                     }
-                    
+
+                    dropdownUsers.forEach(u => {
+                        options += `<option value="${u.username}" ${ticket.assigned_to === u.username ? 'selected' : ''}>${u.username}</option>`;
+                    });
+
                     tr.innerHTML = `
                         <td class="text-truncate" style="max-width: 600px;">${ticket.subject}</td>
                         <td>
@@ -536,6 +792,7 @@
                     `;
                     tbody.appendChild(tr);
                 });
+
             } catch (err) {
                 console.error('Failed to fetch tickets:', err);
             }
@@ -553,10 +810,16 @@
 
         document.getElementById('timeRangeSelect').addEventListener('change', refreshMetrics);
         document.getElementById('btnRefreshTickets').addEventListener('click', refreshReassignmentList);
+        document.getElementById('btnAutoAssign').addEventListener('click', () => {
+            if (confirm("This will automatically assign open, unassigned tickets to active staff members using the load balancer. Continue?")) {
+                socket.emit('trigger_auto_assign');
+            }
+        });
 
         // Auto-refresh every 30 seconds
         setInterval(refreshMetrics, 30000);
         setInterval(refreshReassignmentList, 60000);
     </script>
 </body>
+
 </html>

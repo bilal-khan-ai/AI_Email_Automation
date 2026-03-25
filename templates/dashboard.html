@@ -831,21 +831,17 @@
         }
 
         .theme-toggle {
-            position: fixed;
-            top: 1.5rem;
-            right: 2rem;
             background: rgba(255, 255, 255, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.3);
             color: white;
-            padding: 0.5rem 1rem;
+            padding: 0.4rem 1rem;
             border-radius: 20px;
             cursor: pointer;
-            backdrop-filter: blur(5px);
-            z-index: 1000;
             display: flex;
             align-items: center;
             gap: 0.5rem;
             transition: background 0.3s;
+            font-size: 0.8rem;
         }
         .theme-toggle:hover { background: rgba(255, 255, 255, 0.3); }
         body.dark-mode .theme-toggle { color: #e0e0e0; background: rgba(0, 0, 0, 0.4); }
@@ -862,9 +858,7 @@
     </style>
 </head>
 <body>
-    <button class="theme-toggle" onclick="toggleTheme()">
-        <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
-    </button>
+    <!-- Theme toggle moved to header -->
 
     <div class="header">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
@@ -875,10 +869,16 @@
                     👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{ 'Administrator' if user.role == 'admin' else 'Support Staff' }})
                 </div>
             </div>
-            <div style="display: flex; gap: 1rem; align-items: center;">
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
+                </button>
+                <button onclick="showUserPasswordModal()" class="btn btn-outline-light" style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                    🔑 Change Password
+                </button>
                 {% if user.role == 'admin' %}
                 <a href="{{ url_for('management') }}" class="btn btn-outline-light" style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
-                    🛡️ Management Console
+                    🛡️ Management
                 </a>
                 {% endif %}
                 <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm" style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem;">
@@ -1048,8 +1048,23 @@
     <!-- Toast Notification Container -->
     <div id="toast" class="toast"></div>
     
+    <!-- Change Password Modal -->
+    <div class="modal" id="userPasswordModal">
+        <div class="modal-content" style="max-width: 400px; height: auto; align-self: center; display: block;">
+            <button class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">🔑 Change Your Password</h3>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New Password</label>
+                <input type="password" id="newUserPassword" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; background: var(--input-bg); color: var(--text-primary);" placeholder="Minimum 6 characters">
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <button onclick="updateUserPassword()" id="btnUpdateUserPassword" class="btn btn-primary" style="flex: 1; justify-content: center; font-weight: 600;">✨ Update Password</button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script>
         let currentTickets = [];
         let currentFilter = 'all';

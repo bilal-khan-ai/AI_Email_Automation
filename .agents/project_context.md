@@ -11,7 +11,11 @@ Core application entry point and lifecycle manager for the Support Agent.
 
 - **SupportAgent Initialization**: Orchestrates all modules (SQL, Graph, Vector DBs, AI, Processors). `[Line 154]`
 - **Signal Handling**: Graceful shutdown on SIGINT/SIGTERM. `[Lines 235-242]`
-- **Ticket Cleanup Daemon**: Background thread for soft and hard deletion of tickets. `[Lines 244-301]`
+- **Ticket Cleanup Daemon**: Background thread for automated ticket archival and removal. `[Lines 244-301]`
+- **Ticket Lifecycle Management**:
+    - **Soft Delete**: Hides inactive closed tickets from the UI. Automatically restored if a new email (customer or internal) is received for the ticket.
+    - **Hard Delete**: Permanently removes old records from PostgreSQL.
+    - **Knowledge Retention**: All message data remains in ChromaDB (Vector Store) indefinitely for RAG context, even after the source ticket is hard-deleted from SQL.
 - **Email Ingestion (`ingest_email`)**: Handles PII redaction, attachment extraction (images/docs/tables), and ticket linking. `[Line 419]`
 - **AI Response Generation (`generate_ai_response`)**: Dual RAG search (Docs + Experience) and GPT-4o-mini response drafting. `[Line 638]`
 - **Live Polling Loop (`run_live`)**: Periodic fetching of new emails from MS Graph. `[Line 798]`
@@ -54,7 +58,7 @@ PostgreSQL backend for ticket persistence and logging.
 - **Schema Initialization**: Automated setup of `tickets` and `messages` tables.
 - **Ticket Auto-Assignment (Load Balancer)**: `get_least_busy_staff()` finds active staff with lowest open ticket count. `[Line 824]`
 - **Staff Metrics**: Aggregated performance data with time-range filtering support (PostgreSQL-optimized). `[Line 901]`
-- **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion.
+- **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion. Hides records without wiping them; supports instant restoration via `reopen_ticket()`.
 - **Metadata Management**: Logging of AI entities, draft statuses, and lock states.
 
 ### [vector_db.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/vector_db.py)
