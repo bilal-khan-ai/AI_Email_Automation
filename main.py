@@ -687,9 +687,8 @@ class SupportAgent:
                 exp_prov = [p for p in provenance if p.get('source') == 'experience']
                 
                 logger.info(
-                    f"✅ Draft saved for {ticket_id} | "
-                    f"Docs used: {len(doc_prov)} | "
-                    f"Experience used: {len(exp_prov)}"
+                    f"✅ SUCCESS: AI Response Generated successfully for ticket {ticket_id} | "
+                    f"Docs: {len(doc_prov)} | Exp: {len(exp_prov)}"
                 )
                 
                 # Log top similarity scores
@@ -702,7 +701,7 @@ class SupportAgent:
                         f"   📧 Top experience similarity: {exp_prov[0].get('similarity_score', 0):.2%}"
                     )
             else:
-                logger.info(f"✅ Draft saved for {ticket_id} (no RAG context)")
+                logger.info(f"✅ SUCCESS: AI Response Generated successfully for ticket {ticket_id} (no context)")
         else:
             logger.error(f"❌ Failed to generate draft for {ticket_id}")
     
@@ -821,12 +820,25 @@ class SupportAgent:
                             f"ID: {email.get('id', 'unknown')[:20]}...: {e}"
                         )
                 
-                # Generate AI responses
-                for ticket_id in touched:
+                # Process AI Drafts (New emails + Forced Regeneration)
+                tickets_to_regen = self.sql.get_tickets_needing_regeneration()
+                if tickets_to_regen:
+                    logger.info(f"🔄 Found {len(tickets_to_regen)} tickets flagged for AI regeneration.")
+                
+                all_to_process = set(touched).union(set(tickets_to_regen))
+                
+                for ticket_id in all_to_process:
                     if self._shutdown_requested:
                         break
                     try:
                         self.generate_ai_response(ticket_id)
+                        
+                        # Failsafe: if this ticket was flagged for regeneration, ensure flag is cleared 
+                        # even if generation returned early or encountered soft error
+                        if ticket_id in tickets_to_regen:
+                            with self.sql.conn_manager.get_connection() as conn:
+                                with conn.cursor() as cur:
+                                    cur.execute("UPDATE tickets SET needs_ai_generation = FALSE WHERE ticket_id = %s", (ticket_id,))
                     except Exception as e:
                         logger.error(f"❌ Error generating AI for {ticket_id}: {e}")
                 

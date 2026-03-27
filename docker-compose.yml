@@ -29,6 +29,7 @@ services:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
     volumes:
+      - .:/app
       - ./data:/app/data
       - ./chroma_db:/app/chroma_db
       - ./chromaDB:/app/chromaDB
@@ -48,6 +49,7 @@ services:
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
     volumes:
+      - .:/app
       - ./data:/app/data
       - ./chroma_db:/app/chroma_db
       - ./chromaDB:/app/chromaDB

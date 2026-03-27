@@ -232,6 +232,20 @@
         .filter-btn:hover { border-color: #667eea; color: #667eea; }
         .filter-btn.active { background: #667eea; color: white; border-color: #667eea; }
 
+        .visibility-btn {
+            padding: 0.75rem 1.5rem;
+            border: 2px solid var(--border-color);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+        
+        .visibility-btn:hover { border-color: #667eea; color: #667eea; }
+        .visibility-btn.active { background: #667eea; color: white; border-color: #667eea; }
+
         .filter-dropdown { position: relative; display: inline-block; }
         .filter-dropdown-btn { padding: 0.75rem 1.5rem; background: var(--bg-card); border: 2px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); transition: all 0.3s; display: flex; align-items: center; gap: 0.5rem; min-width: 180px; }
         .filter-dropdown-btn:hover { border-color: #667eea; }
@@ -908,6 +922,10 @@
             <input type="text" id="search" placeholder="🔍 Search by email, subject, or ticket ID...">
         </div>
         <div class="filter-buttons">
+            <button class="visibility-btn active" data-visibility="mine">My Tickets</button>
+            <button class="visibility-btn" data-visibility="all">All Tickets</button>
+            <span style="border-right: 1px solid var(--border-color); margin: 0 10px;"></span>
+            
             <button class="filter-btn active" data-filter="all">All</button>
             <button class="filter-btn" data-filter="Open">Open</button>
             <button class="filter-btn" data-filter="Closed">Closed</button>
@@ -986,6 +1004,7 @@
                     <div class="email-composer">
                         <div class="email-composer-header">
                             <h4 style="display:inline-block; margin:0;">Draft Response</h4>
+                            <button class="btn btn-outline-primary btn-sm" onclick="regenerateAI()" id="btnRegenerateAI" style="margin-left: 1rem; padding: 2px 8px; font-size: 0.8rem;" title="Regenerate AI Draft">🔄 Regenerate AI</button>
                             <button class="header-collapse-btn" onclick="toggleRightPanel()" title="Collapse Panel">▶</button>
                             
                             <div class="composer-field" style="margin-top:1rem;">
@@ -1068,6 +1087,20 @@
     <script>
         let currentTickets = [];
         let currentFilter = 'all';
+        let currentVisibility = '{{ user.role }}' === 'admin' ? 'all' : 'mine';
+        const currentUsername = '{{ user.username }}';
+        
+        // Setup initial active states for visibility buttons based on role
+        document.addEventListener('DOMContentLoaded', () => {
+             document.querySelectorAll('.visibility-btn').forEach(b => {
+                 if (b.dataset.visibility === currentVisibility) {
+                     b.classList.add('active');
+                 } else {
+                     b.classList.remove('active');
+                 }
+             });
+        });
+        
         let currentTicketRow = null; 
         let currentTicketIdStr = null; 
         let quillEditor = null;
@@ -1437,8 +1470,13 @@
                 };
             });
 
-            // Apply Existing Filters (Status, Assignment, Customer)
+            // Apply Existing Filters (Status, Assignment, Customer, Visibility)
             let filteredTickets = processedTickets;
+
+            // Apply visibility filter
+            if (currentVisibility === 'mine') {
+                filteredTickets = filteredTickets.filter(t => t.assigned_to === currentUsername);
+            }
 
             // Apply status filter
             if (typeof currentFilter !== 'undefined' && currentFilter !== 'all') {
@@ -1953,6 +1991,39 @@
             }
         }
 
+        async function regenerateAI() {
+            if (isTicketLocked || !currentTicketIdStr) return;
+            
+            document.getElementById('btnRegenerateAI').disabled = true;
+            document.getElementById('btnRegenerateAI').innerHTML = '⏳ Generating...';
+            
+            try {
+                const response = await fetch('/api/regenerate_ai', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticket_id: currentTicketIdStr })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    showToast('🔄 AI regeneration triggered successfully. Waiting for background generation...', false);
+                    if (quillEditor) quillEditor.setText('Regenerating AI Draft... Please wait.');
+                    setTimeout(() => {
+                        loadTickets(); // Poll periodically
+                    }, 5000); 
+                } else {
+                    showToast(data.error || 'Failed to trigger regeneration', true);
+                }
+            } catch (error) {
+                console.error('Error triggering regeneration:', error);
+                showToast('Network error while requesting regeneration', true);
+            } finally {
+                document.getElementById('btnRegenerateAI').disabled = false;
+                document.getElementById('btnRegenerateAI').innerHTML = '🔄 Regenerate AI';
+            }
+        }
+
         // Send email to customer (does NOT change status)
         async function sendToCustomer() {
             if (isTicketLocked) return;
@@ -2035,6 +2106,15 @@
                 document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
                 currentFilter = this.dataset.filter;
+                displayTickets();
+            });
+        });
+
+        document.querySelectorAll('.visibility-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.visibility-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                currentVisibility = this.dataset.visibility;
                 displayTickets();
             });
         });

@@ -335,7 +335,7 @@ def index():
     
     # Get staff list for assignment dropdown
     users = auth.user_manager.list_users()
-    staff_members = [u for u in users if u['role'] == 'staff']
+    staff_members = [u for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
     
     # Pass whether the user is an admin to the template
     return render_template('dashboard.html', user=user, staff_members=staff_members, is_admin=(user['role'] == 'admin'))
@@ -347,13 +347,9 @@ def get_tickets():
     """Get tickets with normalized statuses, filtered for staff if applicable"""
     user = get_current_user()
     
-    # If staff, only show their assigned tickets
-    if user.get('role') == 'staff':
-        tickets = sql_logger.get_active_tickets(assigned_to=user['username'])
-    else:
-        # Admins see everything (though they usually use management page, 
-        # but if they visit dashboard they see all)
-        tickets = sql_logger.get_active_tickets()
+    # We now fetch all active tickets for everyone, trusting the UI to filter by default 
+    # to "My Tickets" for staff users.
+    tickets = sql_logger.get_active_tickets()
 
     # Normalize statuses and add lock information
     for ticket in tickets:
@@ -649,6 +645,23 @@ def download_attachment():
     except Exception as e:
         print(f"Error downloading attachment: {e}")
         return jsonify({'error': f'Failed to download attachment: {str(e)}'}), 500
+
+@app.route('/api/regenerate_ai', methods=['POST'])
+@login_required
+def regenerate_ai():
+    """Flag a ticket for AI regeneration"""
+    data = request.json
+    ticket_id = data.get('ticket_id')
+    
+    if not ticket_id:
+        return jsonify({'success': False, 'error': 'No ticket ID provided'}), 400
+        
+    success = sql_logger.flag_for_ai_regeneration(ticket_id)
+    if success:
+        socketio.emit('ticket_updated')
+        return jsonify({'success': True})
+    else:
+        return jsonify({'success': False, 'error': 'Database error flagging ticket'}), 500
 
 
 # ============================================================================

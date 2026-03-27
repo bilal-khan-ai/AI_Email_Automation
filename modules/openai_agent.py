@@ -13,6 +13,11 @@ import logging
 from openai import OpenAI
 from typing import List, Dict, Optional, Tuple, Any, cast
 
+# Model Configuration for GPT-5-mini
+GENERATION_MODEL = "gpt-5-mini"
+CONTEXT_WINDOW = 400000  # Updated from 128,000 to 400,000 tokens
+MAX_COMPLETION_TOKENS = 16384
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,7 +38,7 @@ class OpenAIAgent:
             logger.error(f"❌ OpenAI authentication failed: {e}")
             return False
     
-    def _format_thread_context(self, messages: List[Dict[str, Any]], max_old_messages: int = 5) -> Tuple[str, str]:
+    def _format_thread_context(self, messages: List[Dict[str, Any]], max_old_messages: int = 20) -> Tuple[str, str]:
         """
         Format thread messages into structured context.
         
@@ -84,9 +89,12 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             recent_formatted: List[str] = []
             for msg in recent_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
+                body = str(msg.get('body_text', ''))
+                if len(body) > 50000:
+                body = body[:50000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
                 recent_formatted.append(f"""
 --- {speaker} ({msg.get('timestamp', 'Unknown')}) ---
-{msg.get('body_text', '')}
+{body}
 """.strip())
             
             thread_history = older_summary + "\n\n" + "\n\n".join(recent_formatted)
@@ -95,9 +103,12 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             formatted: List[str] = []
             for msg in previous_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
+                body = str(msg.get('body_text', ''))
+                if len(body) > 10000:
+                    body = body[:10000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
                 formatted.append(f"""
 --- {speaker} ({msg.get('timestamp', 'Unknown')}) ---
-{msg.get('body_text', '')}
+{body}
 """.strip())
             
             thread_history = "\n\n".join(formatted)
@@ -120,7 +131,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
         provenance = []
         formatted_parts = []
         
-        for i, email in enumerate(list(context_emails[:3]), 1):  # Use top 3
+        for i, email in enumerate(list(context_emails[:10]), 1):  # Use top 10 for larger context
             content = email.get('content', '')
             metadata = email.get('metadata', {})
             distance = email.get('distance', 0.0)
@@ -137,8 +148,8 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
                 'metadata': metadata
             })
             
-            # Format for context (truncate if too long)
-            content_preview = content[:600] + "..." if len(content) > 600 else content
+            # Format for context (truncate if too long - increased for GPT-5)
+            content_preview = content[:5000] + "..." if len(content) > 5000 else content
             
             formatted_parts.append(f"""
 Past Support Case #{i} (Similarity: {similarity_score:.1%}):
@@ -160,7 +171,7 @@ Subject: {subject}
         subject: str = ""
     ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
         """
-        Generate AI response using GPT-4.1 mini with enhanced reasoning and sendability gate.
+        Generate AI response using GPT-5-mini with enhanced reasoning and sendability gate.
         
         ENHANCEMENTS (v2):
         - Separate documentation vs experience contexts
@@ -251,7 +262,7 @@ CRITICAL OPERATING PRINCIPLES:
    
    c) Conflict Resolution:
       - Does past experience contradict or conflict with documentation?
-      - RULE: If documentation exists, it OVERRIDES all past experience
+      - RULE: If documentation exists, it OVERRIDES all past experience 
       - RULE: Past experience is only valid when it does NOT contradict documentation
    
    d) Assumption Safety Check:
@@ -408,17 +419,17 @@ SIMILAR PAST SUPPORT CASES (for reference):
 Please draft a professional email response that addresses the customer's question. Make sure it's not wordy and it's to the point."""
 
             # 6. Call OpenAI API
-            logger.info(f"📤 Calling GPT-4o-mini for ticket {ticket_id}...")
+            logger.info(f"📤 Calling {GENERATION_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {ticket_id}...")
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=GENERATION_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.8,
-                max_tokens=32000
+                temperature=1,
+                max_completion_tokens=MAX_COMPLETION_TOKENS
             )
             
             ai_response = response.choices[0].message.content
@@ -474,7 +485,7 @@ Please draft a professional email response that addresses the customer's questio
     
     def categorize_ticket(self, customer_question: str, subject: str = "") -> str:
         """
-        Categorize a support ticket using gpt-5 nano.
+        Categorize a support ticket using gpt-4o-mini.
         
         Args:
             customer_question: The customer's question/issue
@@ -535,7 +546,7 @@ Respond with ONLY the category name, nothing else."""},
         provenance = []
         formatted_parts = []
         
-        for i, doc in enumerate(list(docs[:3]), 1):  # Use top 3
+        for i, doc in enumerate(list(docs[:10]), 1):  # Use top 10 for larger context
             content = doc.get('content', '')
             metadata = doc.get('metadata', {})
             distance = doc.get('distance', 0.0)
@@ -555,8 +566,8 @@ Respond with ONLY the category name, nothing else."""},
                 'metadata': metadata
             })
             
-            # Format for context
-            content_preview = content[:800] + "..." if len(content) > 800 else content
+            # Format for context (increased for GPT-5)
+            content_preview = content[:10000] + "..." if len(content) > 10000 else content
             
             formatted_parts.append(f"""
 Documentation #{i} (Similarity: {similarity_score:.1%}):
@@ -584,7 +595,7 @@ Source: {book} - {section}
         provenance = []
         formatted_parts = []
         
-        for i, email in enumerate(list(emails[:3]), 1):  # Use top 3
+        for i, email in enumerate(list(emails[:10]), 1):  # Use top 10 for larger context
             content = email.get('content', '')
             metadata = email.get('metadata', {})
             distance = email.get('distance', 0.0)
@@ -602,8 +613,8 @@ Source: {book} - {section}
                 'metadata': metadata
             })
             
-            # Format for context (truncate if too long)
-            content_preview = content[:600] + "..." if len(content) > 600 else content
+            # Format for context (truncate if too long - increased for GPT-5)
+            content_preview = content[:5000] + "..." if len(content) > 5000 else content
             
             formatted_parts.append(f"""
 Past Support Case #{i} (Similarity: {similarity_score:.1%}):

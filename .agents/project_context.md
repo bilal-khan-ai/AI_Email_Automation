@@ -75,7 +75,7 @@ AI orchestration for response generation, image analysis, and data categorizatio
 - **Cloud Vision**: analyze_image() uses `gpt-4o` or `gpt-4o-mini` for OCR and visual analysis. `[Line 617]`
 - **Enhanced RAG Strategy**: Integration of documentation (authoritative) and experience (advisory). `[Line 153]`
 - **Reasoning Framework**: System prompts enforcing documentation priority and sendability checks. `[Lines 235, 334]`
-- **Model Standard**: Uses `gpt-4o-mini` for cost-effective summarization and categorization.
+- **Model Standard**: Uses `gpt-4o-mini` for categorization and `gpt-5-mini` for main response generation.
 
 ### [graph_connector.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/graph_connector.py)
 Resilient Microsoft Graph API integration.
@@ -125,4 +125,4 @@ Data privacy protection using Microsoft Presidio.
 - **Role-Based Access Control (RBAC)**: Active (Admin/Staff roles).
 - **Ticket Auto-Assignment**: "Least Busy" load balancer implemented inside SQLLogger.
 - **Hardware Ready**: CPU-only VM compatible.
-- **AI Models**: Standardized on production-ready `gpt-4o-mini`.
+- **AI Models**: Standardized on production-ready `gpt-4o-mini` (Categorization) and `gpt-5-mini` (Generation).

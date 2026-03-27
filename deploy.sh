@@ -65,11 +65,14 @@ ssh $SSH_USER@$VM_IP << EOF
         sudo chmod +x /usr/local/bin/docker-compose
     fi
 
-    # Build and start the containers
-    echo "Building and starting Docker containers..."
-    sudo docker-compose up -d --build
+    # Update/Restart containers (volume mapping will pick up new code)
+    echo "⚡ Applying updates and restarting services..."
+    sudo docker-compose up -d
+    
+    # Reload worker specifically to apply main.py changes immediately
+    sudo docker-compose restart worker
 
-    echo "✅ Deployment successful! The containers are running in the background."
+    echo "✅ Rapid deployment successful! (Changes applied via volume mount)"
     sudo docker-compose ps
 EOF
 
