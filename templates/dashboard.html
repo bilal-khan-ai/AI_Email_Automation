@@ -27,8 +27,8 @@
         body.dark-mode {
             --bg-primary: #1a1a1a;
             --bg-card: #2d2d2d;
-            --text-primary: #e0e0e0;
-            --text-secondary: #a0a0a0;
+            --text-primary: #ffffff;
+            --text-secondary: #cbd5e1;
             --border-color: #404040;
             --input-bg: #333333;
             --header-bg: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
@@ -37,6 +37,11 @@
             --section-bg-info: #383838;
             --section-bg-attach: #003366;
             --section-bg-warn: #4d3e00;
+        }
+
+        body.dark-mode .text-secondary,
+        body.dark-mode .text-muted {
+            color: #cbd5e1 !important;
         }
 
         /* Dark mode overrides for Quill's interface */
@@ -343,6 +348,71 @@
 
         .assignment-badge.unassigned { background: #f0f0f0; color: #666; }
         
+        /* Timeline UI Styles */
+        .btn-timeline {
+            position: absolute;
+            bottom: 0.75rem;
+            right: 0.75rem;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 10;
+            color: #fff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .btn-timeline:hover {
+            background: var(--accent);
+            color: white;
+            border-color: var(--accent);
+            transform: scale(1.1);
+        }
+
+        .timeline-container {
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .timeline-container::before {
+            content: '';
+            position: absolute;
+            left: 0.75rem;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-color);
+        }
+
+        .timeline-event {
+            position: relative;
+            margin-bottom: 2rem;
+            padding: 1.25rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--accent);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .timeline-event::before {
+            content: '';
+            position: absolute;
+            left: -1.6rem;
+            top: 0.8rem;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            border: 2px solid var(--bg-card);
+        }
+
         .ticket-subject { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); word-wrap: break-word; }
         .ticket-meta { display: flex; gap: 2rem; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem; flex-wrap: wrap; }
         
@@ -455,16 +525,23 @@
         .close-btn {
             position: absolute;
             top: 1rem;
-            right: 1rem;
-            background: none;
-            border: none;
-            font-size: 2rem;
+            right: 1.5rem;
+            background: rgba(0,0,0,0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            font-size: 1.5rem;
             cursor: pointer;
-            color: var(--text-secondary);
-            z-index: 10;
+            color: var(--text-primary);
+            z-index: 1100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            line-height: 1;
         }
-
-        .close-btn:hover { color: var(--text-primary); }
+        .close-btn:hover { background: #e74c3c; color: white; border-color: #e74c3c; }
         
         .modal-header-actions { 
             display: flex; 
@@ -956,10 +1033,9 @@
     
     <div class="modal" id="ticketModal">
         <div class="modal-content">
-            <button class="close-btn" onclick="closeModal()">&times;</button>
-
+            <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)">&times;</button>
             <div class="modal-header-actions">
-                <h2 id="modal-subject" style="margin: 0;"></h2>
+                <h2 id="modal-subject" style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 3rem;"></h2>
                 <div id="lockStatus" class="lock-status">🔒 Locked by another user</div>
                 <div class="assignment-dropdown" style="margin-left: auto;">
                     <select id="modal-assignment">
@@ -1069,8 +1145,8 @@
     
     <!-- Change Password Modal -->
     <div class="modal" id="userPasswordModal">
-        <div class="modal-content" style="max-width: 400px; height: auto; align-self: center; display: block;">
-            <button class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
+        <div class="modal-content" style="max-width: 400px; height: auto; align-self: center; display: block; position: relative;">
+            <button type="button" class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
             <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">🔑 Change Your Password</h3>
             <div style="margin-bottom: 1.5rem;">
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New Password</label>
@@ -1084,7 +1160,25 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <!-- Timeline Modal -->
+    <div id="timelineModal" class="modal">
+        <div class="modal-content" style="max-width: 600px; position: relative;">
+            <button type="button" class="close-btn" onclick="closeTimeline()" title="Close">&times;</button>
+            <div class="modal-header d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+                <h2 class="mb-0">🕒 Ticket Lifecycle Timeline</h2>
+            </div>
+            <div class="modal-body">
+                <div id="timelineTicketInfo" class="mb-3 py-2 border-bottom fw-bold"></div>
+                <div id="timelineList" class="timeline-container">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script>
+
         let currentTickets = [];
         let currentFilter = 'all';
         let currentVisibility = '{{ user.role }}' === 'admin' ? 'all' : 'mine';
@@ -1527,7 +1621,7 @@
 
             const ticketCards = filteredTickets.map(ticket => {
                 const ticketId = escapeHtml(ticket.ticket_id || 'NO-ID');
-                const displayId = truncateTicketId(ticket.ticket_id || 'NO-ID');
+                const displayId = escapeHtml(ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID'));
                 const rowId = ticket.id;
                 const assignedTo = escapeHtml(ticket.assigned_to || 'Unassigned');
                 const subject = escapeHtml(ticket.subject || 'No Subject');
@@ -1565,6 +1659,7 @@
 
                 return `
                 <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
+                    <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', '${subject.replace(/'/g, "\\'")}', '${displayId}')">🕒</div>
                     <div class="ticket-header">
                         <div class="ticket-id-row">
                             <span class="ticket-id" title="${ticketId}">${displayId}</span>
@@ -1611,7 +1706,7 @@
 
             document.getElementById('emailTo').value = ticket.customer_email || '';
             document.getElementById('modal-subject').textContent = ticket.subject || 'No Subject';
-            document.getElementById('modal-ticket-id').textContent = truncateTicketId(ticket.ticket_id || 'NO-ID');
+            document.getElementById('modal-ticket-id').textContent = ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID');
             document.getElementById('modal-ticket-id').title = ticket.ticket_id || 'NO-ID';
             document.getElementById('modal-email').textContent = ticket.customer_email || 'Unknown';
             document.getElementById('modal-date').textContent = formatDate(ticket.last_updated);
@@ -1931,14 +2026,21 @@
         }
         
         function closeModal() {
-            if (currentTicketIdStr && socket && socket.connected) {
-                socket.emit('unlock_ticket', { ticket_id: currentTicketIdStr });
+            try {
+                console.log('Closing ticket modal...');
+                if (currentTicketIdStr && socket && typeof socket.connected !== 'undefined') {
+                    socket.emit('unlock_ticket', { ticket_id: currentTicketIdStr });
+                }
+                
+                document.getElementById('ticketModal').classList.remove('active');
+                currentTicketRow = null;
+                currentTicketIdStr = null;
+                if (quillEditor) quillEditor.setText('');
+            } catch (error) {
+                console.error('Error in closeModal:', error);
+                alert('Error closing modal: ' + Math.random() + ' ' + error.message);
+                document.getElementById('ticketModal').classList.remove('active');
             }
-            
-            document.getElementById('ticketModal').classList.remove('active');
-            currentTicketRow = null;
-            currentTicketIdStr = null;
-            if (quillEditor) quillEditor.setText('');
         }
         
         // Show toast notification
@@ -2109,6 +2211,99 @@
                 displayTickets();
             });
         });
+
+        // SLA Timeline Handlers
+        socket.on('ticket_timeline_update', (data) => {
+            const container = document.getElementById('timelineList');
+            if (!container) return;
+            
+            container.innerHTML = '';
+            
+            if (!data.timeline || data.timeline.length === 0) {
+                container.innerHTML = '<p class="text-center py-4">No events logged for this ticket yet.</p>';
+                return;
+            }
+
+            data.timeline.forEach(ev => {
+                const div = document.createElement('div');
+                div.className = 'timeline-event';
+                // Professional timeline badges
+                const timeStr = new Date(ev.timestamp).toLocaleString();
+                
+                let eventTitle = ev.event_type.toUpperCase();
+                let messageHtml = '';
+                
+                if (ev.event_type === 'assigned') {
+                    if (ev.details && ev.details.to) {
+                        messageHtml = `Assigned to <strong>${ev.details.to}</strong>`;
+                        if (ev.details.from && ev.details.from !== 'None') {
+                            messageHtml += ` (previously ${ev.details.from})`;
+                        }
+                    } else {
+                        messageHtml = 'Assignment updated';
+                    }
+                } else if (ev.event_type === 'created') {
+                    messageHtml = 'Ticket was created and added to the queue.';
+                } else if (ev.event_type === 'status_change') {
+                    if (ev.details && ev.details.new_status) {
+                        messageHtml = `Status changed to <span style="color:var(--accent); font-weight:bold;">${ev.details.new_status}</span>`;
+                    } else {
+                        messageHtml = 'Ticket status updated';
+                    }
+                } else if (ev.event_type === 'note' || ev.event_type === 'system_note') {
+                    messageHtml = ev.details && ev.details.note ? ev.details.note : 'Note added';
+                } else {
+                    if (ev.details) {
+                        try {
+                            messageHtml = `<pre style="margin:0; font-size:0.8rem; overflow:auto; max-height:100px; color: #a5b4fc; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">${JSON.stringify(ev.details, null, 2)}</pre>`;
+                        } catch(e) { messageHtml = String(ev.details); }
+                    } else {
+                        messageHtml = '';
+                    }
+                }
+
+                const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ev.actor);
+                const actorLabel = isEmail ? 'Customer' : 'Action by';
+
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <span class="badge" style="background: var(--accent); border-radius: 4px; padding: 4px 8px; font-size: 0.75rem;">${eventTitle}</span>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">
+                            <span class="badge bg-light text-dark border me-1">${ev.display_id || (ev.ticket_id ? ev.ticket_id.substring(0, 8) + '...' : 'Unknown')}</span>
+                            ${timeStr}
+                        </div>
+                    </div>
+                    <div class="timeline-body" style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+                        ${messageHtml ? `<div style="margin-bottom: 8px; font-size: 0.95rem;">${messageHtml}</div>` : ''}
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);"><strong>${actorLabel}:</strong> ${ev.actor || 'System'}</div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        });
+
+        function closeTimeline() {
+            document.getElementById('timelineModal').classList.remove('active');
+        }
+
+        function showTimeline(ticketId, subject, displayId = '') {
+            const infoEl = document.getElementById('timelineTicketInfo');
+            if (infoEl) infoEl.textContent = `Ticket: ${subject} (#${displayId || truncateTicketId(ticketId)})`;
+            
+            const listEl = document.getElementById('timelineList');
+            if (listEl) listEl.innerHTML = '<p class="text-center py-4">Loading timeline...</p>';
+            
+            openModal('timelineModal');
+            socket.emit('get_ticket_timeline', { ticket_id: ticketId });
+        }
+
+
+
+        // Add to existing openModal if it's not generic
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) modal.classList.add('active');
+        }
 
         document.querySelectorAll('.visibility-btn').forEach(btn => {
             btn.addEventListener('click', function() {

@@ -89,12 +89,12 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             recent_formatted: List[str] = []
             for msg in recent_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
-                body = str(msg.get('body_text', ''))
-                if len(body) > 50000:
-                body = body[:50000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
+                body_text = str(msg.get('body_text', ''))
+                if len(body_text) > 50000:
+                    body_text = body_text[0:50000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
                 recent_formatted.append(f"""
 --- {speaker} ({msg.get('timestamp', 'Unknown')}) ---
-{body}
+{body_text}
 """.strip())
             
             thread_history = older_summary + "\n\n" + "\n\n".join(recent_formatted)
@@ -103,12 +103,12 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             formatted: List[str] = []
             for msg in previous_messages:
                 speaker = "SUPPORT AGENT" if msg.get('is_internal') else "CUSTOMER"
-                body = str(msg.get('body_text', ''))
-                if len(body) > 10000:
-                    body = body[:10000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
+                body_text = str(msg.get('body_text', ''))
+                if len(body_text) > 10000:
+                    body_text = body_text[0:10000] + "... [MESSAGE TRUNCATED FOR LENGTH]"
                 formatted.append(f"""
 --- {speaker} ({msg.get('timestamp', 'Unknown')}) ---
-{body}
+{body_text}
 """.strip())
             
             thread_history = "\n\n".join(formatted)
@@ -149,7 +149,7 @@ Approximate timespan: {older_messages[0].get('timestamp', '')} to {older_message
             })
             
             # Format for context (truncate if too long - increased for GPT-5)
-            content_preview = content[:5000] + "..." if len(content) > 5000 else content
+            content_preview = content[0:5000] + "..." if len(content) > 5000 else content
             
             formatted_parts.append(f"""
 Past Support Case #{i} (Similarity: {similarity_score:.1%}):
@@ -567,7 +567,7 @@ Respond with ONLY the category name, nothing else."""},
             })
             
             # Format for context (increased for GPT-5)
-            content_preview = content[:10000] + "..." if len(content) > 10000 else content
+            content_preview = content[0:10000] + "..." if len(content) > 10000 else content
             
             formatted_parts.append(f"""
 Documentation #{i} (Similarity: {similarity_score:.1%}):
@@ -614,7 +614,7 @@ Source: {book} - {section}
             })
             
             # Format for context (truncate if too long - increased for GPT-5)
-            content_preview = content[:5000] + "..." if len(content) > 5000 else content
+            content_preview = content[0:5000] + "..." if len(content) > 5000 else content
             
             formatted_parts.append(f"""
 Past Support Case #{i} (Similarity: {similarity_score:.1%}):

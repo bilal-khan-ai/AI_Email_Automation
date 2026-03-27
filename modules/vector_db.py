@@ -166,7 +166,7 @@ class VectorDatabase:
         try:
             # Check if already soft-deleted
             if self._is_deleted(email_id):
-                logger.warning(f"⚠️  Skipping add for already deleted email (ID: {email_id[:20]})")
+                logger.warning(f"⚠️  Skipping add for already deleted email (ID: {email_id[0:20]})")
                 return False
             
             # Prepare text content
@@ -197,13 +197,13 @@ class VectorDatabase:
             )
             
             logger.info(
-                f"✅ Added email to vector DB: {email_id[:20]} | "
+                f"✅ Added email to vector DB: {email_id[0:20]} | "
                 f"Ticket: {meta.get('ticket_id', 'N/A')}"
             )
             return True
         
         except Exception as e:
-            logger.error(f"❌ Error adding email (ID: {email_id[:20]}): {e}")
+            logger.error(f"❌ Error adding email (ID: {email_id[0:20]}): {e}")
             return False
     
     def add_emails_batch(self, emails: List[Dict]) -> int:

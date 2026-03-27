@@ -143,6 +143,7 @@ class SQLLogger:
                         CREATE TABLE IF NOT EXISTS tickets (
                             id SERIAL PRIMARY KEY,
                             ticket_id TEXT UNIQUE NOT NULL,
+                            display_id TEXT UNIQUE,
                             conversation_id TEXT,
                             subject TEXT,
                             customer_email TEXT,
@@ -168,11 +169,22 @@ class SQLLogger:
                             END IF;
                             
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='display_id') THEN 
+                                ALTER TABLE tickets ADD COLUMN display_id TEXT UNIQUE;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='tickets' AND column_name='needs_ai_generation') THEN 
                                 ALTER TABLE tickets ADD COLUMN needs_ai_generation BOOLEAN DEFAULT FALSE;
                             END IF;
                         END $$;
                     """)
+
+                    try:
+                        # Trigger backfill for any tickets without display_id
+                        self.backfill_display_ids()
+                    except Exception as backfill_err:
+                        logger.warning(f"⚠️ Backfill failed but continuing: {backfill_err}")
                     
                     # 2. CHILD TABLE: MESSAGES
                     cur.execute("""
@@ -227,6 +239,29 @@ class SQLLogger:
                         ON ticket_messages(deleted_at) WHERE deleted_at IS NOT NULL
                     """)
                     
+                    # 4. SLA TRACKING TABLE: TICKET_EVENTS
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS ticket_events (
+                            id SERIAL PRIMARY KEY,
+                            ticket_id TEXT NOT NULL,
+                            event_type TEXT NOT NULL,
+                            actor TEXT,
+                            timestamp TIMESTAMPTZ DEFAULT NOW(),
+                            details JSONB,
+                            FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
+                        )
+                    """)
+                    
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_event_ticket 
+                        ON ticket_events(ticket_id)
+                    """)
+                    
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_event_timestamp 
+                        ON ticket_events(timestamp DESC)
+                    """)
+                    
             logger.info("✅ PostgreSQL schema initialized (with provenance + soft-delete support)")
             return True
             
@@ -253,22 +288,40 @@ class SQLLogger:
                 with conn.cursor() as cur:
                     now = datetime.now()
                     
+                    # Generate human-readable Display ID
+                    # Format: DOMAIN-MMDD-SEQ
+                    domain = customer_email.split('@')[-1].split('.')[0].upper()
+                    date_str = now.strftime('%m%d')
+                    
+                    # Count existing tickets for this domain today to get sequence
+                    cur.execute("""
+                        SELECT COUNT(*) FROM tickets 
+                        WHERE customer_email LIKE %s 
+                        AND created_at >= %s
+                    """, (f'%@{customer_email.split("@")[-1]}', now.replace(hour=0, minute=0, second=0, microsecond=0)))
+                    seq = cur.fetchone()[0] + 1
+                    display_id = f"{domain}-{date_str}-{seq:02d}"
+
                     # Auto-assign ticket to least busy staff
                     assignee = self.get_least_busy_staff()
                     
                     cur.execute("""
                         INSERT INTO tickets (
-                            ticket_id, conversation_id, subject, 
+                            ticket_id, display_id, conversation_id, subject, 
                             customer_email, created_at, last_updated,
                             assigned_to
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (ticket_id) DO NOTHING
-                    """, (ticket_id, conversation_id, subject, customer_email, now, now, assignee))
+                    """, (ticket_id, display_id, conversation_id, subject, customer_email, now, now, assignee))
                     
                     created = cur.rowcount > 0
                     
                     if created:
-                        logger.info(f"✅ Created ticket {ticket_id} | Customer: {customer_email} | Subject: {subject[:50]}")
+                        logger.info(f"✅ Created ticket {display_id} | Customer: {customer_email} | Subject: {subject[:50]}")
+                        # Log SLA Event
+                        self.log_ticket_event(ticket_id, 'created', 'system')
+                        if assignee and assignee != 'Unassigned':
+                             self.log_ticket_event(ticket_id, 'assigned', 'system', {'to': assignee})
                     else:
                         logger.debug(f"ℹ️  Ticket {ticket_id} already exists (idempotent)")
             
@@ -276,6 +329,42 @@ class SQLLogger:
             
         except Exception as e:
             logger.error(f"❌ Error creating ticket {ticket_id}: {e}")
+            return False
+
+    def backfill_display_ids(self):
+        """Backfill display_id for existing tickets that don't have one."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, customer_email, created_at FROM tickets WHERE display_id IS NULL ORDER BY created_at ASC")
+                    rows = cur.fetchall()
+                    
+                    for row_id, email, created in rows:
+                        domain = email.split('@')[-1].split('.')[0].upper()
+                        date_str = created.strftime('%m%d')
+                        
+                        # Use ID as sequence for backfill to ensure uniqueness
+                        display_id = f"{domain}-{date_str}-X{row_id}"
+                        cur.execute("UPDATE tickets SET display_id = %s WHERE id = %s", (display_id, row_id))
+                    
+                    logger.info(f"✅ Backfilled display_id for {len(rows)} tickets")
+        except Exception as e:
+            logger.error(f"❌ Error backfilling display_ids: {e}")
+    
+    def log_ticket_event(self, ticket_id: str, event_type: str, actor: str, details: dict = None) -> bool:
+        """
+        Add an entry to the ticket_events table for SLA tracking.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO ticket_events (ticket_id, event_type, actor, details, timestamp)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """, (ticket_id, event_type, actor, json.dumps(details) if details else None, datetime.now()))
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error logging ticket event {event_type} for {ticket_id}: {e}")
             return False
     
     def log_message(self, ticket_id: str, email: dict, is_internal: bool = False) -> bool:
@@ -326,6 +415,9 @@ class SQLLogger:
                             f"✅ Logged message {message_id[:20]}... to ticket {ticket_id} "
                             f"| Speaker: {speaker} | Sender: {email.get('sender', 'unknown')}"
                         )
+                        # Log SLA Event
+                        event_type = 'email_received' if not is_internal else 'note_added'
+                        self.log_ticket_event(ticket_id, event_type, email.get('sender', 'unknown'))
                     else:
                         logger.debug(f"ℹ️  Message {message_id[:20]}... already exists (idempotent)")
             
@@ -979,11 +1071,12 @@ class SQLLogger:
                         WHERE deleted_at IS NULL
                         AND (
                             ticket_id ILIKE %s 
+                            OR display_id ILIKE %s
                             OR subject ILIKE %s 
                             OR customer_email ILIKE %s
                         )
                         ORDER BY last_updated DESC
-                    """, (search_pattern, search_pattern, search_pattern))
+                    """, (search_pattern, search_pattern, search_pattern, search_pattern))
                     
                     rows = cur.fetchall()
                     results = [self._convert_ticket_row(dict(row)) for row in rows]
@@ -995,7 +1088,7 @@ class SQLLogger:
             logger.error(f"❌ Error searching tickets with query '{query}': {e}")
             return []
     
-    def update_ticket_fields(self, identifier: Union[int, str], fields: dict) -> bool:
+    def update_ticket_fields(self, identifier: Union[int, str], fields: dict, actor: str = 'system') -> bool:
         """
         Update specific fields in a ticket by database ID or ticket_id.
         """
@@ -1017,6 +1110,16 @@ class SQLLogger:
                     else:
                         where_col = "ticket_id"
                         
+                    # Pre-fetch existing state for activity logging
+                    old_assignment = None
+                    t_id = identifier if where_col == "ticket_id" else None
+                    if 'assigned_to' in fields:
+                        cur.execute(f"SELECT ticket_id, assigned_to FROM tickets WHERE {where_col} = %s", (identifier,))
+                        row = cur.fetchone()
+                        if row:
+                            if not t_id: t_id = row[0]
+                            old_assignment = row[1]
+                        
                     query = sql.SQL("UPDATE tickets SET {} WHERE {} = %s").format(
                         sql.SQL(", ").join(
                             sql.SQL("{} = %s").format(ident) 
@@ -1029,7 +1132,22 @@ class SQLLogger:
                     cur.execute(query, values)
                     
                     if cur.rowcount > 0:
-                        logger.info(f"✅ Updated ticket {identifier} | Fields: {list(fields.keys())}")
+                        # Fetch display_id for nicer logging
+                        cur.execute(f"SELECT display_id FROM tickets WHERE {where_col} = %s", (identifier,))
+                        d_row = cur.fetchone()
+                        d_id = d_row[0] if d_row else identifier
+                        
+                        logger.info(f"✅ Updated ticket {d_id} | Fields: {list(fields.keys())} | Actor: {actor}")
+                        
+                        # Log Assignment Change if changed
+                        if 'assigned_to' in fields and t_id:
+                             new_assignment = fields['assigned_to']
+                             if str(old_assignment) != str(new_assignment):
+                                 self.log_ticket_event(t_id, 'assigned', actor or 'system', {
+                                     'from': old_assignment, 
+                                     'to': new_assignment
+                                 })
+                                 
                         return True
                     else:
                         logger.warning(f"⚠️  No ticket found with identifier {identifier}")
@@ -1083,6 +1201,81 @@ class SQLLogger:
         for username in staff_usernames:
             metrics.append(self.get_staff_metrics(username, time_range))
         return metrics
+
+    def get_client_stats(self, time_range: str = 'all') -> List[Dict]:
+        """
+        Get ticket statistics grouped by customer domain.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    time_filter, params = self._get_time_filter(time_range)
+                    
+                    query = """
+                        SELECT 
+                            split_part(customer_email, '@', 2) as domain,
+                            COUNT(*) as total,
+                            COUNT(*) FILTER (WHERE status = 'Open') as open,
+                            COUNT(*) FILTER (WHERE status = 'Closed') as closed,
+                            MAX(last_updated) as last_activity
+                        FROM tickets
+                        WHERE deleted_at IS NULL AND customer_email LIKE '%%@%%'
+                    """
+                    
+                    if time_filter:
+                        query += f" AND {time_filter}"
+                    
+                    query += " GROUP BY domain ORDER BY total DESC"
+                    
+                    cur.execute(query, params)
+                    rows = cur.fetchall()
+                    
+                    return [{
+                        'domain': row[0],
+                        'total_tickets': row[1],
+                        'open_tickets': row[2],
+                        'closed_tickets': row[3],
+                        'last_activity': row[4].isoformat() if row[4] else None
+                    } for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Error getting client stats: {e}")
+            return []
+
+    def get_ticket_timeline(self, ticket_id: str) -> List[Dict]:
+        """
+        Get all lifecycle events for a ticket. If ticket_id is 'GLOBAL', returns recent events.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    if ticket_id == 'GLOBAL':
+                        cur.execute("""
+                            SELECT e.*, t.display_id 
+                            FROM ticket_events e
+                            LEFT JOIN tickets t ON e.ticket_id = t.ticket_id
+                            ORDER BY e.timestamp DESC 
+                            LIMIT 100
+                        """)
+                    else:
+                        cur.execute("""
+                            SELECT e.*, t.display_id 
+                            FROM ticket_events e
+                            LEFT JOIN tickets t ON e.ticket_id = t.ticket_id
+                            WHERE e.ticket_id = %s 
+                            ORDER BY e.timestamp ASC
+                        """, (ticket_id,))
+                    
+                    rows = cur.fetchall()
+                    events = []
+                    for row in rows:
+                        event = dict(row)
+                        if isinstance(event['timestamp'], datetime):
+                            event['timestamp'] = event['timestamp'].isoformat()
+                        events.append(event)
+                    return events
+        except Exception as e:
+            logger.error(f"❌ Error fetching ticket timeline for {ticket_id}: {e}")
+            return []
 
     def _get_time_filter(self, time_range: str) -> (str, list):
         """Helper to generate SQL time filter and params"""

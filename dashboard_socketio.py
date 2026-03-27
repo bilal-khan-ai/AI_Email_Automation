@@ -1,6 +1,7 @@
 import os
 import io
 import time
+import logging
 import secrets
 import threading
 import base64
@@ -9,12 +10,15 @@ from werkzeug.utils import secure_filename
 from flask import Flask, render_template, jsonify, request, send_file, session, redirect, url_for, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from modules.sql_logger import SQLLogger
+from modules.env_manager import EnvManager
 from modules.graph_connector import GraphConnector
 import auth
 from auth import init_auth, login_required, socketio_login_required, socketio_admin_required, admin_required, get_current_user, is_admin
 from config import Config
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 # UPDATED: Initialize custom authentication
 app.config['SECRET_KEY'] = Config.SECRET_KEY
@@ -36,6 +40,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # Initialize SQL logger (db_file argument is ignored by PostgreSQL backend)
 sql_logger = SQLLogger("postgres")
 sql_logger.authenticate()
+env_manager = EnvManager()
 
 # ============================================================================
 # CRITICAL FIX: Initialize GraphConnector ONCE globally at startup
@@ -435,7 +440,8 @@ def update_ticket():
         update_payload['assigned_to'] = data.get('assigned_to')
 
     # Perform SQL Update using the database primary key
-    success = sql_logger.update_ticket_fields(ticket_db_id, update_payload)
+    actor_username = session.get('user', {}).get('username', 'system')
+    success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
 
     if success:
         # Broadcast update to all connected clients
@@ -503,6 +509,10 @@ def toggle_ticket_status():
             'new_status': new_status,
             'updated_by': user_id
         })
+
+        # Log SLA Event
+        event_type = 'closed' if new_status == 'Closed' else 'reopened'
+        sql_logger.log_ticket_event(ticket_id, event_type, session.get('user', {}).get('username', 'system'))
 
         return jsonify({
             'success': True,
@@ -583,6 +593,9 @@ def send_to_customer():
         socketio.emit('email_sent', {
             'ticket_id': ticket_id
         })
+
+        # Log SLA Event
+        sql_logger.log_ticket_event(ticket_id, 'responded', session.get('user', {}).get('username', 'system'))
 
         return jsonify({'success': True})
 
@@ -839,6 +852,74 @@ def handle_get_staff_metrics(data):
     emit('staff_metrics_update', {'metrics': metrics, 'time_range': time_range})
 
 
+@socketio.on('get_client_stats')
+@socketio_admin_required
+def handle_get_client_stats(data):
+    """Get metrics grouped by domain with time range"""
+    time_range = data.get('time_range', 'all')
+    stats = sql_logger.get_client_stats(time_range)
+    emit('client_stats_update', {'stats': stats, 'time_range': time_range})
+
+
+@socketio.on('get_ticket_timeline')
+@socketio_login_required
+def handle_get_ticket_timeline(data):
+    """Get SLA tracking timeline for a ticket"""
+    ticket_id = data.get('ticket_id')
+    if not ticket_id: return
+    timeline = sql_logger.get_ticket_timeline(ticket_id)
+    emit('ticket_timeline_update', {'ticket_id': ticket_id, 'timeline': timeline})
+
+
+@socketio.on('get_settings')
+@socketio_admin_required
+def handle_get_settings():
+    """Get current .env settings for the management UI"""
+    env_vars = env_manager.read_env()
+    # Filter for relevant settings to display
+    display_vars = {
+        'ENABLE_TICKET_CLEANUP_DAEMON': env_vars.get('ENABLE_TICKET_CLEANUP_DAEMON', 'True'),
+        'SOFT_DELETE_CLOSED_AFTER_DAYS': env_vars.get('SOFT_DELETE_CLOSED_AFTER_DAYS', '14'),
+        'HARD_DELETE_AFTER_DAYS': env_vars.get('HARD_DELETE_AFTER_DAYS', '16'),
+        'POLLING_INTERVAL': env_vars.get('POLLING_INTERVAL', '300'),
+        'TEST_MODE': env_vars.get('TEST_MODE', 'False'),
+        'USER_EMAIL': env_vars.get('USER_EMAIL', ''),
+        'PROCESSING_DAYS_BACK': env_vars.get('PROCESSING_DAYS_BACK', '2')
+    }
+    emit('settings_update', {'settings': display_vars})
+
+
+@socketio.on('update_settings')
+@socketio_admin_required
+def handle_update_settings(data):
+    """Update .env settings"""
+    if not data:
+        return
+    
+    logger.info(f"⚙️ Received settings update request: {list(data.keys())}")
+    
+    try:
+        # Filter data to only include valid settings keys to avoid polluting .env
+        valid_keys = [
+            'ENABLE_TICKET_CLEANUP_DAEMON', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
+            'HARD_DELETE_AFTER_DAYS', 'POLLING_INTERVAL', 'TEST_MODE',
+            'USER_EMAIL', 'PROCESSING_DAYS_BACK'
+        ]
+        filtered_data = {k: str(v) for k, v in data.items() if k in valid_keys}
+        
+        if not filtered_data:
+            logger.warning("⚠️ No valid settings found in update request")
+            emit('settings_saved', {'success': False, 'message': 'No valid settings provided'})
+            return
+
+        success = env_manager.update_vars(filtered_data)
+        logger.info(f"✅ Settings update outcome: {'Success' if success else 'Failure'}")
+        emit('settings_saved', {'success': success})
+    except Exception as e:
+        logger.error(f"❌ Error handling settings update: {e}")
+        emit('settings_saved', {'success': False, 'message': str(e)})
+
+
 @socketio.on('reassign_ticket')
 @socketio_admin_required
 def handle_reassign_ticket(data):
@@ -848,8 +929,8 @@ def handle_reassign_ticket(data):
     
     if not ticket_id or not new_assignee:
         return
-    
-    success = sql_logger.update_ticket_fields(ticket_id, {'assigned_to': new_assignee})
+    actor_username = session.get('user', {}).get('username', 'system')
+    success = sql_logger.update_ticket_fields(ticket_id, {'assigned_to': new_assignee}, actor=actor_username)
     
     if success:
         # Broadcast to everyone
