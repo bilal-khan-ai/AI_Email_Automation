@@ -197,8 +197,8 @@ def logout():
 def management():
     """Admin management page"""
     users = auth.user_manager.list_users()
-    # Filter staff members (and assignable admins) for metrics
-    staff_members = [u for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
+    # Filter only users who are marked as assignable (Staff or Admin)
+    staff_members = [u for u in users if u.get('is_assignable', True) and u['role'] in ['staff', 'admin']]
     staff_usernames = [u['username'] for u in staff_members]
     
     # Get stats for all tickets for admin overview
@@ -338,12 +338,18 @@ def index():
     if user['role'] == 'admin' and request.args.get('view') != 'staff':
         return redirect(url_for('management'))
     
-    # Get staff list for assignment dropdown
+    # Get only active assignable staff/admins for assignment dropdown
     users = auth.user_manager.list_users()
-    staff_members = [u for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
+    staff_members = [u for u in users if u.get('is_assignable', True) and u['role'] in ['staff', 'admin']]
     
     # Pass whether the user is an admin to the template
-    return render_template('dashboard.html', user=user, staff_members=staff_members, is_admin=(user['role'] == 'admin'))
+    return render_template('dashboard.html', 
+                          user=user, 
+                          staff_members=staff_members, 
+                          is_admin=(user['role'] == 'admin'),
+                          test_mode=Config.TEST_MODE,
+                          test_email=Config.TEST_EMAIL,
+                          test_cc=Config.TEST_CC)
 
 
 @app.route('/api/tickets')
@@ -565,14 +571,31 @@ def send_to_customer():
                 })
 
         # Send email
+        final_recipient = Config.TEST_EMAIL if Config.TEST_MODE else send_to
+        final_cc = cc
+        final_bcc = bcc
+        final_subject = f"Re: {ticket['subject']}"
+        
+        if Config.TEST_MODE:
+            # Add prefix to subject
+            final_subject = f"{Config.TEST_SUBJECT_TAG}{final_subject}"
+            
+            # Inform user in the email body about the intended recipients
+            intended_msg = f"<hr><p style='color: #666; font-size: 0.8em;'><b>[TEST MODE]</b><br>"
+            intended_msg += f"<b>Intended To:</b> {send_to}<br>"
+            if cc: intended_msg += f"<b>Intended CC:</b> {cc}<br>"
+            if bcc: intended_msg += f"<b>Intended BCC:</b> {bcc}<br>"
+            intended_msg += "</p>"
+            ai_response += intended_msg
+
         success = graph_connector.send_email(
             user_email=Config.USER_EMAIL,
-            recipient=Config.TEST_EMAIL if Config.TEST_MODE else send_to,
-            subject=f"Re: {ticket['subject']}",
+            recipient=final_recipient,
+            subject=final_subject,
             body=ai_response,
             conversation_id=ticket.get('conversation_id'),
-            cc=cc,
-            bcc=bcc,
+            cc=final_cc,
+            bcc=final_bcc,
             attachments=attachments
         )
 
@@ -601,6 +624,30 @@ def send_to_customer():
 
     except Exception as e:
         print(f"Error sending email: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/contacts')
+@login_required
+def get_contacts():
+    """Get unique list of all customer and staff emails for autofill."""
+    try:
+        # 1. Get staff emails
+        staff_users = auth.user_manager.list_users()
+        staff_emails = [u['username'] for u in staff_users if '@' in u['username']]
+        
+        # 2. Get customer emails
+        customer_emails = sql_logger.get_all_contact_emails()
+        
+        # 3. Combine and de-duplicate
+        all_contacts = list(set(staff_emails + customer_emails))
+        
+        # 4. Optional: sort for better UI experience
+        all_contacts.sort()
+        
+        return jsonify({'contacts': all_contacts})
+    except Exception as e:
+        logger.error(f"Error fetching contacts: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -883,6 +930,9 @@ def handle_get_settings():
         'HARD_DELETE_AFTER_DAYS': env_vars.get('HARD_DELETE_AFTER_DAYS', '16'),
         'POLLING_INTERVAL': env_vars.get('POLLING_INTERVAL', '300'),
         'TEST_MODE': env_vars.get('TEST_MODE', 'False'),
+        'TEST_EMAIL': env_vars.get('TEST_EMAIL', 'bilal.khan@greenwaresolutions.com'),
+        'TEST_CC': env_vars.get('TEST_CC', ''),
+        'TEST_SUBJECT_TAG': env_vars.get('TEST_SUBJECT_TAG', '[TEST MODE] '),
         'USER_EMAIL': env_vars.get('USER_EMAIL', ''),
         'PROCESSING_DAYS_BACK': env_vars.get('PROCESSING_DAYS_BACK', '2')
     }
@@ -903,6 +953,7 @@ def handle_update_settings(data):
         valid_keys = [
             'ENABLE_TICKET_CLEANUP_DAEMON', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
             'HARD_DELETE_AFTER_DAYS', 'POLLING_INTERVAL', 'TEST_MODE',
+            'TEST_EMAIL', 'TEST_CC', 'TEST_SUBJECT_TAG',
             'USER_EMAIL', 'PROCESSING_DAYS_BACK'
         ]
         filtered_data = {k: str(v) for k, v in data.items() if k in valid_keys}
@@ -913,6 +964,10 @@ def handle_update_settings(data):
             return
 
         success = env_manager.update_vars(filtered_data)
+        if success:
+            Config.reload()
+            logger.info("♻️ Config class reloaded with new settings")
+        
         logger.info(f"✅ Settings update outcome: {'Success' if success else 'Failure'}")
         emit('settings_saved', {'success': success})
     except Exception as e:

@@ -329,7 +329,7 @@ class AsyncioWorker:
             
             query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
                 filter=filter_query,
-                select=['id', 'conversationId', 'subject', 'body', 'from', 'receivedDateTime', 'hasAttachments'],
+                select=['id', 'conversationId', 'subject', 'body', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients'],
                 orderby=['receivedDateTime ASC'],
                 top=top,
                 expand=['attachments']
@@ -444,7 +444,9 @@ class AsyncioWorker:
             'body': msg.body.content if (hasattr(msg, 'body') and msg.body) else '',
             'sender': sender_email,
             'received': msg.received_date_time.isoformat() if hasattr(msg, 'received_date_time') else datetime.now().isoformat(),
-            'attachments': attachments
+            'attachments': attachments,
+            'cc': ', '.join([r.email_address.address for r in msg.cc_recipients if r.email_address]) if hasattr(msg, 'cc_recipients') and msg.cc_recipients else '',
+            'bcc': ', '.join([r.email_address.address for r in msg.bcc_recipients if r.email_address]) if hasattr(msg, 'bcc_recipients') and msg.bcc_recipients else ''
         }
     
     async def _send_email_async(

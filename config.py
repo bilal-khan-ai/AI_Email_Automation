@@ -40,6 +40,8 @@ class Config:
     # Test mode settings
     TEST_MODE = os.getenv('TEST_MODE', 'True').lower() == 'true'
     TEST_EMAIL = os.getenv('TEST_EMAIL', 'bilal.khan@greenwaresolutions.com')
+    TEST_CC = os.getenv('TEST_CC', '')
+    TEST_SUBJECT_TAG = os.getenv('TEST_SUBJECT_TAG', '[TEST MODE] ')
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'go_make_a_random_key_to_add_in_env_file')
 
     # Cleanup daemon settings
@@ -52,3 +54,22 @@ class Config:
     # Table processing settings
     TABLES_INCLUDE_PREVIEW = os.getenv('TABLES_INCLUDE_PREVIEW', 'False').lower() == 'true'
     TABLES_PREVIEW_ROWS = int(os.getenv('TABLES_PREVIEW_ROWS', 8))
+
+    @classmethod
+    def reload(cls):
+        """Reload configuration from .env file"""
+        from dotenv import load_dotenv as _load_dotenv
+        import os
+        _load_dotenv(override=True)
+        # Re-set all class attributes
+        cls.USER_EMAIL = os.getenv('USER_EMAIL')
+        cls.POLLING_INTERVAL = int(os.getenv('POLLING_INTERVAL', 600))
+        cls.PROCESSING_DAYS_BACK = int(os.getenv('PROCESSING_DAYS_BACK', 2))
+        cls.TEST_MODE = os.getenv('TEST_MODE', 'True').lower() == 'true'
+        cls.TEST_EMAIL = os.getenv('TEST_EMAIL', 'bilal.khan@greenwaresolutions.com')
+        cls.TEST_CC = os.getenv('TEST_CC', '')
+        cls.TEST_SUBJECT_TAG = os.getenv('TEST_SUBJECT_TAG', '[TEST MODE] ')
+        cls.ENABLE_TICKET_CLEANUP_DAEMON = os.getenv('ENABLE_TICKET_CLEANUP_DAEMON', 'True').lower() == 'true'
+        cls.SOFT_DELETE_CLOSED_AFTER_DAYS = int(os.getenv('SOFT_DELETE_CLOSED_AFTER_DAYS', 1))
+        cls.HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 6))
+        # Add other dynamic settings as needed

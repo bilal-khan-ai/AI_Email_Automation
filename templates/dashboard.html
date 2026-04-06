@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Support Ticket Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎫</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎫</text></svg>">
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.css" rel="stylesheet">
     <style>
@@ -16,8 +18,8 @@
             --border-color: #e0e0e0;
             --input-bg: #ffffff;
             --header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --shadow: rgba(0,0,0,0.05);
-            --modal-bg: rgba(0,0,0,0.5);
+            --shadow: rgba(0, 0, 0, 0.05);
+            --modal-bg: rgba(0, 0, 0, 0.5);
             --section-bg-info: #f8f9fa;
             --section-bg-attach: #e7f3ff;
             --section-bg-warn: #fff3cd;
@@ -32,8 +34,8 @@
             --border-color: #404040;
             --input-bg: #333333;
             --header-bg: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
-            --shadow: rgba(0,0,0,0.3);
-            --modal-bg: rgba(0,0,0,0.8);
+            --shadow: rgba(0, 0, 0, 0.3);
+            --modal-bg: rgba(0, 0, 0, 0.8);
             --section-bg-info: #383838;
             --section-bg-attach: #003366;
             --section-bg-warn: #4d3e00;
@@ -54,25 +56,40 @@
             border-color: var(--border-color) !important;
         }
 
-        body.dark-mode .ql-stroke { stroke: #e0e0e0 !important; }
-        body.dark-mode .ql-fill { fill: #e0e0e0 !important; }
-        body.dark-mode .ql-picker { color: #e0e0e0 !important; }
-        body.dark-mode .ql-editor { color: #e0e0e0; }
+        body.dark-mode .ql-stroke {
+            stroke: #e0e0e0 !important;
+        }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+        body.dark-mode .ql-fill {
+            fill: #e0e0e0 !important;
+        }
+
+        body.dark-mode .ql-picker {
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .ql-editor {
+            color: #e0e0e0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             transition: background 0.3s, color 0.3s;
         }
-        
+
         .header {
             background: var(--header-bg);
             color: white;
             padding: 2rem;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
 
         /* Updated Status Styles for Open/Closed Semantics */
@@ -113,12 +130,55 @@
         /* Stat card colors */
         .stat-card.pending {
             /* Now represents "open" tickets */
-            border-left-color: #28a745; /* Green for open/active */
+            border-left-color: #28a745;
+            /* Green for open/active */
         }
 
         .stat-card.completed {
             /* Now represents "closed" tickets */
-            border-left-color: #6c757d; /* Gray for closed */
+            border-left-color: #6c757d;
+            /* Gray for closed */
+        }
+
+        /* Autocomplete Suggestions */
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 60px; /* Offset to align with input after label (min-width: 60px) */
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px var(--shadow);
+            z-index: 2000;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .autocomplete-suggestion {
+            padding: 8px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .autocomplete-suggestion:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-suggestion:hover,
+        .autocomplete-suggestion.active {
+            background: #e7f3ff;
+            color: #0066cc;
+        }
+
+        body.dark-mode .autocomplete-suggestion:hover,
+        body.dark-mode .autocomplete-suggestion.active {
+            background: #1e3a8a;
+            color: #ffffff;
         }
 
         /* Filter button active states */
@@ -141,7 +201,7 @@
 
         #btnToggleStatus:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
         }
 
         #btnToggleStatus:disabled {
@@ -159,10 +219,16 @@
         #btnToggleStatus:hover #toggleStatusIcon {
             transform: scale(1.2);
         }
-        
-        .header h1 { font-size: 2rem; margin-bottom: 0.5rem; }
-        .header p { opacity: 0.9; }
-        
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -171,7 +237,7 @@
             max-width: 1400px;
             margin: 0 auto;
         }
-        
+
         .stat-card {
             background: var(--bg-card);
             padding: 1.5rem;
@@ -179,24 +245,29 @@
             box-shadow: 0 2px 8px var(--shadow);
             border-left: 4px solid #667eea;
         }
-        
-        .stat-card.pending { border-left-color: #f39c12; }
-        .stat-card.completed { border-left-color: #2ecc71; }
-        
+
+        .stat-card.pending {
+            border-left-color: #f39c12;
+        }
+
+        .stat-card.completed {
+            border-left-color: #2ecc71;
+        }
+
         .stat-value {
             font-size: 2.5rem;
             font-weight: bold;
             color: #667eea;
             margin-bottom: 0.5rem;
         }
-        
+
         .stat-label {
             color: var(--text-secondary);
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         .controls {
             padding: 0 2rem 1rem;
             max-width: 1400px;
@@ -205,9 +276,13 @@
             gap: 1rem;
             flex-wrap: wrap;
         }
-        
-        .search-box { flex: 1; min-width: 300px; position: relative; }
-        
+
+        .search-box {
+            flex: 1;
+            min-width: 300px;
+            position: relative;
+        }
+
         .search-box input {
             width: 100%;
             padding: 0.75rem 1rem;
@@ -218,49 +293,168 @@
             font-size: 1rem;
             transition: border-color 0.3s;
         }
-        
-        .search-box input:focus { outline: none; border-color: #667eea; }
-        
-        .filter-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-        
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
         .filter-btn {
-            padding: 0.75rem 1.5rem;
-            border: 2px solid var(--border-color);
+            padding: 0.65rem 1.4rem;
+            border: 1px solid var(--border-color);
             background: var(--bg-card);
             color: var(--text-primary);
-            border-radius: 8px;
+            border-radius: 12px;
             cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.3s;
+            font-size: 0.85rem;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
         }
-        
-        .filter-btn:hover { border-color: #667eea; color: #667eea; }
-        .filter-btn.active { background: #667eea; color: white; border-color: #667eea; }
 
-        .visibility-btn {
-            padding: 0.75rem 1.5rem;
-            border: 2px solid var(--border-color);
+        .filter-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        /* Pill Toggle for Visibility (My/All) */
+        .pill-toggle {
+            display: flex;
+            background: rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+            border-radius: 50px;
+            padding: 3px;
+            position: relative;
+            cursor: pointer;
+            user-select: none;
+            width: fit-content;
+            margin-right: 1.5rem;
+            min-width: 240px;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
+            height: 42px;
+            align-items: center;
+        }
+
+        .pill-option {
+            flex: 1;
+            padding: 0 16px;
+            line-height: 36px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-secondary);
+            border-radius: 50px;
+            transition: all 0.3s ease;
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            letter-spacing: 0.5px;
+        }
+
+        .pill-option.active {
+            color: white;
+        }
+
+        .pill-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            height: calc(100% - 6px);
+            width: calc(50% - 3px);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50px;
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1;
+            box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        }
+
+        [data-active="all"] .pill-slider {
+            transform: translateX(100%);
+        }
+
+        .filter-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .filter-dropdown-btn {
+            padding: 0.65rem 1.2rem;
             background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 600;
             color: var(--text-primary);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-width: 170px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .filter-dropdown-btn:hover {
+            border-color: #667eea;
+        }
+
+        .filter-dropdown-btn.has-filter {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .filter-dropdown-content {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 0.25rem;
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
             border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            min-width: 220px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .filter-dropdown-content.show {
+            display: block;
+        }
+
+        .filter-dropdown-item {
+            padding: 0.7rem 1rem;
             cursor: pointer;
             font-size: 0.9rem;
-            transition: all 0.3s;
+            color: var(--text-primary);
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s;
         }
-        
-        .visibility-btn:hover { border-color: #667eea; color: #667eea; }
-        .visibility-btn.active { background: #667eea; color: white; border-color: #667eea; }
 
-        .filter-dropdown { position: relative; display: inline-block; }
-        .filter-dropdown-btn { padding: 0.75rem 1.5rem; background: var(--bg-card); border: 2px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); transition: all 0.3s; display: flex; align-items: center; gap: 0.5rem; min-width: 180px; }
-        .filter-dropdown-btn:hover { border-color: #667eea; }
-        .filter-dropdown-btn.has-filter { background: #667eea; color: white; border-color: #667eea; }
-        .filter-dropdown-content { display: none; position: absolute; top: 100%; left: 0; margin-top: 0.25rem; background: var(--bg-card); border: 2px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 220px; max-height: 300px; overflow-y: auto; }
-        .filter-dropdown-content.show { display: block; }
-        .filter-dropdown-item { padding: 0.7rem 1rem; cursor: pointer; font-size: 0.9rem; color: var(--text-primary); border-bottom: 1px solid var(--border-color); transition: background 0.2s; }
-        .filter-dropdown-item:hover { background: #f5f5f5; }
-        .filter-dropdown-item.selected { background: #e7f3ff; color: #0066cc; font-weight: 600; }
-        
+        .filter-dropdown-item:hover {
+            background: #f5f5f5;
+        }
+
+        .filter-dropdown-item.selected {
+            background: #e7f3ff;
+            color: #0066cc;
+            font-weight: 600;
+        }
+
         .export-btn {
             padding: 0.75rem 1.5rem;
             background: #2ecc71;
@@ -271,12 +465,23 @@
             font-size: 0.9rem;
             transition: background 0.3s;
         }
-        
-        .export-btn:hover { background: #27ae60; }
-        
-        .tickets-container { padding: 0 2rem 2rem; max-width: 1400px; margin: 0 auto; }
-        .tickets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(450px, 1fr)); gap: 1.5rem; }
-        
+
+        .export-btn:hover {
+            background: #27ae60;
+        }
+
+        .tickets-container {
+            padding: 0 2rem 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .tickets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(450px, 1fr));
+            gap: 1.5rem;
+        }
+
         .ticket-card {
             background: var(--bg-card);
             padding: 1.5rem;
@@ -287,10 +492,18 @@
             position: relative;
             z-index: 1;
         }
-        
-        .ticket-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); z-index: 2; }
-        .ticket-card.locked-by-other { border: 2px solid #e74c3c; opacity: 0.8; }
-        
+
+        .ticket-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--shadow);
+            z-index: 2;
+        }
+
+        .ticket-card.locked-by-other {
+            border: 2px solid #e74c3c;
+            opacity: 0.8;
+        }
+
         .ticket-card.reopened-tint {
             background-color: rgba(255, 87, 87, 0.1) !important;
             border-left: 5px solid #ff5757 !important;
@@ -314,10 +527,23 @@
             letter-spacing: 0.5px;
             box-shadow: 0 2px 4px rgba(255, 87, 87, 0.3);
         }
-        
-        .ticket-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem; }
-        .ticket-id-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
-        
+
+        .ticket-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .ticket-id-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
         .ticket-id {
             font-family: 'Courier New', monospace;
             font-size: 0.9rem;
@@ -328,11 +554,31 @@
             border-radius: 6px;
             white-space: nowrap;
         }
-        
-        .ticket-status { padding: 0.4rem 0.8rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
-        .status-pending-review, .status-pending { background: #fff3cd; color: #856404; }
-        .status-completed, .status-resolved, .status-closed { background: #d4edda; color: #155724; }
-        .status-sent-to-support { background: #d1ecf1; color: #0c5460; }
+
+        .ticket-status {
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-pending-review,
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-completed,
+        .status-resolved,
+        .status-closed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-sent-to-support {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
 
         .assignment-badge {
             display: inline-flex;
@@ -346,8 +592,11 @@
             font-weight: 600;
         }
 
-        .assignment-badge.unassigned { background: #f0f0f0; color: #666; }
-        
+        .assignment-badge.unassigned {
+            background: #f0f0f0;
+            color: #666;
+        }
+
         /* Timeline UI Styles */
         .btn-timeline {
             position: absolute;
@@ -357,7 +606,7 @@
             height: 28px;
             border-radius: 50%;
             border: 1px solid var(--border-color);
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.5);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -365,7 +614,7 @@
             transition: all 0.2s;
             z-index: 10;
             color: #fff;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
         }
 
         .btn-timeline:hover {
@@ -398,7 +647,7 @@
             border-radius: 12px;
             border: 1px solid var(--border-color);
             border-left: 4px solid var(--accent);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
         .timeline-event::before {
@@ -413,12 +662,31 @@
             border: 2px solid var(--bg-card);
         }
 
-        .ticket-subject { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-primary); word-wrap: break-word; }
-        .ticket-meta { display: flex; gap: 2rem; font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 1rem; flex-wrap: wrap; }
-        
+        .ticket-subject {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+            word-wrap: break-word;
+        }
+
+        .ticket-meta {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
         /* Message Thread Styles */
-        .message-thread { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 2rem; }
-        
+        .message-thread {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
         .message-card {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -435,8 +703,15 @@
             display: none;
         }
 
-        .message-card.customer { border-left: 4px solid #ffc107; background-color: var(--section-bg-warn); }
-        .message-card.internal { border-left: 4px solid #667eea; background-color: var(--section-bg-info); }
+        .message-card.customer {
+            border-left: 4px solid #ffc107;
+            background-color: var(--section-bg-warn);
+        }
+
+        .message-card.internal {
+            border-left: 4px solid #667eea;
+            background-color: var(--section-bg-info);
+        }
 
         .message-header {
             display: flex;
@@ -444,15 +719,20 @@
             margin-bottom: 0.5rem;
             font-size: 0.85rem;
             color: var(--text-secondary);
-            border-bottom: 1px solid rgba(0,0,0,0.05);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
             padding-bottom: 0.5rem;
             cursor: pointer;
         }
-        
-        .message-header:hover { background-color: rgba(0,0,0,0.02); }
 
-        .message-sender { font-weight: bold; color: var(--text-primary); }
-        
+        .message-header:hover {
+            background-color: rgba(0, 0, 0, 0.02);
+        }
+
+        .message-sender {
+            font-weight: bold;
+            color: var(--text-primary);
+        }
+
         .message-body {
             color: var(--text-primary);
             white-space: pre-wrap;
@@ -462,8 +742,10 @@
             display: none;
         }
 
-        .message-body.collapsed { display: none; }
-        
+        .message-body.collapsed {
+            display: none;
+        }
+
         .message-summary {
             font-size: 0.9rem;
             color: var(--text-secondary);
@@ -472,7 +754,7 @@
             padding: 0.5rem 0;
             display: block;
         }
-        
+
         /* Quoted Text Hiding */
         .quoted-text-toggle {
             color: #667eea;
@@ -485,14 +767,24 @@
             border-radius: 4px;
             background: var(--bg-card);
         }
-        
-        .quoted-text-content { display: none; margin-top: 0.5rem; padding-left: 1rem; border-left: 2px solid var(--border-color); opacity: 0.8; font-size: 0.9em; }
-        .quoted-text-content.show { display: block; }
+
+        .quoted-text-content {
+            display: none;
+            margin-top: 0.5rem;
+            padding-left: 1rem;
+            border-left: 2px solid var(--border-color);
+            opacity: 0.8;
+            font-size: 0.9em;
+        }
+
+        .quoted-text-content.show {
+            display: block;
+        }
 
         .message-attachments {
             margin-top: 1rem;
             padding-top: 0.5rem;
-            border-top: 1px solid rgba(0,0,0,0.1);
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
         }
 
         .modal {
@@ -506,9 +798,14 @@
             z-index: 1000;
             overflow-y: auto;
         }
-        
-        .modal.active { display: flex; align-items: flex-start; justify-content: center; padding: 2rem 0; }
-        
+
+        .modal.active {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 2rem 0;
+        }
+
         .modal-content {
             background: var(--bg-card);
             color: var(--text-primary);
@@ -516,17 +813,18 @@
             border-radius: 10px;
             max-width: 1400px;
             width: 95%;
-            height: 95vh; /* Fixed height for flex layout */
+            height: 95vh;
+            /* Fixed height for flex layout */
             display: flex;
             flex-direction: column;
             position: relative;
         }
-        
+
         .close-btn {
             position: absolute;
             top: 1rem;
             right: 1.5rem;
-            background: rgba(0,0,0,0.1);
+            background: rgba(0, 0, 0, 0.1);
             border: 1px solid var(--border-color);
             border-radius: 50%;
             width: 36px;
@@ -541,13 +839,18 @@
             transition: all 0.2s;
             line-height: 1;
         }
-        .close-btn:hover { background: #e74c3c; color: white; border-color: #e74c3c; }
-        
-        .modal-header-actions { 
-            display: flex; 
-            align-items: center; 
-            gap: 1rem; 
-            flex-wrap: wrap; 
+
+        .close-btn:hover {
+            background: #e74c3c;
+            color: white;
+            border-color: #e74c3c;
+        }
+
+        .modal-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
             margin-bottom: 1.5rem;
             flex-shrink: 0;
         }
@@ -563,14 +866,18 @@
             transition: border-color 0.3s;
         }
 
-        .assignment-dropdown select:focus { outline: none; border-color: #667eea; }
+        .assignment-dropdown select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
 
         /* Updated Layout for Collapsible Panel */
         .modal-layout {
             display: flex;
             gap: 2rem;
             flex: 1;
-            min-height: 0; /* Important for nested scrolling */
+            min-height: 0;
+            /* Important for nested scrolling */
             overflow: hidden;
         }
 
@@ -584,7 +891,7 @@
             padding-right: 0.5rem;
             transition: flex 0.3s ease;
         }
-        
+
         .modal-right-panel {
             width: 50%;
             min-width: 400px;
@@ -595,7 +902,7 @@
             position: relative;
             overflow-y: auto;
         }
-        
+
         /* Collapsed State for Right Panel */
         .modal-right-panel.collapsed {
             width: 50px;
@@ -607,18 +914,19 @@
             align-items: center;
             cursor: pointer;
         }
-        
+
         /* Hide content when collapsed */
         .modal-right-panel.collapsed .email-composer,
         .modal-right-panel.collapsed .modal-actions {
             display: none;
         }
-        
+
         /* Toggle Button Styling */
         .panel-toggle-btn {
-            display: none; /* Hidden by default, visible in JS logic */
+            display: none;
+            /* Hidden by default, visible in JS logic */
         }
-        
+
         .modal-right-panel.collapsed .panel-toggle-btn {
             display: flex;
             align-items: center;
@@ -631,7 +939,7 @@
             border: none;
             cursor: pointer;
         }
-        
+
         .info-section {
             background: var(--section-bg-info);
             padding: 1rem;
@@ -639,8 +947,15 @@
             border-left: 4px solid #667eea;
         }
 
-        .info-section h3 { font-size: 0.95rem; margin-bottom: 0.75rem; color: #667eea; display: flex; align-items: center; gap: 0.5rem; }
-        
+        .info-section h3 {
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
         .info-item {
             padding: 0.4rem 0;
             font-size: 0.9rem;
@@ -649,15 +964,20 @@
             border-bottom: 1px solid var(--border-color);
         }
 
-        .info-item:last-child { border-bottom: none; }
-        .info-item strong { color: var(--text-primary); }
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-item strong {
+            color: var(--text-primary);
+        }
 
         .attachment-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 0.5rem;
-            background: rgba(255,255,255,0.5);
+            background: rgba(255, 255, 255, 0.5);
             border-radius: 4px;
             margin-top: 0.5rem;
             font-size: 0.85rem;
@@ -691,7 +1011,7 @@
             border-bottom: 2px solid var(--border-color);
             position: relative;
         }
-        
+
         .header-collapse-btn {
             position: absolute;
             top: 0.5rem;
@@ -705,11 +1025,24 @@
             color: var(--text-primary);
         }
 
-        .composer-field { display: flex; align-items: center; margin-bottom: 0.5rem; }
-        .composer-field:last-child { margin-bottom: 0; }
-        
-        .composer-field label { min-width: 60px; font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
-        
+        .composer-field {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            position: relative;
+        }
+
+        .composer-field:last-child {
+            margin-bottom: 0;
+        }
+
+        .composer-field label {
+            min-width: 60px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
         .composer-field input {
             flex: 1;
             padding: 0.5rem;
@@ -720,10 +1053,17 @@
             font-size: 0.9rem;
         }
 
-        .composer-field input:focus { outline: none; border-color: #667eea; }
-        
-        .toggle-cc-bcc { display: flex; gap: 1rem; margin-top: 0.5rem; }
-        
+        .composer-field input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .toggle-cc-bcc {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+        }
+
         .toggle-cc-bcc button {
             padding: 0.3rem 0.8rem;
             background: none;
@@ -734,18 +1074,36 @@
             font-size: 0.85rem;
         }
 
-        .toggle-cc-bcc button:hover { background: #667eea; color: white; }
-        .editor-container { flex: 1; background: var(--bg-card); color: var(--text-primary); min-height: 200px; }
-        
+        .toggle-cc-bcc button:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .editor-container {
+            flex: 1;
+            background: var(--bg-card);
+            color: var(--text-primary);
+            min-height: 200px;
+        }
+
         .attachments-composer {
             padding: 1rem;
             background: var(--section-bg-info);
             border-top: 2px solid var(--border-color);
         }
 
-        .attachments-composer h4 { font-size: 0.9rem; margin-bottom: 0.75rem; color: var(--text-primary); }
-        .attachment-input-wrapper { display: flex; align-items: center; gap: 1rem; }
-        
+        .attachments-composer h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .attachment-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
         .file-input-label {
             padding: 0.6rem 1.2rem;
             background: #667eea;
@@ -758,11 +1116,21 @@
             gap: 0.5rem;
         }
 
-        .file-input-label:hover { background: #5568d3; }
-        #attachmentInput { display: none; }
-        
-        .attached-files { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
-        
+        .file-input-label:hover {
+            background: #5568d3;
+        }
+
+        #attachmentInput {
+            display: none;
+        }
+
+        .attached-files {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+
         .attached-file {
             display: flex;
             align-items: center;
@@ -785,7 +1153,9 @@
             line-height: 1;
         }
 
-        .remove-attachment:hover { color: #c0392b; }
+        .remove-attachment:hover {
+            color: #c0392b;
+        }
 
         .modal-actions {
             display: flex;
@@ -795,7 +1165,7 @@
             border-top: 2px solid var(--border-color);
             flex-shrink: 0;
         }
-        
+
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -808,18 +1178,55 @@
             gap: 0.5rem;
         }
 
-        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .btn-primary { background: #667eea; color: white; }
-        .btn-primary:hover { background: #5568d3; }
-        .btn-success { background: #2ecc71; color: white; }
-        .btn-success:hover { background: #27ae60; }
-        .btn-danger { background: #e74c3c; color: white; }
-        .btn-danger:hover { background: #c0392b; }
-        
-        .loading { text-align: center; padding: 3rem; color: var(--text-secondary); }
-        .empty-state { text-align: center; padding: 3rem; color: var(--text-secondary); }
-        .empty-state-icon { font-size: 4rem; margin-bottom: 1rem; }
-        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-success {
+            background: #2ecc71;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #27ae60;
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
         .refresh-indicator {
             position: fixed;
             bottom: 2rem;
@@ -828,13 +1235,15 @@
             color: white;
             padding: 0.75rem 1.5rem;
             border-radius: 25px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             font-size: 0.9rem;
             opacity: 0;
             transition: opacity 0.3s;
         }
-        
-        .refresh-indicator.show { opacity: 1; }
+
+        .refresh-indicator.show {
+            opacity: 1;
+        }
 
         /* Toast Notification Styles */
         .toast {
@@ -845,7 +1254,7 @@
             color: white;
             padding: 1rem 1.5rem;
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
             z-index: 10000;
             display: flex;
             align-items: center;
@@ -871,6 +1280,7 @@
                 transform: translateX(400px);
                 opacity: 0;
             }
+
             to {
                 transform: translateX(0);
                 opacity: 1;
@@ -881,6 +1291,7 @@
             from {
                 opacity: 1;
             }
+
             to {
                 opacity: 0;
             }
@@ -893,6 +1304,7 @@
             margin-left: 1rem;
             display: none;
         }
+
         .lock-status.active {
             display: inline-block;
             background-color: #f8d7da;
@@ -934,20 +1346,49 @@
             transition: background 0.3s;
             font-size: 0.8rem;
         }
-        .theme-toggle:hover { background: rgba(255, 255, 255, 0.3); }
-        body.dark-mode .theme-toggle { color: #e0e0e0; background: rgba(0, 0, 0, 0.4); }
 
-        .hidden { display: none !important; }
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        body.dark-mode .theme-toggle {
+            color: #e0e0e0;
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .hidden {
+            display: none !important;
+        }
 
         @media (max-width: 1200px) {
-            .modal-layout { flex-direction: column; height: auto; overflow: visible; }
-            .modal-content { height: auto; max-height: 95vh; }
-            .modal-right-panel { width: 100%; min-width: 0; }
-            .modal-left-panel { flex: none; max-height: 50vh; }
-            .tickets-grid { grid-template-columns: 1fr; }
+            .modal-layout {
+                flex-direction: column;
+                height: auto;
+                overflow: visible;
+            }
+
+            .modal-content {
+                height: auto;
+                max-height: 95vh;
+            }
+
+            .modal-right-panel {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .modal-left-panel {
+                flex: none;
+                max-height: 50vh;
+            }
+
+            .tickets-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
+
 <body>
     <!-- Theme toggle moved to header -->
 
@@ -957,28 +1398,32 @@
                 <h1>🎫 Support Ticket Dashboard</h1>
                 <p>Real-time ticket monitoring and management</p>
                 <div style="margin-top: 1rem; font-weight: 500; font-size: 0.9rem; opacity: 0.9;">
-                    👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{ 'Administrator' if user.role == 'admin' else 'Support Staff' }})
+                    👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{
+                    'Administrator' if user.role == 'admin' else 'Support Staff' }})
                 </div>
             </div>
             <div style="display: flex; gap: 0.75rem; align-items: center;">
                 <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
                     <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
                 </button>
-                <button onclick="showUserPasswordModal()" class="btn btn-outline-light" style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                <button onclick="showUserPasswordModal()" class="btn btn-outline-light"
+                    style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     🔑 Change Password
                 </button>
                 {% if user.role == 'admin' %}
-                <a href="{{ url_for('management') }}" class="btn btn-outline-light" style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                <a href="{{ url_for('management') }}" class="btn btn-outline-light"
+                    style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     🛡️ Management
                 </a>
                 {% endif %}
-                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm" style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem;">
+                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm"
+                    style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem;">
                     🚪 Logout
                 </a>
             </div>
         </div>
     </div>
-    
+
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-value" id="stat-total">0</div>
@@ -993,28 +1438,32 @@
             <div class="stat-label">Closed Tickets</div>
         </div>
     </div>
-    
+
     <div class="controls">
         <div class="search-box">
             <input type="text" id="search" placeholder="🔍 Search by email, subject, or ticket ID...">
         </div>
         <div class="filter-buttons">
-            <button class="visibility-btn active" data-visibility="mine">My Tickets</button>
-            <button class="visibility-btn" data-visibility="all">All Tickets</button>
-            <span style="border-right: 1px solid var(--border-color); margin: 0 10px;"></span>
-            
+            <div class="pill-toggle" id="visibilityPill" data-active="all">
+                <div class="pill-option" data-visibility="mine">My Tickets</div>
+                <div class="pill-option active" data-visibility="all">All Tickets</div>
+                <div class="pill-slider"></div>
+            </div>
+            <span style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
+
             <button class="filter-btn active" data-filter="all">All</button>
             <button class="filter-btn" data-filter="Open">Open</button>
             <button class="filter-btn" data-filter="Closed">Closed</button>
-            
+
             <div class="filter-dropdown" id="assignmentFilterDropdown">
-                <button class="filter-dropdown-btn" id="assignmentFilterBtn" onclick="toggleFilterDropdown('assignment')">
+                <button class="filter-dropdown-btn" id="assignmentFilterBtn"
+                    onclick="toggleFilterDropdown('assignment')">
                     <span id="assignmentFilterText">👤 Assignment</span>
                     <span class="dropdown-arrow">▼</span>
                 </button>
                 <div class="filter-dropdown-content" id="assignmentFilterContent"></div>
             </div>
-            
+
             <div class="filter-dropdown" id="customerFilterDropdown">
                 <button class="filter-dropdown-btn" id="customerFilterBtn" onclick="toggleFilterDropdown('customer')">
                     <span id="customerFilterText">📧 Customer</span>
@@ -1024,22 +1473,23 @@
             </div>
         </div>
     </div>
-    
+
     <div class="tickets-container">
         <div class="tickets-grid" id="tickets">
             <div class="loading">Loading tickets...</div>
         </div>
     </div>
-    
+
     <div class="modal" id="ticketModal">
         <div class="modal-content">
             <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)">&times;</button>
             <div class="modal-header-actions">
-                <h2 id="modal-subject" style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 3rem;"></h2>
+                <h2 id="modal-subject"
+                    style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 3rem;">
+                </h2>
                 <div id="lockStatus" class="lock-status">🔒 Locked by another user</div>
                 <div class="assignment-dropdown" style="margin-left: auto;">
                     <select id="modal-assignment">
-                        <option value="">Assign To...</option>
                         <option value="Unassigned">Unassigned</option>
                         {% for staff in staff_members %}
                         <option value="{{ staff.username }}">{{ staff.username }}</option>
@@ -1060,7 +1510,7 @@
                             <strong>Customer:</strong>
                             <span id="modal-email"></span>
                         </div>
-                        
+
                         <div class="info-item">
                             <strong>Last Activity:</strong>
                             <span id="modal-date"></span>
@@ -1076,31 +1526,37 @@
 
                 <div class="modal-right-panel collapsed" id="rightPanel">
                     <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Expand Draft Panel">◀</button>
-                    
+
                     <div class="email-composer">
                         <div class="email-composer-header">
                             <h4 style="display:inline-block; margin:0;">Draft Response</h4>
-                            <button class="btn btn-outline-primary btn-sm" onclick="regenerateAI()" id="btnRegenerateAI" style="margin-left: 1rem; padding: 2px 8px; font-size: 0.8rem;" title="Regenerate AI Draft">🔄 Regenerate AI</button>
-                            <button class="header-collapse-btn" onclick="toggleRightPanel()" title="Collapse Panel">▶</button>
-                            
+                            <button class="btn btn-outline-primary btn-sm" onclick="regenerateAI()" id="btnRegenerateAI"
+                                style="margin-left: 1rem; padding: 2px 8px; font-size: 0.8rem;"
+                                title="Regenerate AI Draft">🔄 Regenerate AI</button>
+                            <button class="header-collapse-btn" onclick="toggleRightPanel()"
+                                title="Collapse Panel">▶</button>
+
                             <div class="composer-field" style="margin-top:1rem;">
                                 <label>To:</label>
                                 <input type="email" id="emailTo">
+                                <div id="suggestionsTo" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="composer-field hidden" id="ccField">
                                 <label>CC:</label>
                                 <input type="text" id="emailCC" placeholder="email1@example.com, email2@example.com">
+                                <div id="suggestionsCC" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="composer-field hidden" id="bccField">
                                 <label>BCC:</label>
                                 <input type="text" id="emailBCC" placeholder="email1@example.com, email2@example.com">
+                                <div id="suggestionsBCC" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="toggle-cc-bcc">
                                 <button onclick="toggleField('ccField')">+ CC</button>
                                 <button onclick="toggleField('bccField')">+ BCC</button>
                             </div>
                         </div>
-                        
+
                         <div id="editor" class="editor-container"></div>
 
                         <div class="attachments-composer">
@@ -1110,12 +1566,13 @@
                                     <span>📁</span> Choose Files
                                 </label>
                                 <input type="file" id="attachmentInput" multiple>
-                                <span id="fileCount" style="font-size: 0.85rem; color: var(--text-secondary);">No files selected</span>
+                                <span id="fileCount" style="font-size: 0.85rem; color: var(--text-secondary);">No files
+                                    selected</span>
                             </div>
                             <div class="attached-files" id="attachedFiles"></div>
                         </div>
                     </div>
-                    
+
                     <div class="modal-actions" style="display: flex; justify-content: space-between;">
                         <div style="display: flex; gap: 0.75rem;">
                             <button class="btn btn-danger" id="btnToggleStatus" onclick="toggleTicketStatus()">
@@ -1135,25 +1592,30 @@
             </div>
         </div>
     </div>
-    
+
     <div class="refresh-indicator" id="refreshIndicator">
         🔄 Auto-refreshing...
     </div>
-    
+
     <!-- Toast Notification Container -->
     <div id="toast" class="toast"></div>
-    
+
     <!-- Change Password Modal -->
     <div class="modal" id="userPasswordModal">
-        <div class="modal-content" style="max-width: 400px; height: auto; align-self: center; display: block; position: relative;">
+        <div class="modal-content"
+            style="max-width: 400px; height: auto; align-self: center; display: block; position: relative;">
             <button type="button" class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
             <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">🔑 Change Your Password</h3>
             <div style="margin-bottom: 1.5rem;">
-                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New Password</label>
-                <input type="password" id="newUserPassword" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; background: var(--input-bg); color: var(--text-primary);" placeholder="Minimum 6 characters">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New
+                    Password</label>
+                <input type="password" id="newUserPassword"
+                    style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; background: var(--input-bg); color: var(--text-primary);"
+                    placeholder="Minimum 6 characters">
             </div>
             <div style="display: flex; gap: 1rem;">
-                <button onclick="updateUserPassword()" id="btnUpdateUserPassword" class="btn btn-primary" style="flex: 1; justify-content: center; font-weight: 600;">✨ Update Password</button>
+                <button onclick="updateUserPassword()" id="btnUpdateUserPassword" class="btn btn-primary"
+                    style="flex: 1; justify-content: center; font-weight: 600;">✨ Update Password</button>
             </div>
         </div>
     </div>
@@ -1181,30 +1643,138 @@
 
         let currentTickets = [];
         let currentFilter = 'all';
-        let currentVisibility = '{{ user.role }}' === 'admin' ? 'all' : 'mine';
+        let currentVisibility = 'all';
         const currentUsername = '{{ user.username }}';
-        
-        // Setup initial active states for visibility buttons based on role
-        document.addEventListener('DOMContentLoaded', () => {
-             document.querySelectorAll('.visibility-btn').forEach(b => {
-                 if (b.dataset.visibility === currentVisibility) {
-                     b.classList.add('active');
-                 } else {
-                     b.classList.remove('active');
-                 }
-             });
-        });
-        
-        let currentTicketRow = null; 
-        let currentTicketIdStr = null; 
+        let currentTicketRow = null;
+        let currentTicketIdStr = null;
         let quillEditor = null;
         let attachedFiles = [];
         let currentAssignmentFilter = null;
         let currentCustomerFilter = null;
         let isTicketLocked = false;
-        let isRightPanelCollapsed = true; 
+        let isRightPanelCollapsed = true;
         const WORKDAY_START = 0; // 0 AM
         const WORKDAY_END = 24;  // 12 AM
+
+        let allContacts = [];
+        async function fetchContacts() {
+            try {
+                const response = await fetch('/api/contacts');
+                const data = await response.json();
+                allContacts = data.contacts || [];
+            } catch (err) {
+                console.error("Error fetching contacts:", err);
+            }
+        }
+
+        function setupAutocomplete(inputId, suggestionsId) {
+            const input = document.getElementById(inputId);
+            const suggestions = document.getElementById(suggestionsId);
+            let activeIndex = -1;
+
+            input.addEventListener('input', () => {
+                const parts = input.value.split(',');
+                const value = parts[parts.length - 1].trim(); 
+                
+                if (value.length < 2) {
+                    suggestions.style.display = 'none';
+                    return;
+                }
+
+                const filtered = allContacts.filter(c => 
+                    c.toLowerCase().includes(value.toLowerCase())
+                ).slice(0, 10);
+
+                if (filtered.length > 0) {
+                    suggestions.innerHTML = filtered.map((c, i) => 
+                        `<div class="autocomplete-suggestion" data-index="${i}">${c}</div>`
+                    ).join('');
+                    suggestions.style.display = 'block';
+                    activeIndex = -1;
+                } else {
+                    suggestions.style.display = 'none';
+                }
+            });
+
+            suggestions.addEventListener('click', (e) => {
+                const item = e.target.closest('.autocomplete-suggestion');
+                if (item) {
+                    applySuggestion(input, item.textContent);
+                    suggestions.style.display = 'none';
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (suggestions.style.display === 'none') return;
+                
+                const items = suggestions.querySelectorAll('.autocomplete-suggestion');
+                if (e.key === 'ArrowDown') {
+                    activeIndex = (activeIndex + 1) % items.length;
+                    updateActive(items);
+                    e.preventDefault();
+                } else if (e.key === 'ArrowUp') {
+                    activeIndex = (activeIndex - 1 + items.length) % items.length;
+                    updateActive(items);
+                    e.preventDefault();
+                } else if (e.key === 'Enter') {
+                    if (activeIndex > -1) {
+                        applySuggestion(input, items[activeIndex].textContent);
+                        suggestions.style.display = 'none';
+                        e.preventDefault();
+                    }
+                } else if (e.key === 'Escape') {
+                    suggestions.style.display = 'none';
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+                    suggestions.style.display = 'none';
+                }
+            });
+
+            function updateActive(items) {
+                items.forEach((item, i) => {
+                    item.classList.toggle('active', i === activeIndex);
+                });
+            }
+
+            function applySuggestion(targetInput, email) {
+                const parts = targetInput.value.split(',').map(p => p.trim());
+                parts.pop(); // Remove the partial string
+                
+                // Add the new email if not already present
+                if (!parts.includes(email)) {
+                    parts.push(email);
+                }
+                
+                targetInput.value = parts.filter(p => p !== '').join(', ') + ', ';
+                targetInput.focus();
+            }
+        }
+
+        // Setup initial active states for visibility buttons based on role
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize autocomplete
+            await fetchContacts();
+            setupAutocomplete('emailTo', 'suggestionsTo');
+            setupAutocomplete('emailCC', 'suggestionsCC');
+            setupAutocomplete('emailBCC', 'suggestionsBCC');
+
+            // Load initial tickets
+            await loadTickets();
+
+            // Set initial state for visibility pill
+            const pillContainer = document.getElementById('visibilityPill');
+            if (pillContainer) {
+                pillContainer.setAttribute('data-active', currentVisibility);
+                document.querySelectorAll('.pill-option').forEach(o => {
+                    o.classList.toggle('active', o.dataset.visibility === currentVisibility);
+                });
+            }
+        });
+
+
 
         const socket = io({ transports: ['websocket', 'polling'] });
 
@@ -1213,21 +1783,21 @@
             try {
                 const date = new Date(isoString);
                 return date.toLocaleString('en-GB', {
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    hour12: true, 
-                    day: '2-digit', 
-                    month: 'short', 
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true,
+                    day: '2-digit',
+                    month: 'short',
                     year: 'numeric'
                 });
             } catch (e) {
-                return isoString; 
+                return isoString;
             }
         }
 
         function truncateTicketId(id) {
             if (!id) return 'NO-ID';
-            if (id.length < 20) return id; 
+            if (id.length < 20) return id;
             return id.substring(0, 10) + '...' + id.substring(id.length - 6);
         }
 
@@ -1250,7 +1820,7 @@
                 text.textContent = 'Dark Mode';
             }
         }
-        
+
         function initializeEditor() {
             if (!quillEditor) {
                 quillEditor = new Quill('#editor', {
@@ -1260,7 +1830,7 @@
                             [{ 'header': [1, 2, 3, false] }],
                             ['bold', 'italic', 'underline', 'strike'],
                             [{ 'color': [] }, { 'background': [] }],
-                            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                            [{ 'list': 'ordered' }, { 'list': 'bullet' }],
                             [{ 'align': [] }],
                             ['link', 'image'],
                             ['clean']
@@ -1275,7 +1845,7 @@
             const field = document.getElementById(fieldId);
             field.classList.toggle('hidden');
         }
-        
+
         function formatFileSize(bytes) {
             if (!bytes || bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -1283,7 +1853,7 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
-        
+
         function escapeHtml(text) {
             if (!text) return "";
             const div = document.createElement('div');
@@ -1294,7 +1864,7 @@
         function toggleRightPanel() {
             const panel = document.getElementById('rightPanel');
             isRightPanelCollapsed = !isRightPanelCollapsed;
-            
+
             if (isRightPanelCollapsed) {
                 panel.classList.add('collapsed');
             } else {
@@ -1308,21 +1878,21 @@
                 document.body.classList.add('dark-mode');
                 updateThemeButton(true);
             }
-            
+
             const attachmentInput = document.getElementById('attachmentInput');
             attachmentInput.addEventListener('change', (e) => {
                 const files = Array.from(e.target.files);
                 attachedFiles = [...attachedFiles, ...files];
                 updateAttachedFilesList();
             });
-            
+
             loadTickets();
         });
 
         function updateAttachedFilesList() {
             const container = document.getElementById('attachedFiles');
             const fileCount = document.getElementById('fileCount');
-            
+
             if (attachedFiles.length === 0) {
                 container.innerHTML = '';
                 fileCount.textContent = 'No files selected';
@@ -1330,7 +1900,7 @@
             }
 
             fileCount.textContent = `${attachedFiles.length} file(s) selected`;
-            
+
             container.innerHTML = attachedFiles.map((file, index) => `
                 <div class="attached-file">
                     <span>📄 ${file.name}</span>
@@ -1343,18 +1913,17 @@
             attachedFiles.splice(index, 1);
             updateAttachedFilesList();
         }
-        
+
         async function loadTickets() {
             try {
                 const response = await fetch('/api/tickets');
                 const data = await response.json();
-                
+
                 currentTickets = data.tickets.map(t => ({
                     ...t,
                     row_number: t.id
                 }));
 
-                updateStats(data.stats);
                 displayTickets();
             } catch (error) {
                 console.error('Error loading tickets:', error);
@@ -1366,15 +1935,15 @@
             const btnId = type === 'assignment' ? 'assignmentFilterBtn' : 'customerFilterBtn';
             const otherDropdownId = type === 'assignment' ? 'customerFilterContent' : 'assignmentFilterContent';
             const otherBtnId = type === 'assignment' ? 'customerFilterBtn' : 'assignmentFilterBtn';
-            
+
             const dropdown = document.getElementById(dropdownId);
             const btn = document.getElementById(btnId);
             const otherDropdown = document.getElementById(otherDropdownId);
             const otherBtn = document.getElementById(otherBtnId);
-            
+
             otherDropdown.classList.remove('show');
             otherBtn.classList.remove('open');
-            
+
             dropdown.classList.toggle('show');
             btn.classList.toggle('open');
         }
@@ -1385,17 +1954,17 @@
                 const assignment = ticket.assigned_to || 'Unassigned';
                 assignments.add(assignment);
             });
-            
+
             const content = document.getElementById('assignmentFilterContent');
             if (!content) return;
-            
+
             let html = `<div class="filter-dropdown-item ${currentAssignmentFilter === null ? 'selected' : ''}" onclick="setAssignmentFilter(null)">All Assignments</div>`;
-            
+
             Array.from(assignments).sort().forEach(assignment => {
                 const isSelected = currentAssignmentFilter === assignment ? 'selected' : '';
                 html += `<div class="filter-dropdown-item ${isSelected}" onclick="setAssignmentFilter('${escapeHtml(assignment)}')">${escapeHtml(assignment)}</div>`;
             });
-            
+
             content.innerHTML = html;
         }
 
@@ -1407,17 +1976,17 @@
                     customers.add(domain);
                 }
             });
-            
+
             const content = document.getElementById('customerFilterContent');
             if (!content) return;
-            
+
             let html = `<div class="filter-dropdown-item ${currentCustomerFilter === null ? 'selected' : ''}" onclick="setCustomerFilter(null)">All Customers</div>`;
-            
+
             Array.from(customers).sort().forEach(customer => {
                 const isSelected = currentCustomerFilter === customer ? 'selected' : '';
                 html += `<div class="filter-dropdown-item ${isSelected}" onclick="setCustomerFilter('${escapeHtml(customer)}')">${escapeHtml(customer)}</div>`;
             });
-            
+
             content.innerHTML = html;
         }
 
@@ -1457,7 +2026,7 @@
         function normalizeStatus(status) {
             if (!status) return 'Open';
             const statusLower = status.toLowerCase();
-            
+
             if (statusLower === 'resolved' || statusLower === 'completed' || statusLower === 'closed') {
                 return 'Closed';
             } else if (statusLower === 'pending review' || statusLower === 'pending' || statusLower === 'open' || statusLower === 'in progress') {
@@ -1500,35 +2069,35 @@
         function isUnanswered24h(ticket) {
             // Only for OPEN tickets
             if (normalizeStatus(ticket.status) !== 'Open') return false;
-            
+
             // Check if we have message history
             if (!ticket.messages || ticket.messages.length === 0) return false;
-            
+
             // Find the latest message
-            const sortedMessages = [...ticket.messages].sort((a, b) => 
+            const sortedMessages = [...ticket.messages].sort((a, b) =>
                 new Date(b.timestamp) - new Date(a.timestamp)
             );
             const latestMessage = sortedMessages[0];
-            
+
             // Check if latest message is from customer (not internal)
             // Assuming customer messages have is_internal: false or from_customer: true
             const isFromCustomer = latestMessage.is_internal === false;
             hasInternalReplyAfter
             if (!isFromCustomer) return false;
-            
+
             // Check if there's been an internal reply after this customer message
             const hasInternalReplyAfter = sortedMessages.some(msg => {
                 const isInternal = msg.is_internal === true;
                 return isInternal && new Date(msg.timestamp) > new Date(latestMessage.timestamp);
             });
-            
+
             if (hasInternalReplyAfter) return false;
-            
+
             // Calculate working hours since last customer message
             const now = new Date();
             const messageTime = new Date(latestMessage.timestamp);
             const workingHours = calculateWorkingHours(messageTime, now);
-            
+
             return workingHours > 24;
         }
 
@@ -1536,11 +2105,11 @@
         function isLongRunningOpen(ticket) {
             // Only for OPEN tickets
             if (normalizeStatus(ticket.status) !== 'Open') return false;
-            
+
             const now = new Date();
             const created = new Date(ticket.created_at);
             const workingHours = calculateWorkingHours(created, now);
-            
+
             return workingHours > 48;
         }
 
@@ -1548,7 +2117,7 @@
             const container = document.getElementById('tickets');
             const searchInput = document.getElementById('search');
             const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
-            
+
             // Process tickets with latest activity mapping (no priority calculation)
             let processedTickets = currentTickets.map(ticket => {
                 // Determine latest activity (matching your existing logic)
@@ -1558,8 +2127,8 @@
                     latestMessageTime = new Date(Math.max(...messageTimestamps));
                 }
 
-                return { 
-                    ...ticket, 
+                return {
+                    ...ticket,
                     latestActivity: new Date(latestMessageTime)
                 };
             });
@@ -1576,12 +2145,12 @@
             if (typeof currentFilter !== 'undefined' && currentFilter !== 'all') {
                 filteredTickets = filteredTickets.filter(t => normalizeStatus(t.status) === currentFilter);
             }
-            
+
             // Apply assignment filter
             if (typeof currentAssignmentFilter !== 'undefined' && currentAssignmentFilter !== null) {
                 filteredTickets = filteredTickets.filter(t => (t.assigned_to || 'Unassigned') === currentAssignmentFilter);
             }
-            
+
             // Apply customer filter
             if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
                 filteredTickets = filteredTickets.filter(t => {
@@ -1590,15 +2159,28 @@
                     return ticketDomain === currentCustomerFilter;
                 });
             }
-            
-            // Apply search query
+
+            // Apply Search Query
             if (searchQuery) {
-                filteredTickets = filteredTickets.filter(t => 
+                filteredTickets = filteredTickets.filter(t =>
                     (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
                     (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
                     (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery))
                 );
             }
+
+            // --- Dynamic Stats calculation based on Visibility (My/All) ---
+            let statsBase = processedTickets;
+            if (currentVisibility === 'mine') {
+                statsBase = statsBase.filter(t => t.assigned_to === currentUsername);
+            }
+            
+            const dynamicStats = {
+                total: statsBase.length,
+                open: statsBase.filter(t => normalizeStatus(t.status) === 'Open').length,
+                closed: statsBase.filter(t => normalizeStatus(t.status) === 'Closed').length
+            };
+            updateStats(dynamicStats);
 
             // Update UI components
             if (typeof populateAssignmentFilter === 'function') populateAssignmentFilter();
@@ -1627,30 +2209,30 @@
                 const subject = escapeHtml(ticket.subject || 'No Subject');
                 const customerEmail = escapeHtml(ticket.customer_email || 'Unknown');
                 const timestamp = formatDate(ticket.last_message_at || ticket.created_at);
-                
+
                 // Status normalization
                 const status = normalizeStatus(ticket.status);
                 const statusClass = status.toLowerCase();
-                
+
                 // SLA checks (Disabled per 'only marked for important' requirement)
                 const showUnansweredBadge = false; // isUnanswered24h(ticket);
                 const applyLongRunningTint = false; // isLongRunningOpen(ticket);
-                
+
                 // Apply SLA card class
                 let slaCardClass = '';
-                
+
                 // Reopened logic
                 const isReopened = ticket.reopened === true;
                 if (isReopened) {
                     slaCardClass += ' reopened-tint';
                 }
-                
+
                 // Unanswered badge HTML
-                const unansweredBadgeHtml = showUnansweredBadge ? 
+                const unansweredBadgeHtml = showUnansweredBadge ?
                     '<span class="sla-badge-unanswered">⏰ Unanswered 24h+</span>' : '';
-                
+
                 // Important badge for reopened tickets
-                const importantBadgeHtml = isReopened ? 
+                const importantBadgeHtml = isReopened ?
                     '<span class="important-badge">🚩 Important</span>' : '';
 
                 const isLocked = ticket.locked_by && ticket.locked_by !== null;
@@ -1680,7 +2262,7 @@
                 </div>
                 `;
             }).join('');
-            
+
             container.innerHTML = ticketCards;
         }
 
@@ -1688,7 +2270,7 @@
         async function openTicket(ticketId, rowNumber) {
             currentTicketRow = rowNumber;
             currentTicketIdStr = ticketId;
-            
+
             const ticket = currentTickets.find(t => t.id === rowNumber || t.ticket_id === ticketId);
             if (!ticket) return;
 
@@ -1698,13 +2280,28 @@
             initializeEditor();
             attachedFiles = [];
             updateAttachedFilesList();
-            
+
             // Default right panel to collapsed
             const rightPanel = document.getElementById('rightPanel');
             isRightPanelCollapsed = true;
             rightPanel.classList.add('collapsed');
 
-            document.getElementById('emailTo').value = ticket.customer_email || '';
+            const testMode = {{ 'true' if test_mode else 'false' }};
+            const testEmail = "{{ test_email }}";
+            
+            if (testMode) {
+                document.getElementById('emailTo').value = testEmail;
+                document.getElementById('emailTo').readOnly = true;
+                document.getElementById('emailTo').style.backgroundColor = "#e9ecef";
+                document.getElementById('emailTo').style.cursor = "not-allowed";
+                document.getElementById('emailTo').title = "Email redirected to test receiver in Test Mode";
+            } else {
+                document.getElementById('emailTo').value = ticket.customer_email || '';
+                document.getElementById('emailTo').readOnly = false;
+                document.getElementById('emailTo').style.backgroundColor = "";
+                document.getElementById('emailTo').style.cursor = "";
+                document.getElementById('emailTo').title = "";
+            }
             document.getElementById('modal-subject').textContent = ticket.subject || 'No Subject';
             document.getElementById('modal-ticket-id').textContent = ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID');
             document.getElementById('modal-ticket-id').title = ticket.ticket_id || 'NO-ID';
@@ -1722,12 +2319,12 @@
                     ALLOW_DATA_ATTR: false,
                     ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
                 });
-                
+
                 quillEditor.root.innerHTML = sanitizedDraft;
             } else {
                 quillEditor.root.innerHTML = '';
             }
-            
+
             // Update toggle button based on status
             updateToggleButton(currentTicketStatus);
 
@@ -1735,7 +2332,7 @@
             const btnSave = document.getElementById('btnSave');
             const btnSend = document.getElementById('btnSend');
             const btnToggle = document.getElementById('btnToggleStatus');
-            
+
             if (ticket.locked_by) {
                 isTicketLocked = true;
                 lockStatus.textContent = `🔒 Locked by ${ticket.locked_by}`;
@@ -1751,7 +2348,7 @@
                 btnSave.disabled = false;
                 btnSend.disabled = false;
                 btnToggle.disabled = false;
-                
+
                 if (socket && socket.connected) {
                     socket.emit('lock_ticket', { ticket_id: ticketId });
                 }
@@ -1766,9 +2363,42 @@
                 const res = await fetch(`/api/ticket_messages/${ticketId}`);
                 if (!res.ok) throw new Error("Failed to fetch messages");
                 const data = await res.json();
-                
+                const messages = data.messages || [];
+
                 document.getElementById('threadLoading').style.display = 'none';
-                renderThread(data.messages || []);
+                renderThread(messages);
+
+                const testMode = {{ 'true' if test_mode else 'false' }};
+                const testCC = "{{ test_cc }}";
+                const emailCC = document.getElementById('emailCC');
+                const emailBCC = document.getElementById('emailBCC');
+                const ccField = document.getElementById('ccField');
+                const bccField = document.getElementById('bccField');
+
+                if (testMode) {
+                    emailCC.value = testCC || '';
+                    emailBCC.value = ''; // bcc can remain blank for manual entry
+                    if (testCC) ccField.classList.remove('hidden');
+                    else ccField.classList.add('hidden');
+                    bccField.classList.add('hidden');
+                } else if (messages.length > 0) {
+                    // Pre-fill from the MOST RECENT message
+                    const sorted = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const latest = sorted[0];
+                    emailCC.value = latest.cc || '';
+                    emailBCC.value = latest.bcc || '';
+                    
+                    if (emailCC.value) ccField.classList.remove('hidden');
+                    else ccField.classList.add('hidden');
+                    
+                    if (emailBCC.value) bccField.classList.remove('hidden');
+                    else bccField.classList.add('hidden');
+                } else {
+                    emailCC.value = '';
+                    emailBCC.value = '';
+                    ccField.classList.add('hidden');
+                    bccField.classList.add('hidden');
+                }
 
             } catch (err) {
                 console.error("Error fetching messages:", err);
@@ -1781,7 +2411,7 @@
         function updateToggleButton(status) {
             const toggleIcon = document.getElementById('toggleStatusIcon');
             const toggleText = document.getElementById('toggleStatusText');
-            
+
             if (status === 'Open') {
                 toggleIcon.textContent = '✓';
                 toggleText.textContent = 'Close Ticket';
@@ -1812,12 +2442,12 @@
                     const data = await response.json();
                     currentTicketStatus = data.new_status;
                     updateToggleButton(currentTicketStatus);
-                    
+
                     // Close modal if ticket was closed
                     if (currentTicketStatus === 'Closed') {
                         closeModal();
                     }
-                    
+
                     loadTickets();
                 } else {
                     alert('Failed to update ticket status.');
@@ -1827,11 +2457,11 @@
                 alert('Error updating ticket status.');
             }
         }
-        
+
         function cleanMessageBody(text) {
             // Heuristic to hide quoted text from email replies
             if (!text) return "";
-            
+
             // Common delimiters
             const splitters = [
                 /On\s.+?wrote:/i,
@@ -1839,7 +2469,7 @@
                 /Sent\sfrom\smy\siPhone/i,
                 /________________________________/
             ];
-            
+
             let splitIndex = -1;
             for (let regex of splitters) {
                 const match = text.match(regex);
@@ -1847,19 +2477,19 @@
                     splitIndex = match.index;
                 }
             }
-            
+
             if (splitIndex !== -1) {
                 const mainContent = text.substring(0, splitIndex).trim();
                 const quotedContent = text.substring(splitIndex).trim();
-                
+
                 if (quotedContent.length > 0) {
-                     return { 
-                        main: mainContent || "[No text before quote]", 
-                        quoted: quotedContent 
+                    return {
+                        main: mainContent || "[No text before quote]",
+                        quoted: quotedContent
                     };
                 }
             }
-            
+
             return { main: text, quoted: null };
         }
 
@@ -1889,10 +2519,10 @@
 
             let html = '';
             sortedMessages.forEach((msg, index) => {
-                const isInternal = msg.is_internal; 
+                const isInternal = msg.is_internal;
                 const cardClass = isInternal ? 'internal' : 'customer';
                 const senderLabel = isInternal ? 'Internal Note / Support' : 'Customer';
-                
+
                 // --- Attachment Logic Scoped to Message ---
                 let attachmentsHtml = '';
                 let attachments = [];
@@ -1900,7 +2530,7 @@
                     if (msg.attachments) {
                         attachments = typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments;
                     }
-                } catch(e) { console.error('Attachment parse error', e); }
+                } catch (e) { console.error('Attachment parse error', e); }
 
                 if (attachments.length > 0) {
                     attachmentsHtml = '<div class="message-attachments"><strong>Attachments:</strong>';
@@ -1941,9 +2571,9 @@
 
                 // Now clean quoted replies / forwards
                 const cleaned = cleanMessageBody(sanitizedBody);
-                
+
                 let bodyHtml = `<div class="message-body">${cleaned.main}`;
-                
+
                 if (cleaned.quoted) {
                     bodyHtml += `
                         <div class="quoted-text-container">
@@ -1982,13 +2612,13 @@
                     let attList = [];
                     try {
                         attList = typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments;
-                    } catch(e) {}
-                    
+                    } catch (e) { }
+
                     attList.forEach((att, idx) => {
                         const uniqueId = `att-${msg.message_id}-${idx}`;
                         const btnElement = document.getElementById(uniqueId);
                         if (btnElement) {
-                            btnElement.addEventListener('click', function() {
+                            btnElement.addEventListener('click', function () {
                                 const attachmentId = this.getAttribute('data-attachment-id');
                                 const messageId = this.getAttribute('data-message-id');
                                 const filename = this.getAttribute('data-filename');
@@ -2002,21 +2632,21 @@
 
         async function downloadAttachment(attachmentId, messageId, filename) {
             const url = `/api/download_attachment?attachment_id=${encodeURIComponent(attachmentId)}&message_id=${encodeURIComponent(messageId)}&attachment_name=${encodeURIComponent(filename)}`;
-            
+
             try {
                 const response = await fetch(url);
                 if (!response.ok) throw new Error('Download failed');
-                
+
                 const blob = await response.blob();
                 const objectUrl = window.URL.createObjectURL(blob);
-                
+
                 const a = document.createElement('a');
                 a.style.display = 'none';
                 a.href = objectUrl;
                 a.download = filename;
                 document.body.appendChild(a);
                 a.click();
-                
+
                 window.URL.revokeObjectURL(objectUrl);
                 document.body.removeChild(a);
             } catch (error) {
@@ -2024,14 +2654,14 @@
                 alert('Failed to download attachment. Please try again.');
             }
         }
-        
+
         function closeModal() {
             try {
                 console.log('Closing ticket modal...');
                 if (currentTicketIdStr && socket && typeof socket.connected !== 'undefined') {
                     socket.emit('unlock_ticket', { ticket_id: currentTicketIdStr });
                 }
-                
+
                 document.getElementById('ticketModal').classList.remove('active');
                 currentTicketRow = null;
                 currentTicketIdStr = null;
@@ -2042,7 +2672,7 @@
                 document.getElementById('ticketModal').classList.remove('active');
             }
         }
-        
+
         // Show toast notification
         function showToast(message, isError = false) {
             const toast = document.getElementById('toast');
@@ -2052,12 +2682,12 @@
                 toast.classList.add('error');
             }
             toast.classList.add('show');
-            
+
             setTimeout(() => {
                 toast.classList.remove('show');
             }, 3000);
         }
-        
+
         // Save ticket (draft + assignment only, no status change)
         async function saveTicket() {
             if (isTicketLocked) return;
@@ -2093,27 +2723,29 @@
             }
         }
 
+
+
         async function regenerateAI() {
             if (isTicketLocked || !currentTicketIdStr) return;
-            
+
             document.getElementById('btnRegenerateAI').disabled = true;
             document.getElementById('btnRegenerateAI').innerHTML = '⏳ Generating...';
-            
+
             try {
                 const response = await fetch('/api/regenerate_ai', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ticket_id: currentTicketIdStr })
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok && data.success) {
                     showToast('🔄 AI regeneration triggered successfully. Waiting for background generation...', false);
                     if (quillEditor) quillEditor.setText('Regenerating AI Draft... Please wait.');
                     setTimeout(() => {
                         loadTickets(); // Poll periodically
-                    }, 5000); 
+                    }, 5000);
                 } else {
                     showToast(data.error || 'Failed to trigger regeneration', true);
                 }
@@ -2194,17 +2826,17 @@
 
                 if (response.ok) {
                     closeModal();
-                    loadTickets(); 
+                    loadTickets();
                 }
             } catch (error) {
                 console.error('Error closing ticket:', error);
             }
         }
 
-        
+
 
         document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
+            btn.addEventListener('click', function () {
                 document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
                 currentFilter = this.dataset.filter;
@@ -2216,9 +2848,9 @@
         socket.on('ticket_timeline_update', (data) => {
             const container = document.getElementById('timelineList');
             if (!container) return;
-            
+
             container.innerHTML = '';
-            
+
             if (!data.timeline || data.timeline.length === 0) {
                 container.innerHTML = '<p class="text-center py-4">No events logged for this ticket yet.</p>';
                 return;
@@ -2229,10 +2861,10 @@
                 div.className = 'timeline-event';
                 // Professional timeline badges
                 const timeStr = new Date(ev.timestamp).toLocaleString();
-                
+
                 let eventTitle = ev.event_type.toUpperCase();
                 let messageHtml = '';
-                
+
                 if (ev.event_type === 'assigned') {
                     if (ev.details && ev.details.to) {
                         messageHtml = `Assigned to <strong>${ev.details.to}</strong>`;
@@ -2256,7 +2888,7 @@
                     if (ev.details) {
                         try {
                             messageHtml = `<pre style="margin:0; font-size:0.8rem; overflow:auto; max-height:100px; color: #a5b4fc; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">${JSON.stringify(ev.details, null, 2)}</pre>`;
-                        } catch(e) { messageHtml = String(ev.details); }
+                        } catch (e) { messageHtml = String(ev.details); }
                     } else {
                         messageHtml = '';
                     }
@@ -2289,10 +2921,10 @@
         function showTimeline(ticketId, subject, displayId = '') {
             const infoEl = document.getElementById('timelineTicketInfo');
             if (infoEl) infoEl.textContent = `Ticket: ${subject} (#${displayId || truncateTicketId(ticketId)})`;
-            
+
             const listEl = document.getElementById('timelineList');
             if (listEl) listEl.innerHTML = '<p class="text-center py-4">Loading timeline...</p>';
-            
+
             openModal('timelineModal');
             socket.emit('get_ticket_timeline', { ticket_id: ticketId });
         }
@@ -2305,11 +2937,19 @@
             if (modal) modal.classList.add('active');
         }
 
-        document.querySelectorAll('.visibility-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.visibility-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.pill-option').forEach(opt => {
+            opt.addEventListener('click', function () {
+                const container = document.getElementById('visibilityPill');
+                const visibility = this.dataset.visibility;
+
+                // Update active states
+                document.querySelectorAll('.pill-option').forEach(o => o.classList.remove('active'));
                 this.classList.add('active');
-                currentVisibility = this.dataset.visibility;
+
+                // Update slider position
+                container.setAttribute('data-active', visibility);
+
+                currentVisibility = visibility;
                 displayTickets();
             });
         });
@@ -2325,8 +2965,8 @@
         }, 30000);
 
         socket.on('connect', () => {
-             console.log('✓ Connected to server');
-             socket.emit('refresh_tickets');
+            console.log('✓ Connected to server');
+            socket.emit('refresh_tickets');
         });
 
         socket.on('stats_update', (stats) => {
@@ -2336,7 +2976,7 @@
         socket.on('ticket_updated', () => loadTickets());
         socket.on('ticket_status_toggled', () => loadTickets());
         socket.on('email_sent', () => loadTickets());
-        
+
         socket.on('ticket_locked', (data) => {
             const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);
             if (card) card.classList.add('locked-by-other');
@@ -2369,4 +3009,5 @@
 
     </script>
 </body>
+
 </html>

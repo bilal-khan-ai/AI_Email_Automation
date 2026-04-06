@@ -196,10 +196,27 @@ class SQLLogger:
                             body_text TEXT,
                             timestamp TIMESTAMPTZ,
                             attachments TEXT,
+                            cc TEXT DEFAULT '',
+                            bcc TEXT DEFAULT '',
                             is_internal BOOLEAN DEFAULT FALSE,
                             deleted_at TIMESTAMPTZ,
                             FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
                         )
+                    """)
+                    
+                    cur.execute("""
+                        DO $$ 
+                        BEGIN 
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='ticket_messages' AND column_name='cc') THEN 
+                                ALTER TABLE ticket_messages ADD COLUMN cc TEXT DEFAULT '';
+                            END IF;
+                            
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='ticket_messages' AND column_name='bcc') THEN 
+                                ALTER TABLE ticket_messages ADD COLUMN bcc TEXT DEFAULT '';
+                            END IF;
+                        END $$;
                     """)
                     
                     # 3. INDEXES
@@ -302,8 +319,8 @@ class SQLLogger:
                     seq = cur.fetchone()[0] + 1
                     display_id = f"{domain}-{date_str}-{seq:02d}"
 
-                    # Auto-assign ticket to least busy staff
-                    assignee = self.get_least_busy_staff()
+                    # New tickets start as Unassigned
+                    assignee = 'Unassigned'
                     
                     cur.execute("""
                         INSERT INTO tickets (
@@ -318,10 +335,9 @@ class SQLLogger:
                     
                     if created:
                         logger.info(f"✅ Created ticket {display_id} | Customer: {customer_email} | Subject: {subject[:50]}")
-                        # Log SLA Event
-                        self.log_ticket_event(ticket_id, 'created', 'system')
-                        if assignee and assignee != 'Unassigned':
-                             self.log_ticket_event(ticket_id, 'assigned', 'system', {'to': assignee})
+                        # Log SLA Event in the SAME transaction to avoid FK violation
+                        self._log_ticket_event_with_cursor(cur, ticket_id, 'created', 'system')
+                        # No assignment event here as it starts unassigned
                     else:
                         logger.debug(f"ℹ️  Ticket {ticket_id} already exists (idempotent)")
             
@@ -351,6 +367,13 @@ class SQLLogger:
         except Exception as e:
             logger.error(f"❌ Error backfilling display_ids: {e}")
     
+    def _log_ticket_event_with_cursor(self, cur, ticket_id: str, event_type: str, actor: str, details: dict = None):
+        """Internal helper to log event using an existing cursor/transaction."""
+        cur.execute("""
+            INSERT INTO ticket_events (ticket_id, event_type, actor, details, timestamp)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (ticket_id, event_type, actor, json.dumps(details) if details else None, datetime.now()))
+
     def log_ticket_event(self, ticket_id: str, event_type: str, actor: str, details: dict = None) -> bool:
         """
         Add an entry to the ticket_events table for SLA tracking.
@@ -358,10 +381,7 @@ class SQLLogger:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO ticket_events (ticket_id, event_type, actor, details, timestamp)
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, (ticket_id, event_type, actor, json.dumps(details) if details else None, datetime.now()))
+                    self._log_ticket_event_with_cursor(cur, ticket_id, event_type, actor, details)
             return True
         except Exception as e:
             logger.error(f"❌ Error logging ticket event {event_type} for {ticket_id}: {e}")
@@ -387,8 +407,8 @@ class SQLLogger:
                     cur.execute("""
                         INSERT INTO ticket_messages (
                             ticket_id, message_id, sender, body_text,
-                            timestamp, attachments, is_internal
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            timestamp, attachments, cc, bcc, is_internal
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO NOTHING
                     """, (
                         ticket_id,
@@ -397,6 +417,8 @@ class SQLLogger:
                         email.get('body'),
                         email.get('received'),
                         json.dumps(email.get('attachments', [])),
+                        email.get('cc', ''),
+                        email.get('bcc', ''),
                         is_internal
                     ))
                     
@@ -1346,6 +1368,24 @@ class SQLLogger:
                 row['attachments'] = []
         
         return row
+
+    def get_all_contact_emails(self) -> List[str]:
+        """Get unique list of all emails from tickets and messages."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT DISTINCT email FROM (
+                            SELECT customer_email as email FROM tickets WHERE customer_email IS NOT NULL AND customer_email != ''
+                            UNION
+                            SELECT sender as email FROM ticket_messages WHERE sender IS NOT NULL AND sender != ''
+                        ) AS all_emails
+                    """)
+                    rows = cur.fetchall()
+                    return [row[0] for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Error fetching all contact emails: {e}")
+            return []
     
     def close(self):
         """Close all database connections"""
