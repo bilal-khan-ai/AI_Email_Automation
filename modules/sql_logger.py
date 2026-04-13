@@ -216,6 +216,11 @@ class SQLLogger:
                                            WHERE table_name='ticket_messages' AND column_name='bcc') THEN 
                                 ALTER TABLE ticket_messages ADD COLUMN bcc TEXT DEFAULT '';
                             END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='ticket_messages' AND column_name='body_html') THEN 
+                                ALTER TABLE ticket_messages ADD COLUMN body_html TEXT;
+                            END IF;
                         END $$;
                     """)
                     
@@ -287,7 +292,7 @@ class SQLLogger:
             return False
     
     def create_ticket(self, ticket_id: str, conversation_id: str, subject: str, 
-                     customer_email: str) -> bool:
+                     customer_email: str, actor: str = 'system') -> bool:
         """
         Create a new ticket (idempotent).
         
@@ -336,7 +341,7 @@ class SQLLogger:
                     if created:
                         logger.info(f"✅ Created ticket {display_id} | Customer: {customer_email} | Subject: {subject[:50]}")
                         # Log SLA Event in the SAME transaction to avoid FK violation
-                        self._log_ticket_event_with_cursor(cur, ticket_id, 'created', 'system')
+                        self._log_ticket_event_with_cursor(cur, ticket_id, 'created', actor)
                         # No assignment event here as it starts unassigned
                     else:
                         logger.debug(f"ℹ️  Ticket {ticket_id} already exists (idempotent)")
@@ -407,14 +412,15 @@ class SQLLogger:
                     cur.execute("""
                         INSERT INTO ticket_messages (
                             ticket_id, message_id, sender, body_text,
-                            timestamp, attachments, cc, bcc, is_internal
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            body_html, timestamp, attachments, cc, bcc, is_internal
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO NOTHING
                     """, (
                         ticket_id,
                         message_id,
                         email.get('sender'),
-                        email.get('body'),
+                        email.get('body_text') or email.get('body'),
+                        email.get('body_html') or email.get('body'),
                         email.get('received'),
                         json.dumps(email.get('attachments', [])),
                         email.get('cc', ''),
@@ -1134,13 +1140,16 @@ class SQLLogger:
                         
                     # Pre-fetch existing state for activity logging
                     old_assignment = None
+                    old_status = None
                     t_id = identifier if where_col == "ticket_id" else None
-                    if 'assigned_to' in fields:
-                        cur.execute(f"SELECT ticket_id, assigned_to FROM tickets WHERE {where_col} = %s", (identifier,))
+                    
+                    if 'assigned_to' in fields or 'status' in fields:
+                        cur.execute(f"SELECT ticket_id, assigned_to, status FROM tickets WHERE {where_col} = %s", (identifier,))
                         row = cur.fetchone()
                         if row:
                             if not t_id: t_id = row[0]
                             old_assignment = row[1]
+                            old_status = row[2]
                         
                     query = sql.SQL("UPDATE tickets SET {} WHERE {} = %s").format(
                         sql.SQL(", ").join(
@@ -1168,6 +1177,16 @@ class SQLLogger:
                                  self.log_ticket_event(t_id, 'assigned', actor or 'system', {
                                      'from': old_assignment, 
                                      'to': new_assignment
+                                 })
+                        
+                        # Log Status Change if changed
+                        if 'status' in fields and t_id:
+                             new_status = fields['status']
+                             if str(old_status) != str(new_status):
+                                 event_type = 'closed' if new_status.lower() == 'closed' else 'status_changed'
+                                 self.log_ticket_event(t_id, event_type, actor or 'system', {
+                                     'from': old_status, 
+                                     'to': new_status
                                  })
                                  
                         return True
@@ -1291,15 +1310,44 @@ class SQLLogger:
                     events = []
                     for row in rows:
                         event = dict(row)
-                        if isinstance(event['timestamp'], datetime):
-                            event['timestamp'] = event['timestamp'].isoformat()
+                        ts = event['timestamp']
+                        if isinstance(ts, datetime):
+                            event['timestamp'] = ts.isoformat()
+                            ts_str = ts.strftime('%Y-%m-%d %H:%M:%S')
+                        else:
+                            ts_str = str(ts)
+
+                        actor = event.get('actor', 'unknown')
+                        etype = event.get('event_type', '')
+                        details = event.get('details') or {}
+                        
+                        # Map to user's requested human-readable format
+                        if etype == 'created':
+                            event['event_text'] = f"ticket created on {ts_str} by {actor}."
+                        elif etype == 'assigned':
+                            event['event_text'] = f"ticket assigned to {details.get('to', 'someone')}."
+                        elif etype == 'draft_saved':
+                            event['event_text'] = f"{actor} saved a draft."
+                        elif etype == 'ticket_taken':
+                            event['event_text'] = f"{actor} takes ticket."
+                        elif etype == 'responded' or etype == 'response_sent':
+                            event['event_text'] = f"{actor} sends a response."
+                        elif etype == 'closed':
+                            event['event_text'] = f"{actor} closes the ticket."
+                        elif etype == 'email_received':
+                            event['event_text'] = f"new response from customer {actor}."
+                        elif etype == 'note_added':
+                            event['event_text'] = f"internal update from {actor}."
+                        else:
+                            event['event_text'] = f"{actor} triggered {etype}."
+                            
                         events.append(event)
                     return events
         except Exception as e:
             logger.error(f"❌ Error fetching ticket timeline for {ticket_id}: {e}")
             return []
 
-    def _get_time_filter(self, time_range: str) -> (str, list):
+    def _get_time_filter(self, time_range: str) -> tuple[str, list]:
         """Helper to generate SQL time filter and params"""
         now = datetime.now()
         if time_range == 'today':

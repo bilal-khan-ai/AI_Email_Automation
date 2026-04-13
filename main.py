@@ -486,9 +486,32 @@ class SupportAgent:
                     continue
 
                 if is_img:
+                    # RAG Image Processing
                     desc = self.img_processor.process_image(att_bytes, filename=name)
                     if desc:
-                        attachment_descs.append(desc) # desc already has attachment name in it now in my ImageProcessor impl
+                        attachment_descs.append(desc)
+                    
+                    # NEW: Always-Render Strategy - Bake inline images into body_html as Base64
+                    # This ensures signatures and small inline screenshots always render without API calls
+                    is_inline = att.get('is_inline', False)
+                    cid = att.get('content_id', '').strip('<>')
+                    
+                    if is_inline and cid and email.get('body_html'):
+                        # Safety: only bake if under 1MB to prevent DB bloat
+                        if size < 1 * 1024 * 1024:
+                            import base64
+                            b64_data = base64.b64encode(att_bytes).decode('utf-8')
+                            data_uri = f"data:{ct};base64,{b64_data}"
+                            
+                            # Replace cid:cid with the data URI
+                            before_len = len(email['body_html'])
+                            email['body_html'] = email['body_html'].replace(f"cid:{cid}", data_uri)
+                            
+                            if len(email['body_html']) > before_len:
+                                logger.info(f"🖼️  Baked inline image {name} (CID: {cid}) into body_html")
+                        else:
+                            logger.info(f"🖼️  Skipping bake for large inline image {name} ({size} bytes)")
+                            
                 elif is_table:
                     res = self.tables_processor.process_bytes(att_bytes, filename=name)
                     txt = (res or {}).get("combined_text", "")
@@ -546,7 +569,7 @@ class SupportAgent:
                     ticket_id = f"TKT-{msg_id}"
                     
                     success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, sender
+                        ticket_id, conv_id, subject, sender, actor=sender
                     )
                     
                     if success:
@@ -615,11 +638,51 @@ class SupportAgent:
                 )
 
             else:
-                logger.warning(
-                    f"⚠️  Orphan internal email skipped (no parent ticket) | "
-                    f"Msg: {msg_id[:20]}... | Sender: {sender}"
-                )
-                return None
+                # Check if this orphan internal email was sent to support (to create a ticket)
+                is_direct_to_support = self.user_email and self.user_email.lower() in email.get('to', '').lower()
+                
+                if is_direct_to_support:
+                    # Create new ticket
+                    ticket_id = f"TKT-{msg_id}"
+                    
+                    success = self.sql.create_ticket(
+                        ticket_id, conv_id, subject, sender, actor=sender
+                    )
+                    
+                    if success:
+                        logger.info(
+                            f"✨ Created new ticket {ticket_id} from internal support request | "
+                            f"Staff: {sender} | Subject: {subject[:50]}"
+                        )
+                        
+                        # Log message (as non-internal for the initial ticket entry so it shows up)
+                        self.sql.log_message(ticket_id, email, is_internal=False)
+                        
+                        # Add to vector DB
+                        self.experience_db.add_email(
+                            email_id=redacted_email['id'],
+                            subject=redacted_email['subject'],
+                            body=redacted_email['body'],
+                            sender=redacted_email['sender'],
+                            image_descriptions=attachment_descs,
+                            metadata={
+                                'ticket_id': ticket_id,
+                                'pii_redacted': redacted_email.get('pii_redacted', False),
+                                'pii_entities_count': redacted_email.get('pii_entities_found', 0)
+                            }
+                        )
+                    else:
+                        logger.error(
+                            f"❌ Failed to create ticket from internal support request | "
+                            f"Msg: {msg_id[:20]}... | Sender: {sender}"
+                        )
+                        return None
+                else:
+                    logger.warning(
+                        f"⚠️  Orphan internal email skipped (no parent ticket) | "
+                        f"Msg: {msg_id[:20]}... | Sender: {sender}"
+                    )
+                    return None
         
         return ticket_id
     

@@ -441,13 +441,22 @@ def update_ticket():
         'last_updated': datetime.now().isoformat()
     }
     
-    # Add assignment if provided
-    if 'assigned_to' in data:
-        update_payload['assigned_to'] = data.get('assigned_to')
+    # AUTO-ASSIGNMENT: Only assign to the current user if it was previously Unassigned
+    # and they didn't manually pick someone else in the dropdown (which is passed in data)
+    target_assignee = data.get('assigned_to')
+    
+    # If no assignee provided, or we want to ensure it's not unassigned when saving
+    if not target_assignee:
+        target_assignee = actor_username
+        
+    update_payload['assigned_to'] = target_assignee
 
     # Perform SQL Update using the database primary key
-    actor_username = session.get('user', {}).get('username', 'system')
     success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
+    
+    if success:
+        # Log event for draft saved
+        sql_logger.log_ticket_event(ticket_id, 'draft_saved', actor_username)
 
     if success:
         # Broadcast update to all connected clients
@@ -463,6 +472,43 @@ def update_ticket():
             'error': 'Failed to save ticket',
             'details': f'No ticket found with id={ticket_db_id}'
         }), 500
+
+
+@app.route('/api/take_ticket', methods=['POST'])
+@login_required
+def take_ticket():
+    """
+    Manually take a ticket (assign to self).
+    """
+    data = request.json
+    ticket_db_id = data.get('row_number')
+    ticket_id = data.get('ticket_id')
+    actor_username = session.get('user', {}).get('username', 'system')
+    target_assignee = data.get('assigned_to', actor_username) # Default to self if not specified
+    
+    if not ticket_db_id or not ticket_id:
+        return jsonify({'error': 'Missing ticket identifiers'}), 400
+        
+    update_payload = {
+        'assigned_to': target_assignee,
+        'last_updated': datetime.now().isoformat()
+    }
+    
+    success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
+    
+    if success:
+        # Log event: if assigning to self, use 'ticket_taken', else 'ticket_assigned'
+        event_type = 'ticket_taken' if target_assignee == actor_username else 'ticket_assigned'
+        sql_logger.log_ticket_event(ticket_id, event_type, actor_username, {'to': target_assignee})
+        # Broadcast update
+        socketio.emit('ticket_updated', {
+            'ticket_id': ticket_id,
+            'row_number': ticket_db_id,
+            'updated_by': session.get('user_id')
+        })
+        return jsonify({'success': True, 'assigned_to': actor_username})
+    else:
+        return jsonify({'error': 'Failed to take ticket'}), 500
 
 
 @app.route('/api/toggle_ticket_status', methods=['POST'])
@@ -603,15 +649,14 @@ def send_to_customer():
             return jsonify({'error': 'Failed to send email via Graph API'}), 500
 
         # Update ticket (NO row_number garbage)
+        actor_username = session.get('user', {}).get('username', 'system')
         update_payload = {
             'ai_draft': ai_response,
-            'last_updated': datetime.now().isoformat()
+            'last_updated': datetime.now().isoformat(),
+            'assigned_to': actor_username # AUTO-ASSIGNMENT on send
         }
 
-        if assigned_to:
-            update_payload['assigned_to'] = assigned_to
-
-        sql_logger.update_ticket_fields(ticket['id'], update_payload)
+        sql_logger.update_ticket_fields(ticket['id'], update_payload, actor=actor_username)
 
         socketio.emit('email_sent', {
             'ticket_id': ticket_id
@@ -668,12 +713,52 @@ def search_tickets():
     return jsonify({'tickets': tickets})
 
 
+@app.route('/api/view_attachment', methods=['GET'])
+@login_required
+def view_attachment():
+    """
+    Serve attachment for inline viewing or preview.
+    """
+    try:
+        user_email = request.args.get('user_email', Config.USER_EMAIL)
+        message_id = request.args.get('message_id')
+        attachment_id = request.args.get('attachment_id')
+        filename = request.args.get('filename', 'attachment')
+
+        if not message_id or not attachment_id:
+            return jsonify({'error': 'Missing message_id or attachment_id'}), 400
+
+        attachment_data = graph_connector.get_attachment_sync(
+            user_email=user_email,
+            message_id=message_id,
+            attachment_id=attachment_id
+        )
+
+        if not attachment_data:
+            return jsonify({'error': 'Attachment not found or failed to download'}), 404
+
+        # Infer mimetype from filename
+        import mimetypes
+        mimetype, _ = mimetypes.guess_type(filename)
+        if not mimetype:
+            mimetype = 'application/octet-stream'
+
+        return send_file(
+            io.BytesIO(attachment_data),
+            mimetype=mimetype,
+            as_attachment=False
+        )
+
+    except Exception as e:
+        print(f"Error viewing attachment: {e}")
+        return jsonify({'error': f'Failed to view attachment: {str(e)}'}), 500
+
+
 @app.route('/api/download_attachment', methods=['GET'])
 @login_required
 def download_attachment():
     """
     Download attachment from Microsoft Graph.
-    Uses global graph_connector instance (no re-authentication per request).
     """
     try:
         user_email = request.args.get('user_email', Config.USER_EMAIL)
@@ -684,7 +769,6 @@ def download_attachment():
         if not message_id or not attachment_id:
             return jsonify({'error': 'Missing message_id or attachment_id'}), 400
 
-        # Fetch attachment binary data from Graph API using pre-authenticated instance
         attachment_data = graph_connector.get_attachment_sync(
             user_email=user_email,
             message_id=message_id,
@@ -692,14 +776,18 @@ def download_attachment():
         )
 
         if not attachment_data:
-            return jsonify({'error': 'Attachment not found or failed to download'}), 404
+            return jsonify({'error': 'Attachment failed to download'}), 404
 
-        # Return raw binary data with proper headers
+        import mimetypes
+        mimetype, _ = mimetypes.guess_type(attachment_name)
+        if not mimetype:
+            mimetype = 'application/octet-stream'
+
         return send_file(
             io.BytesIO(attachment_data),
             as_attachment=True,
             download_name=secure_filename(attachment_name),
-            mimetype="application/octet-stream"
+            mimetype=mimetype
         )
 
     except Exception as e:

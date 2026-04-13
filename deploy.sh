@@ -17,7 +17,7 @@ echo "Deploying to $SSH_USER@$VM_IP..."
 
 # Step 1: Package files locally (avoids missing 'rsync' on Windows Git Bash)
 echo "Packing files locally..."
-tar -czvf deploy_pkg.tar.gz --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='uploads' --exclude='Books' --exclude='data' --exclude='chroma_db' --exclude='chromaDB' .
+tar -czvf deploy_pkg.tar.gz --exclude='deploy_pkg.tar.gz' --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='uploads' --exclude='Books' --exclude='data' --exclude='chroma_db' --exclude='chromaDB' .
 
 # Step 2: Ensure directory exists & SCP upload
 echo "Uploading package to remote server..."

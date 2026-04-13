@@ -85,6 +85,11 @@
             transition: background 0.3s, color 0.3s;
         }
 
+        body.modal-open {
+            overflow: hidden !important;
+            height: 100vh !important;
+        }
+
         .header {
             background: var(--header-bg);
             color: white;
@@ -127,6 +132,109 @@
             color: #383d41;
         }
 
+        /* Preview Modal */
+        #previewModal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #previewModal .modal-content {
+            max-width: 95%;
+            width: 1200px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            padding: 0;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        #previewModal .preview-header {
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        #previewModal .preview-body {
+            flex: 1;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: auto;
+            position: relative;
+        }
+
+        body.dark-mode #previewModal .preview-body {
+            background: #121212;
+        }
+
+        #previewModal img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            background: white; /* Checkerboard pattern for transparency? Maybe later */
+        }
+
+        #previewModal iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+        }
+
+        .attachment-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .attachment-preview-btn {
+            padding: 6px 14px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%); /* Greenish for preview */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
+        }
+
+        .attachment-preview-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+            filter: brightness(1.1);
+        }
+
+        .attachment-download-btn {
+            padding: 6px 14px;
+            background: #3b82f6; /* Consistent blue */
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        }
+        
+        .attachment-download-btn:hover {
+            background-color: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+        }
+
         /* Stat card colors */
         .stat-card.pending {
             /* Now represents "open" tickets */
@@ -138,6 +246,19 @@
             /* Now represents "closed" tickets */
             border-left-color: #6c757d;
             /* Gray for closed */
+        }
+
+        .test-mode-input {
+            background-color: #e9ecef !important;
+            cursor: not-allowed !important;
+            border-color: #dee2e6 !important;
+            color: #495057 !important; /* Dark text for light background */
+        }
+
+        body.dark-mode .test-mode-input {
+            background-color: #2d2d2d !important;
+            color: #cbd5e1 !important;
+            border-color: #404040 !important;
         }
 
         /* Autocomplete Suggestions */
@@ -304,6 +425,66 @@
             gap: 0.5rem;
             flex-wrap: wrap;
             align-items: center;
+        }
+
+        .message-card {
+            border: 1px solid var(--border-color);
+            background: var(--bg-card);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            position: relative;
+            box-shadow: 0 2px 5px var(--shadow);
+        }
+
+        .message-card:hover {
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .message-card.expanded {
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+            border-color: #667eea;
+            cursor: default;
+        }
+
+        .message-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.02);
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .message-card:hover .message-header {
+            background-color: rgba(0, 0, 0, 0.04);
+        }
+
+        body.dark-mode .message-header {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .message-sender {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+        }
+
+        .message-time {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .message-body {
+            padding: 0; /* Changed to 0 so iframe can fill edge-to-edge if needed, we add margin to iframe body */
+            background-color: var(--bg-card);
+            display: none;
+            overflow: visible; /* Ensure it grows */
         }
 
         .filter-btn {
@@ -679,71 +860,18 @@
             flex-wrap: wrap;
         }
 
-        /* Message Thread Styles */
-        .message-thread {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            margin-bottom: 2rem;
+        .message-card.customer-message {
+            border-left: 5px solid #ff9800;
         }
 
-        .message-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1rem;
-            position: relative;
-        }
-
-        .message-card.expanded .message-body {
-            display: block;
-        }
-
-        .message-card.expanded .message-summary {
-            display: none;
-        }
-
-        .message-card.customer {
-            border-left: 4px solid #ffc107;
-            background-color: var(--section-bg-warn);
-        }
-
-        .message-card.internal {
-            border-left: 4px solid #667eea;
+        .message-card.internal-note {
+            border-left: 5px solid #667eea;
             background-color: var(--section-bg-info);
         }
 
-        .message-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5rem;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-            padding-bottom: 0.5rem;
-            cursor: pointer;
-        }
-
-        .message-header:hover {
-            background-color: rgba(0, 0, 0, 0.02);
-        }
-
-        .message-sender {
-            font-weight: bold;
-            color: var(--text-primary);
-        }
-
-        .message-body {
-            color: var(--text-primary);
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            line-height: 1.5;
-            transition: all 0.3s ease;
-            display: none;
-        }
-
-        .message-body.collapsed {
-            display: none;
+        /* Message body is toggled by JS */
+        .message-body.visible {
+            display: block;
         }
 
         .message-summary {
@@ -787,6 +915,53 @@
             border-top: 1px solid rgba(0, 0, 0, 0.1);
         }
 
+        .email-iframe-container {
+            width: 100%;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: #ffffff;
+            overflow: hidden;
+            margin-top: 0;
+            display: block;
+            height: auto;
+            min-height: 50px;
+        }
+
+        body.dark-mode .email-iframe-container {
+            background: #1a1a1a;
+            border-color: #404040;
+        }
+
+        .email-iframe-container iframe {
+            width: 100%;
+            border: none;
+            display: block;
+            height: auto;
+            overflow: hidden;
+        }
+
+        .quoted-text-btn {
+            background: var(--bg-primary);
+            color: #667eea;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin: 8px 0;
+        }
+
+        .quoted-text-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -809,14 +984,9 @@
         .modal-content {
             background: var(--bg-card);
             color: var(--text-primary);
-            padding: 2rem;
-            border-radius: 10px;
-            max-width: 1400px;
+            padding: 1.25rem;
+            border-radius: 12px;
             width: 95%;
-            height: 95vh;
-            /* Fixed height for flex layout */
-            display: flex;
-            flex-direction: column;
             position: relative;
         }
 
@@ -850,9 +1020,10 @@
             display: flex;
             align-items: center;
             gap: 1rem;
-            flex-wrap: wrap;
+            flex-wrap: nowrap; /* Keep items in one line for the header */
             margin-bottom: 1.5rem;
             flex-shrink: 0;
+            width: 100%;
         }
 
         .assignment-dropdown select {
@@ -1159,6 +1330,7 @@
 
         .modal-actions {
             display: flex;
+            justify-content: flex-end;
             gap: 1rem;
             margin-top: 1rem;
             padding-top: 1rem;
@@ -1441,7 +1613,9 @@
 
     <div class="controls">
         <div class="search-box">
-            <input type="text" id="search" placeholder="🔍 Search by email, subject, or ticket ID...">
+            <input type="search" id="search" name="search" autocomplete="off" 
+                   role="searchbox" aria-label="Search tickets"
+                   placeholder="🔍 Search by email, subject, or ticket ID...">
         </div>
         <div class="filter-buttons">
             <div class="pill-toggle" id="visibilityPill" data-active="all">
@@ -1481,20 +1655,34 @@
     </div>
 
     <div class="modal" id="ticketModal">
-        <div class="modal-content">
-            <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)">&times;</button>
-            <div class="modal-header-actions">
+        <div class="modal-content" style="max-height: 95vh; display: flex; flex-direction: column;">
+            <div class="modal-header-actions" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                 <h2 id="modal-subject"
-                    style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 3rem;">
+                    style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1rem;">
                 </h2>
-                <div id="lockStatus" class="lock-status">🔒 Locked by another user</div>
-                <div class="assignment-dropdown" style="margin-left: auto;">
-                    <select id="modal-assignment">
-                        <option value="Unassigned">Unassigned</option>
-                        {% for staff in staff_members %}
-                        <option value="{{ staff.username }}">{{ staff.username }}</option>
-                        {% endfor %}
-                    </select>
+                
+                <div id="lockStatus" class="lock-status" style="margin-right: 1rem;">🔒 Locked by another user</div>
+                
+                <!-- New Take/Close Buttons in Header -->
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="btn btn-primary btn-sm" id="btnTakeTicket" onclick="takeTicket()" title="Assign this ticket to yourself">
+                         Take Ticket
+                    </button>
+                    
+                    <button class="btn btn-danger btn-sm" id="btnToggleStatus" onclick="toggleTicketStatus()">
+                        <span id="toggleStatusIcon">✓</span> <span id="toggleStatusText">Close Ticket</span>
+                    </button>
+
+                    <div class="assignment-dropdown">
+                        <select id="modal-assignment" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onchange="changeAssignment()">
+                            <option value="Unassigned">Unassigned</option>
+                            {% for staff in staff_members %}
+                            <option value="{{ staff.username }}">{{ staff.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)" style="position:static; margin-left: 0.5rem;">&times;</button>
                 </div>
             </div>
 
@@ -1573,12 +1761,7 @@
                         </div>
                     </div>
 
-                    <div class="modal-actions" style="display: flex; justify-content: space-between;">
-                        <div style="display: flex; gap: 0.75rem;">
-                            <button class="btn btn-danger" id="btnToggleStatus" onclick="toggleTicketStatus()">
-                                <span id="toggleStatusIcon">✓</span> <span id="toggleStatusText">Close Ticket</span>
-                            </button>
-                        </div>
+                    <div class="modal-actions">
                         <div style="display: flex; gap: 0.75rem;">
                             <button class="btn btn-primary" id="btnSave" onclick="saveTicket()">
                                 <span>💾</span> Save
@@ -1609,7 +1792,7 @@
             <div style="margin-bottom: 1.5rem;">
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New
                     Password</label>
-                <input type="password" id="newUserPassword"
+                <input type="password" id="newUserPassword" autocomplete="new-password"
                     style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 8px; background: var(--input-bg); color: var(--text-primary);"
                     placeholder="Minimum 6 characters">
             </div>
@@ -1624,16 +1807,32 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <!-- Timeline Modal -->
     <div id="timelineModal" class="modal">
-        <div class="modal-content" style="max-width: 600px; position: relative;">
-            <button type="button" class="close-btn" onclick="closeTimeline()" title="Close">&times;</button>
-            <div class="modal-header d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+        <div class="modal-content" style="max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+            <div class="modal-header" style="padding: 1.25rem; border-bottom: 2px solid var(--border-color); flex-shrink: 0; position: relative;">
                 <h2 class="mb-0">🕒 Ticket Lifecycle Timeline</h2>
+                <button type="button" class="close-btn" onclick="closeTimeline()" title="Close">&times;</button>
             </div>
-            <div class="modal-body">
-                <div id="timelineTicketInfo" class="mb-3 py-2 border-bottom fw-bold"></div>
+            <div id="timelineTicketInfo" class="px-3 py-2 border-bottom fw-bold" style="background: var(--input-bg); flex-shrink: 0;"></div>
+            <div class="modal-body" style="overflow-y: auto; padding: 1.25rem; flex-grow: 1;">
                 <div id="timelineList" class="timeline-container">
                     <!-- Populated by JS -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <div class="preview-header">
+                <h3 id="previewTitle" style="margin:0; font-size: 1.1rem; color: var(--text-primary);">Preview</h3>
+                <div>
+                    <button class="btn btn-secondary btn-sm" id="btnDownloadPreview" style="margin-right: 0.5rem;">Download</button>
+                    <button type="button" class="close-btn" style="position:static; padding: 0 5px;" onclick="closePreview()">&times;</button>
+                </div>
+            </div>
+            <div class="preview-body" id="previewBody">
+                <!-- Content injected by JS -->
             </div>
         </div>
     </div>
@@ -1653,6 +1852,7 @@
         let currentCustomerFilter = null;
         let isTicketLocked = false;
         let isRightPanelCollapsed = true;
+        const testMode = {{ 'true' if test_mode else 'false' }};
         const WORKDAY_START = 0; // 0 AM
         const WORKDAY_END = 24;  // 12 AM
 
@@ -1854,9 +2054,20 @@
             return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
         }
 
-        function escapeHtml(text) {
-            if (!text) return "";
-            const div = document.createElement('div');
+        function cleanMessageBody(text) {
+            if (!text) return '';
+            
+            // If it looks like HTML, let's keep it mostly intact but sanitized.
+            // We only want to strip the "On ... wrote:" parts if it's plain text.
+            // But since we now fetch uniqueBody from Graph, this function is mostly a fallback.
+            
+            // If it's HTML (contains tags), return as is (sanitization happens after)
+            if (text.includes('<') && text.includes('>')) {
+                return text;
+            }
+
+            let cleaned = text; 
+            let div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
@@ -2082,7 +2293,6 @@
             // Check if latest message is from customer (not internal)
             // Assuming customer messages have is_internal: false or from_customer: true
             const isFromCustomer = latestMessage.is_internal === false;
-            hasInternalReplyAfter
             if (!isFromCustomer) return false;
 
             // Check if there's been an internal reply after this customer message
@@ -2241,7 +2451,7 @@
 
                 return `
                 <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
-                    <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', '${subject.replace(/'/g, "\\'")}', '${displayId}')">🕒</div>
+                    <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', ${JSON.stringify(subject).replace(/"/g, '&quot;')}, '${displayId}')">🕒</div>
                     <div class="ticket-header">
                         <div class="ticket-id-row">
                             <span class="ticket-id" title="${ticketId}">${displayId}</span>
@@ -2286,18 +2496,17 @@
             isRightPanelCollapsed = true;
             rightPanel.classList.add('collapsed');
 
-            const testMode = {{ 'true' if test_mode else 'false' }};
             const testEmail = "{{ test_email }}";
             
             if (testMode) {
                 document.getElementById('emailTo').value = testEmail;
                 document.getElementById('emailTo').readOnly = true;
-                document.getElementById('emailTo').style.backgroundColor = "#e9ecef";
-                document.getElementById('emailTo').style.cursor = "not-allowed";
+                document.getElementById('emailTo').classList.add('test-mode-input');
                 document.getElementById('emailTo').title = "Email redirected to test receiver in Test Mode";
             } else {
                 document.getElementById('emailTo').value = ticket.customer_email || '';
                 document.getElementById('emailTo').readOnly = false;
+                document.getElementById('emailTo').classList.remove('test-mode-input');
                 document.getElementById('emailTo').style.backgroundColor = "";
                 document.getElementById('emailTo').style.cursor = "";
                 document.getElementById('emailTo').title = "";
@@ -2308,6 +2517,7 @@
             document.getElementById('modal-email').textContent = ticket.customer_email || 'Unknown';
             document.getElementById('modal-date').textContent = formatDate(ticket.last_updated);
             document.getElementById('modal-assignment').value = ticket.assigned_to || '';
+            document.body.classList.add('modal-open');
 
             if (ticket.ai_draft) {
                 const sanitizedDraft = DOMPurify.sanitize(ticket.ai_draft, {
@@ -2368,7 +2578,6 @@
                 document.getElementById('threadLoading').style.display = 'none';
                 renderThread(messages);
 
-                const testMode = {{ 'true' if test_mode else 'false' }};
                 const testCC = "{{ test_cc }}";
                 const emailCC = document.getElementById('emailCC');
                 const emailBCC = document.getElementById('emailBCC');
@@ -2458,54 +2667,146 @@
             }
         }
 
-        function cleanMessageBody(text) {
-            // Heuristic to hide quoted text from email replies
+        function escapeHtml(text) {
             if (!text) return "";
-
-            // Common delimiters
-            const splitters = [
-                /On\s.+?wrote:/i,
-                /From:\s.+?/i,
-                /Sent\sfrom\smy\siPhone/i,
-                /________________________________/
-            ];
-
-            let splitIndex = -1;
-            for (let regex of splitters) {
-                const match = text.match(regex);
-                if (match && (splitIndex === -1 || match.index < splitIndex)) {
-                    splitIndex = match.index;
-                }
-            }
-
-            if (splitIndex !== -1) {
-                const mainContent = text.substring(0, splitIndex).trim();
-                const quotedContent = text.substring(splitIndex).trim();
-
-                if (quotedContent.length > 0) {
-                    return {
-                        main: mainContent || "[No text before quote]",
-                        quoted: quotedContent
-                    };
-                }
-            }
-
-            return { main: text, quoted: null };
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
-        function toggleMessageBody(headerEl) {
-            const card = headerEl.closest('.message-card');
-            if (!card) return;
-            document.querySelectorAll('.message-card').forEach(c => {
-                c.classList.remove('expanded');
+
+        function processCidImages(body, attachments, messageId) {
+            if (!body) return '';
+            let newBody = body;
+            
+            let attList = [];
+            try {
+                if (attachments) {
+                    attList = typeof attachments === 'string' ? JSON.parse(attachments) : attachments;
+                }
+            } catch (e) { console.error('Attachment parse error in processCidImages', e); }
+
+            if (!attList || attList.length === 0) return body;
+
+            // Safe regex escape helper
+            const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            attList.forEach(att => {
+                if (!att.id) return;
+                
+                const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}`;
+                
+                // If content_id is present, try multiple match strategies
+                if (att.content_id) {
+                    const cid = att.content_id.replace(/^<|>$/g, '').trim();
+                    const escapedCid = escapeRegExp(cid);
+                    
+                    // Match simple cid:URI and encoded variations
+                    const cidPatterns = [
+                        new RegExp(`cid:${escapedCid}`, 'gi'),
+                        new RegExp(`cid:${escapeRegExp(encodeURIComponent(cid))}`, 'gi')
+                    ];
+                    
+                    cidPatterns.forEach(pattern => {
+                        newBody = newBody.replace(pattern, viewUrl);
+                    });
+                }
+                
+                // Fallback: match by filename if it appears in a cid: reference
+                if (att.name) {
+                    const cleanName = att.name.trim();
+                    const namePattern = new RegExp(`cid:${escapeRegExp(cleanName)}`, 'gi');
+                    newBody = newBody.replace(namePattern, viewUrl);
+                    
+                    // Also check for encoded filename
+                    const encodedNamePattern = new RegExp(`cid:${escapeRegExp(encodeURIComponent(cleanName))}`, 'gi');
+                    newBody = newBody.replace(encodedNamePattern, viewUrl);
+                }
             });
-            card.classList.add('expanded');
+            
+            return newBody;
         }
 
-        function toggleQuotedText(btn) {
-            const content = btn.nextElementSibling;
-            content.classList.toggle('show');
-            btn.textContent = content.classList.contains('show') ? 'Hide Quoted Text ▲' : 'Show Quoted Text ▼';
+        function renderAttachments(attachments, messageId) {
+            let attachmentsHtml = '';
+            let attList = [];
+            try {
+                if (attachments) {
+                    attList = typeof attachments === 'string' ? JSON.parse(attachments) : attachments;
+                }
+            } catch (e) { console.error('Attachment parse error', e); }
+
+            if (attList.length > 0) {
+                attachmentsHtml = '<div class="message-attachments" style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color);">';
+                attachmentsHtml += '<div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">Attachments:</div>';
+                attList.forEach((att, idx) => {
+                    const attName = escapeHtml(att.name || 'file');
+                    const isImage = att.content_type && att.content_type.startsWith('image/');
+                    const isPDF = att.content_type === 'application/pdf' || attName.toLowerCase().endsWith('.pdf');
+                    const isPreviewable = isImage || isPDF;
+
+                    attachmentsHtml += `
+                        <div class="attachment-item" style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; background: var(--bg-card); border-radius: 8px; margin-top: 0.4rem; font-size: 0.85rem; border: 1px solid var(--border-color); transition: all 0.2s;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; overflow: hidden;">
+                                <span style="font-size: 1.2rem;">${isImage ? '🖼️' : (isPDF ? '📕' : '📄')}</span>
+                                <div style="display: flex; flex-direction: column; overflow: hidden;">
+                                    <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary);" title="${attName}">${attName}</span>
+                                    <span style="opacity:0.6; font-size: 0.75rem; color: var(--text-secondary);">${formatFileSize(att.size)} • ${escapeHtml(att.content_type || 'Unknown')}</span>
+                                </div>
+                            </div>
+                            <div class="attachment-actions" style="margin-left: 1rem;">
+                                ${isPreviewable ? `
+                                <button 
+                                    class="attachment-preview-btn" 
+                                    data-att-id="${escapeHtml(att.id)}"
+                                    data-msg-id="${escapeHtml(messageId || '')}"
+                                    data-filename="${attName}"
+                                    data-type="${escapeHtml(att.content_type || '')}"
+                                    onclick="event.stopPropagation(); handlePreviewClick(this)">Preview</button>
+                                ` : ''}
+                                <button 
+                                    class="attachment-download-btn" 
+                                    onclick="event.stopPropagation(); downloadAttachment('${escapeHtml(att.id)}', '${escapeHtml(messageId || '')}', '${attName}')">Download</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                attachmentsHtml += '</div>';
+            }
+            return attachmentsHtml;
+        }
+
+        function toggleMessage(card, e) {
+            // 1. Prevent toggle if user is selecting text (for copying)
+            if (window.getSelection().toString()) return;
+
+            // 2. Prevent toggle if click is inside the body content area
+            // This allows interacting with/copying from the body without closing it
+            if (e.target.closest('.message-body')) {
+                return;
+            }
+
+            if (e.target.closest('a') || e.target.closest('button') || e.target.closest('.quoted-text-btn')) {
+                return;
+            }
+            const body = card.querySelector('.message-body');
+            const isHiding = body.classList.contains('visible');
+            
+            if (isHiding) {
+                body.classList.remove('visible');
+                card.classList.remove('expanded');
+            } else {
+                body.classList.add('visible');
+                card.classList.add('expanded');
+                
+                // Trigger resize for all iframes within this body
+                const iframes = body.querySelectorAll('iframe');
+                iframes.forEach(ifr => {
+                    if (ifr.contentWindow) {
+                        ifr.contentWindow.postMessage('trigger-resize', '*');
+                    }
+                });
+            }
         }
 
         function renderThread(messages) {
@@ -2516,118 +2817,279 @@
             }
 
             const sortedMessages = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            container.innerHTML = ''; 
 
-            let html = '';
             sortedMessages.forEach((msg, index) => {
-                const isInternal = msg.is_internal;
-                const cardClass = isInternal ? 'internal' : 'customer';
-                const senderLabel = isInternal ? 'Internal Note / Support' : 'Customer';
-
-                // --- Attachment Logic Scoped to Message ---
-                let attachmentsHtml = '';
-                let attachments = [];
-                try {
-                    if (msg.attachments) {
-                        attachments = typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments;
+                const messageCard = document.createElement('div');
+                messageCard.className = `message-card ${msg.is_internal ? 'internal-note' : 'customer-message'}`;
+                if (index === 0) messageCard.classList.add('expanded');
+                
+                const sender = escapeHtml(msg.sender || 'Unknown');
+                const timestamp = formatDate(msg.timestamp);
+                const processedBody = processCidImages(msg.body_html || msg.body || msg.body_text || '', msg.attachments, msg.message_id);
+                const rawBody = (processedBody || '').trim();
+                
+                let displayBody = rawBody;
+                let threadSplit = -1;
+                
+                // Optimized splitters
+                const splitters = [/From:\s.+/i, /Sent:\s.+/i, /________________________________/];
+                for (let reg of splitters) {
+                    const match = displayBody.match(reg);
+                    if (match && (threadSplit === -1 || match.index < threadSplit)) {
+                        threadSplit = match.index;
                     }
-                } catch (e) { console.error('Attachment parse error', e); }
+                }
 
-                if (attachments.length > 0) {
-                    attachmentsHtml = '<div class="message-attachments"><strong>Attachments:</strong>';
-                    attachments.forEach((att, idx) => {
-                        const attName = escapeHtml(att.name || 'file');
-                        // ============================================================================
-                        // CRITICAL FIX: Use data-* attributes instead of inline onclick
-                        // This prevents JavaScript injection from filenames with quotes
-                        // ============================================================================
-                        const uniqueId = `att-${msg.message_id}-${idx}`;
-                        attachmentsHtml += `
-                            <div class="attachment-item">
-                                <span>📄 ${attName}</span>
-                                <button 
-                                    class="attachment-download-btn" 
-                                    id="${uniqueId}"
-                                    data-attachment-id="${escapeHtml(att.id)}"
-                                    data-message-id="${escapeHtml(msg.message_id)}"
-                                    data-filename="${attName}">Download</button>
+                let mainContent = displayBody;
+                let threadContent = '';
+                if (threadSplit !== -1) {
+                    mainContent = displayBody.substring(0, threadSplit).trim();
+                    threadContent = displayBody.substring(threadSplit).trim();
+                }
+
+                const sanitizeConfig = {
+                    ADD_TAGS: ['style', 'meta', 'link', 'xml', 'base', 'head', 'body', 'html'],
+                    ADD_ATTR: ['src', 'alt', 'title', 'target', 'style', 'bgcolor', 'valign', 'align', 'cellpadding', 'cellspacing', 'border', 'width', 'height', 'class', 'id', 'font', 'color', 'background', 'hspace', 'vspace'],
+                    WHOLE_DOCUMENT: true,
+                    FORCE_BODY: true,
+                    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|data|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
+                };
+
+                const sanitizedMain = DOMPurify.sanitize(mainContent, sanitizeConfig);
+                const sanitizedThread = threadContent ? DOMPurify.sanitize(threadContent, sanitizeConfig) : null;
+
+                const ccList = msg.cc ? escapeHtml(msg.cc) : '';
+                const bccList = msg.bcc ? escapeHtml(msg.bcc) : '';
+                
+                messageCard.innerHTML = `
+                    <div class="message-header" style="flex-direction: column; align-items: flex-start; padding: 12px 16px;">
+                        <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                            <span class="message-sender">${sender} <span style="font-weight:normal; opacity:0.8; font-size:0.8rem;">(${msg.is_internal ? 'Internal Note' : 'Customer'})</span></span>
+                            <span class="message-time">${timestamp}</span>
+                        </div>
+                        ${ccList ? `<div class="message-cc" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;"><strong>CC:</strong> <span style="opacity: 0.85;">${ccList}</span></div>` : ''}
+                        ${bccList ? `<div class="message-bcc" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; display: flex; gap: 4px; flex-wrap: wrap;"><strong>BCC:</strong> <span style="opacity: 0.85;">${bccList}</span></div>` : ''}
+                    </div>
+                    <div class="message-body ${index === 0 ? 'visible' : ''}">
+                        <div class="email-iframe-container">
+                            <iframe id="iframe-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts" scrolling="no"></iframe>
+                        </div>
+                        
+                        ${sanitizedThread ? `
+                        <div class="thread-toggle-container" style="padding: 0 16px;">
+                            <button class="quoted-text-btn" onclick="event.stopPropagation(); const container = this.nextElementSibling; const isHiding = container.style.display === 'none'; container.style.display = isHiding ? 'block' : 'none'; this.textContent = isHiding ? 'Hide Thread ▲' : 'Show Full Thread ▼'; if (isHiding) { const ifr = container.querySelector('iframe'); ifr.contentWindow.postMessage('trigger-resize', '*'); }">Show Full Thread ▼</button>
+                            <div class="email-iframe-container" style="display: none; border-top: none; border-radius: 0 0 8px 8px; opacity: 0.9;">
+                                <iframe id="iframe-thread-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts" scrolling="no"></iframe>
                             </div>
-                        `;
-                    });
-                    attachmentsHtml += '</div>';
-                }
-
-                // --- Message Body Cleanup (SECURITY HARDENED) ---
-                const rawBody = msg.body_text || msg.body || '';
-
-                // Sanitize user-generated HTML safely
-                const sanitizedBody = DOMPurify.sanitize(rawBody, {
-                    ALLOWED_TAGS: [
-                        'p', 'br', 'strong', 'em', 'u', 'a', 'ul', 'ol', 'li',
-                        'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div', 'span'
-                    ],
-                    ALLOWED_ATTR: ['href', 'class'],
-                    ALLOW_DATA_ATTR: false
-                });
-
-                // Now clean quoted replies / forwards
-                const cleaned = cleanMessageBody(sanitizedBody);
-
-                let bodyHtml = `<div class="message-body">${cleaned.main}`;
-
-                if (cleaned.quoted) {
-                    bodyHtml += `
-                        <div class="quoted-text-container">
-                            <span class="quoted-text-toggle" onclick="toggleQuotedText(this)">Show Quoted Text ▼</span>
-                            <div class="quoted-text-content">${cleaned.quoted}</div>
                         </div>
-                    `;
-                }
-                bodyHtml += `</div>`;
+                        ` : ''}
 
-                // Summary for collapsed state
-                const summaryText = (cleaned.main.substring(0, 100) + (cleaned.main.length > 100 ? '...' : '')).replace(/\n/g, ' ');
-
-                const expandedClass = index === 0 ? 'expanded' : '';
-
-                html += `
-                    <div class="message-card ${cardClass} ${expandedClass}">
-                        <div class="message-header" onclick="toggleMessageBody(this)">
-                            <span class="message-sender">${escapeHtml(msg.sender || 'Unknown')} (${senderLabel})</span>
-                            <span>${formatDate(msg.timestamp)}</span>
+                        <div style="padding: 0 16px 16px;">
+                            ${renderAttachments(msg.attachments, msg.message_id)}
                         </div>
-                        ${bodyHtml}
-                        <div class="message-summary">${escapeHtml(summaryText)}</div>
-                        ${attachmentsHtml}
                     </div>
                 `;
-            });
-            container.innerHTML = html;
 
-            // ============================================================================
-            // CRITICAL FIX: Attach event listeners AFTER innerHTML is set
-            // This is safe because we're using data-* attributes, not inline onclick
-            // ============================================================================
-            sortedMessages.forEach(msg => {
-                if (msg.attachments) {
-                    let attList = [];
-                    try {
-                        attList = typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments;
-                    } catch (e) { }
+                messageCard.addEventListener('click', function(e) {
+                    toggleMessage(this, e);
+                });
 
-                    attList.forEach((att, idx) => {
-                        const uniqueId = `att-${msg.message_id}-${idx}`;
-                        const btnElement = document.getElementById(uniqueId);
-                        if (btnElement) {
-                            btnElement.addEventListener('click', function () {
-                                const attachmentId = this.getAttribute('data-attachment-id');
-                                const messageId = this.getAttribute('data-message-id');
-                                const filename = this.getAttribute('data-filename');
-                                downloadAttachment(attachmentId, messageId, filename);
+                container.appendChild(messageCard);
+
+                const initIframe = (iframeId, content) => {
+                    const iframe = document.getElementById(iframeId);
+                    if (!iframe) return;
+                    
+                    const isDarkMode = document.body.classList.contains('dark-mode');
+                    const isHtml = /<[a-z][\s\S]*>/i.test(content);
+                    
+                    const bgColor = isDarkMode ? '#1a1a1a' : '#ffffff';
+                    const textColor = isDarkMode ? '#e2e8f0' : '#2d3748';
+                    const linkColor = isDarkMode ? '#818cf8' : '#3182ce';
+
+                    const doc = iframe.contentWindow.document;
+                    doc.open();
+                    doc.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <style>
+                                :root {
+                                    color-scheme: ${isDarkMode ? 'dark' : 'light'};
+                                }
+                                body { 
+                                    font-family: Calibri, 'Segoe UI', Arial, sans-serif; 
+                                    margin: 16px; 
+                                    color: ${textColor};
+                                    background: ${bgColor};
+                                    word-wrap: break-word;
+                                    line-height: 1.5;
+                                    padding-bottom: 30px; /* Buffer for visibility */
+                                    ${isHtml ? '' : 'white-space: pre-wrap; font-size: 14px;'}
+                                }
+                                /* Dark Mode Overrides for HTML Emails */
+                                ${isDarkMode ? `
+                                    [style*="background-color: white"], [style*="background-color: #fff"], [style*="background-color: #ffffff"] {
+                                        background-color: transparent !important;
+                                    }
+                                    [style*="background: white"], [style*="background: #fff"], [style*="background: #ffffff"] {
+                                        background: transparent !important;
+                                    }
+                                    /* Force light text if current color is too dark */
+                                    div, p, span, font, td {
+                                        color: inherit !important;
+                                    }
+                                    a { color: #818cf8 !important; }
+                                ` : `
+                                    a { color: #2563eb !important; }
+                                `}
+                                img { max-width: 100%; height: auto; display: block; margin: 8px 0; border-radius: 4px; }
+                                * { max-width: 100%; box-sizing: border-box; }
+                                table { border-collapse: collapse; width: 100% !important; height: auto !important; }
+                                blockquote { border-left: 4px solid #cbd5e1; padding-left: 1rem; margin: 1rem 0; color: ${isDarkMode ? '#94a3b8' : '#64748b'}; font-style: italic; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="email-content-wrapper">${content}</div>
+                        </body>
+                        <script>
+                            function sendSize() {
+                                const height = Math.max(
+                                    document.body.scrollHeight, 
+                                    document.documentElement.scrollHeight,
+                                    document.body.offsetHeight,
+                                    document.documentElement.offsetHeight
+                                );
+                                window.parent.postMessage({
+                                    type: 'resize-iframe',
+                                    id: '${iframeId}',
+                                    height: height + 25 // Added buffer to prevent cutting off last lines
+                                }, '*');
+                            }
+                            window.onload = () => {
+                                sendSize();
+                                // Second pass for dynamic elements (images, etc)
+                                setTimeout(sendSize, 500);
+                            };
+                            new ResizeObserver(sendSize).observe(document.body);
+                            window.addEventListener('message', (e) => {
+                                if (e.data === 'trigger-resize') sendSize();
                             });
-                        }
-                    });
+                            // Toggle parent message card on click
+                            document.addEventListener('click', (e) => {
+                                if (!e.target.closest('a') && !e.target.closest('button')) {
+                                    window.parent.postMessage({
+                                        type: 'toggle-message',
+                                        id: '${iframeId}'
+                                    }, '*');
+                                }
+                            });
+                            // Safety checks
+                            setTimeout(sendSize, 100);
+                            setTimeout(sendSize, 500);
+                            setTimeout(sendSize, 2000);
+                        <\/script>
+                        </html>
+                    `);
+                    doc.close();
+                };
+
+                initIframe(`iframe-${msg.message_id || index}`, sanitizedMain);
+                if (sanitizedThread) {
+                    initIframe(`iframe-thread-${msg.message_id || index}`, sanitizedThread);
+                }
+
+                if (msg.attachments) {
+                    try {
+                        const attList = typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments;
+                        attList.forEach((att, idx) => {
+                            const uniqueId = `att-${msg.message_id}-${idx}`;
+                            const btn = messageCard.querySelector(`#${uniqueId}`);
+                            if (btn) {
+                                btn.addEventListener('click', (e) => {
+                                    e.stopPropagation();
+                                    downloadAttachment(att.id, msg.message_id, att.name);
+                                });
+                            }
+                        });
+                    } catch (e) {}
                 }
             });
+        }
+
+        // Handle Iframe Resizing and Toggling Messages
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'resize-iframe') {
+                const iframe = document.getElementById(event.data.id);
+                if (iframe) {
+                    iframe.style.height = (event.data.height) + 'px';
+                    iframe.setAttribute('scrolling', 'no');
+                }
+            } else if (event.data.type === 'toggle-message') {
+                const iframe = document.getElementById(event.data.id);
+                if (iframe) {
+                    const card = iframe.closest('.message-card');
+                    if (card) toggleMessage(card, { target: iframe });
+                }
+            }
+        });
+
+        function handlePreviewClick(btn) {
+            const attId = btn.getAttribute('data-att-id');
+            const msgId = btn.getAttribute('data-msg-id');
+            const filename = btn.getAttribute('data-filename');
+            const type = btn.getAttribute('data-type');
+            previewAttachment(attId, msgId, filename, type);
+        }
+
+        async function previewAttachment(attachmentId, messageId, filename, contentType) {
+            const previewModal = document.getElementById('previewModal');
+            const previewTitle = document.getElementById('previewTitle');
+            const previewBody = document.getElementById('previewBody');
+            const btnDownloadPreview = document.getElementById('btnDownloadPreview');
+
+            previewTitle.textContent = filename;
+            previewBody.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; width: 100%;">
+                    <div style="width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                    <p style="margin-top: 1rem; color: var(--text-secondary);">Preparing preview...</p>
+                </div>
+            `;
+            
+            if (!document.getElementById('spinStyle')) {
+                const style = document.createElement('style');
+                style.id = 'spinStyle';
+                style.innerHTML = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
+                document.head.appendChild(style);
+            }
+
+            previewModal.classList.add('active');
+
+            const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(attachmentId)}&filename=${encodeURIComponent(filename)}`;
+            
+            btnDownloadPreview.onclick = (e) => {
+                e.stopPropagation();
+                downloadAttachment(attachmentId, messageId, filename);
+            };
+
+            setTimeout(() => {
+                const isImage = contentType && contentType.startsWith('image/');
+                const isPDF = contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf');
+
+                if (isImage) {
+                    previewBody.innerHTML = `<img src="${viewUrl}" alt="${escapeHtml(filename)}" onerror="this.parentElement.innerHTML='<div style=\'padding:2rem;color:red;\'>❌ Failed to load image preview.</div>'">`;
+                } else if (isPDF) {
+                    previewBody.innerHTML = `<iframe src="${viewUrl}" style="border:none; width:100%; height:100%;" title="PDF Preview"></iframe>`;
+                } else {
+                    previewBody.innerHTML = '<div style="padding: 2rem; color: var(--text-primary);">Preview not available for this file type.</div>';
+                }
+            }, 100);
+        }
+
+        function closePreview() {
+            document.getElementById('previewModal').classList.remove('active');
+            document.getElementById('previewBody').innerHTML = '';
         }
 
         async function downloadAttachment(attachmentId, messageId, filename) {
@@ -2663,6 +3125,7 @@
                 }
 
                 document.getElementById('ticketModal').classList.remove('active');
+                document.body.classList.remove('modal-open');
                 currentTicketRow = null;
                 currentTicketIdStr = null;
                 if (quillEditor) quillEditor.setText('');
@@ -2688,7 +3151,68 @@
             }, 3000);
         }
 
-        // Save ticket (draft + assignment only, no status change)
+        // Update assignment immediately when changed in dropdown
+        async function changeAssignment() {
+            if (!currentTicketRow || !currentTicketIdStr) return;
+            
+            const newAssignee = document.getElementById('modal-assignment').value;
+            
+            try {
+                const response = await fetch('/api/take_ticket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ticket_id: currentTicketIdStr,
+                        row_number: currentTicketRow,
+                        assigned_to: newAssignee
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showToast(`Ticket assigned to ${newAssignee}`, 'success');
+                    loadTickets();
+                } else {
+                    showToast(result.error || 'Failed to change assignment', 'error');
+                }
+            } catch (error) {
+                console.error('Error changing assignment:', error);
+                showToast('Network error while assigning', 'error');
+            }
+        }
+
+        // Manually take a ticket (assign to self)
+        async function takeTicket() {
+            if (!currentTicketIdStr) return;
+            
+            try {
+                const response = await fetch('/api/take_ticket', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ticket_id: currentTicketIdStr,
+                        row_number: currentTicketRow
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showToast('Ticket assigned to you!', 'success');
+                    // Update the local assignment select
+                    const assignmentSelect = document.getElementById('modal-assignment');
+                    if (assignmentSelect) {
+                        assignmentSelect.value = result.assigned_to;
+                    }
+                    loadTickets();
+                } else {
+                    showToast(result.error || 'Failed to take ticket', 'error');
+                }
+            } catch (error) {
+                console.error('Error taking ticket:', error);
+                showToast('Network error while taking ticket', 'error');
+            }
+        }
+
         async function saveTicket() {
             if (isTicketLocked) return;
 
@@ -2859,55 +3383,25 @@
             data.timeline.forEach(ev => {
                 const div = document.createElement('div');
                 div.className = 'timeline-event';
-                // Professional timeline badges
                 const timeStr = new Date(ev.timestamp).toLocaleString();
-
-                let eventTitle = ev.event_type.toUpperCase();
-                let messageHtml = '';
-
-                if (ev.event_type === 'assigned') {
-                    if (ev.details && ev.details.to) {
-                        messageHtml = `Assigned to <strong>${ev.details.to}</strong>`;
-                        if (ev.details.from && ev.details.from !== 'None') {
-                            messageHtml += ` (previously ${ev.details.from})`;
-                        }
-                    } else {
-                        messageHtml = 'Assignment updated';
-                    }
-                } else if (ev.event_type === 'created') {
-                    messageHtml = 'Ticket was created and added to the queue.';
-                } else if (ev.event_type === 'status_change') {
-                    if (ev.details && ev.details.new_status) {
-                        messageHtml = `Status changed to <span style="color:var(--accent); font-weight:bold;">${ev.details.new_status}</span>`;
-                    } else {
-                        messageHtml = 'Ticket status updated';
-                    }
-                } else if (ev.event_type === 'note' || ev.event_type === 'system_note') {
-                    messageHtml = ev.details && ev.details.note ? ev.details.note : 'Note added';
-                } else {
-                    if (ev.details) {
-                        try {
-                            messageHtml = `<pre style="margin:0; font-size:0.8rem; overflow:auto; max-height:100px; color: #a5b4fc; background: rgba(0,0,0,0.2); padding: 5px; border-radius: 4px;">${JSON.stringify(ev.details, null, 2)}</pre>`;
-                        } catch (e) { messageHtml = String(ev.details); }
-                    } else {
-                        messageHtml = '';
-                    }
-                }
+                
+                // Use the new human-readable event_text field
+                let messageHtml = ev.event_text || `Action: ${ev.event_type}`;
 
                 const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ev.actor);
                 const actorLabel = isEmail ? 'Customer' : 'Action by';
 
                 div.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <span class="badge" style="background: var(--accent); border-radius: 4px; padding: 4px 8px; font-size: 0.75rem;">${eventTitle}</span>
+                        <span class="badge" style="background: var(--accent); border-radius: 4px; padding: 4px 8px; font-size: 0.75rem;">${ev.event_type.toUpperCase()}</span>
                         <div style="font-size: 0.8rem; color: var(--text-secondary);">
                             <span class="badge bg-light text-dark border me-1">${ev.display_id || (ev.ticket_id ? ev.ticket_id.substring(0, 8) + '...' : 'Unknown')}</span>
                             ${timeStr}
                         </div>
                     </div>
                     <div class="timeline-body" style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
-                        ${messageHtml ? `<div style="margin-bottom: 8px; font-size: 0.95rem;">${messageHtml}</div>` : ''}
-                        <div style="font-size: 0.8rem; color: var(--text-secondary);"><strong>${actorLabel}:</strong> ${ev.actor || 'System'}</div>
+                        <div style="margin-bottom: 4px; font-size: 0.95rem; line-height: 1.4;">${messageHtml}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.8;">${timeStr}</div>
                     </div>
                 `;
                 container.appendChild(div);

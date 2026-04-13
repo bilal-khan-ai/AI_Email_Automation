@@ -329,7 +329,7 @@ class AsyncioWorker:
             
             query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
                 filter=filter_query,
-                select=['id', 'conversationId', 'subject', 'body', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients'],
+                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients'],
                 orderby=['receivedDateTime ASC'],
                 top=top,
                 expand=['attachments']
@@ -430,21 +430,31 @@ class AsyncioWorker:
                     'id': getattr(att, 'id', ''),
                     'name': getattr(att, 'name', 'unknown'),
                     'content_type': getattr(att, 'content_type', ''),
-                    'size': getattr(att, 'size', 0)
+                    'size': getattr(att, 'size', 0),
+                    'is_inline': getattr(att, 'is_inline', False),
+                    'content_id': getattr(att, 'content_id', None)
                 })
         
         sender_email = "unknown"
         if hasattr(msg, 'from_') and msg.from_ and msg.from_.email_address:
             sender_email = msg.from_.email_address.address
         
+        # Use uniqueBody for a cleaner body if available, otherwise fallback to full body
+        primary_html = msg.unique_body.content if (hasattr(msg, 'unique_body') and msg.unique_body) else None
+        if not primary_html:
+            primary_html = msg.body.content if (hasattr(msg, 'body') and msg.body) else ''
+            
         return {
             'id': msg.id,
             'conversation_id': getattr(msg, 'conversation_id', msg.id),
             'subject': getattr(msg, 'subject', 'No Subject'),
-            'body': msg.body.content if (hasattr(msg, 'body') and msg.body) else '',
+            'body_html': primary_html,
+            'body_text': getattr(msg, 'body_preview', primary_html[:255]),
+            'body': primary_html, # Deprecated legacy support
             'sender': sender_email,
             'received': msg.received_date_time.isoformat() if hasattr(msg, 'received_date_time') else datetime.now().isoformat(),
             'attachments': attachments,
+            'to': ', '.join([r.email_address.address for r in msg.to_recipients if r.email_address]) if hasattr(msg, 'to_recipients') and msg.to_recipients else '',
             'cc': ', '.join([r.email_address.address for r in msg.cc_recipients if r.email_address]) if hasattr(msg, 'cc_recipients') and msg.cc_recipients else '',
             'bcc': ', '.join([r.email_address.address for r in msg.bcc_recipients if r.email_address]) if hasattr(msg, 'bcc_recipients') and msg.bcc_recipients else ''
         }
