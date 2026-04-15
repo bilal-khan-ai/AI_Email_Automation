@@ -13,19 +13,22 @@ Core application entry point and lifecycle manager for the Support Agent.
 - **Signal Handling**: Graceful shutdown on SIGINT/SIGTERM. `[Lines 235-242]`
 - **Ticket Cleanup Daemon**: Background thread for automated ticket archival and removal. `[Lines 244-301]`
 - **Ticket Lifecycle Management**:
-    - **Soft Delete**: Hides inactive closed tickets from the UI. Automatically restored if a new email (customer or internal) is received for the ticket.
-    - **Hard Delete**: Permanently removes old records from PostgreSQL.
-    - **Knowledge Retention**: All message data remains in ChromaDB (Vector Store) indefinitely for RAG context, even after the source ticket is hard-deleted from SQL.
-- **Email Ingestion (`ingest_email`)**: Handles PII redaction, attachment extraction (images/docs/tables), and ticket linking. `[Line 419]`
-- **AI Response Generation (`generate_ai_response`)**: Dual RAG search (Docs + Experience) and GPT-4o-mini response drafting. `[Line 638]`
+    - **Soft Delete**: Hides inactive closed tickets from the UI after 1 day (Configurable). Automatically restored if a new email (customer or internal) is received for the ticket.
+- **Hard Delete**: Permanently removes old records from PostgreSQL after 6 days (Configurable).
+- **Knowledge Retention**: All message data remains in ChromaDB (Vector Store) indefinitely for RAG context, even after the source ticket is hard-deleted from SQL.
+- **PII Redaction**: Automatic stripping of Phones, Emails, Names, and Locations before RAG ingestion using a dedicated `PIIRedactor` module. `[Line 429]`
+- **Attachment Processing**: Extraction of text from Images (Vision), Tables (XLSX/CSV), and Docs (PDF/DOCX). Descriptions are stored as metadata in Vector DB.
+- **Inline Image Baking**: Small inline images (signatures, screenshots <1MB) are baked into HTML as Base64 during ingestion to ensure reliable rendering. `[Line 494]`
 - **Live Polling Loop (`run_live`)**: Periodic fetching of new emails from MS Graph. `[Line 798]`
+- **Internal Ticket Creation**: Supports staff creating tickets by emailing the support address directly; capturing the sender as the internal `actor`.
 
 ### [auth.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/auth.py)
 User authentication, authorization, and session management.
 
 - **UserManager Class**: Database-backed user management with PostgreSQL. `[Line 42]`
-- **Role-Based Access Control (RBAC)**: Supports roles:
-    - **Admin**: Full management access to users and metrics.
+- **Role-Based Access**: Supports `admin`, `staff`, and `user` roles.
+- **Assignable User Flag**: `is_assignable` property allows Admins to exclude specific users (e.g., technical accounts) from the dashboard load balancer and assignment dropdowns.
+- **Password Security**: SHA-256 with per-user salts.
     - **Staff**: Regular support access to assigned tickets.
 - **Account Toggling**: Enable/Disable staff accounts without deleting history. `[Line 328]`
 - **Login Required**: Route protection and role-specific redirection.
@@ -38,8 +41,9 @@ Real-time WebSocket events for the multi-user dashboard.
 - **Time Range Metrics**: Dropdown filtering (Today to All Time) powered by WebSockets. `[Line 715]`
 - **Staff-Specific Dashboard**: Staff only see tickets and stats assigned to their username. `[Line 308]`
 - **Ticket Locking**: Prevents concurrent edits by different users. `[Line 626]`
-- **Live Ticket Reassignment**: Quick-action table for Admins to load-balance tickets. `[Line 728]`
+- **Live Ticket Reassignment**: Immediate, SocketIO-driven reassignment via the modal dropdown (auto-broadcasts to all users).
 - **Manual Email Responses**: Logic for sending emails directly from the dashboard.
+- **UI/UX Modernization**: High-fidelity Outlook-style rendering, sticky timeline header, and hardened search fields (autofill protection).
 
 ### [config.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/config.py)
 Centralized configuration manager utilizing environment variables (`.env`).
@@ -56,10 +60,11 @@ Centralized configuration manager utilizing environment variables (`.env`).
 PostgreSQL backend for ticket persistence and logging.
 
 - **Schema Initialization**: Automated setup of `tickets` and `messages` tables.
-- **Ticket Auto-Assignment (Load Balancer)**: `get_least_busy_staff()` finds active staff with lowest open ticket count. `[Line 824]`
+- **Event-Driven Auto-Assignment**: Assignment logic shifted from "Least Busy" load balancer at creation to **User-Action-Based Assignment**. Tickets are assigned to the user who "Takes" them, saves a draft, or sends a response.
+- **Human-Readable Timeline**: Centralized event logging system providing a readable history (e.g., "aaaaa saved a draft.", "bbbb takes ticket."). `[Line 1324]`
 - **Staff Metrics**: Aggregated performance data with time-range filtering support (PostgreSQL-optimized). `[Line 901]`
-- **Soft-Delete Implementation**: Tracking logic for temporary vs permanent deletion. Hides records without wiping them; supports instant restoration via `reopen_ticket()`.
-- **Metadata Management**: Logging of AI entities, draft statuses, and lock states.
+- **Soft-Delete Implementation**: Automated cleanup via `main.py` daemon thread. Thresholds: 1 day for Soft-Delete, 6 days for Hard-Delete (Configurable via `.env`).
+- **Metadata Management**: Logging of AI entities, draft statuses, and lock states using JSONB columns for extensibility.
 
 ### [vector_db.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/vector_db.py)
 Semantic search and retrieval using ChromaDB with dynamic CPU/GPU handling.
