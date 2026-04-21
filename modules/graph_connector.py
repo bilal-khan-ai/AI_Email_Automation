@@ -329,7 +329,7 @@ class AsyncioWorker:
             
             query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
                 filter=filter_query,
-                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients'],
+                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients', 'internetMessageId'],
                 orderby=['receivedDateTime ASC'],
                 top=top,
                 expand=['attachments']
@@ -446,6 +446,7 @@ class AsyncioWorker:
             
         return {
             'id': msg.id,
+            'internet_message_id': getattr(msg, 'internet_message_id', None),
             'conversation_id': getattr(msg, 'conversation_id', msg.id),
             'subject': getattr(msg, 'subject', 'No Subject'),
             'body_html': primary_html,

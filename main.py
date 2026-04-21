@@ -390,8 +390,33 @@ class SupportAgent:
         return domain.lower()
     
     def _is_internal_email(self, sender: str) -> bool:
-        """Check if email is from greenwaresolutions.com"""
+        """Check if email is from internal domain"""
         return self._extract_email_domain(sender) == INTERNAL_DOMAIN.lower()
+    
+    def find_customer_email(self, email_dict: dict) -> str:
+        """
+        Identify the real customer email from an email object.
+        If sender is staff, looks for the first non-staff recipient in To/CC.
+        """
+        sender = email_dict.get('sender', '').lower()
+        if not self._is_internal_email(sender):
+            return sender
+            
+        # Sender is staff, check TO
+        to_str = email_dict.get('to', '').lower()
+        recipients = [r.strip() for r in to_str.split(',') if r.strip()]
+        for r in recipients:
+            if not self._is_internal_email(r):
+                return r
+                
+        # Check CC
+        cc_str = email_dict.get('cc', '').lower()
+        cc_recipients = [r.strip() for r in cc_str.split(',') if r.strip()]
+        for r in cc_recipients:
+            if not self._is_internal_email(r):
+                return r
+                
+        return sender # Fallback
     
     def ingest_email(self, email: dict) -> str:
         """
@@ -415,8 +440,9 @@ class SupportAgent:
         subject = email.get('subject', 'No Subject')
         conv_id = email.get('conversation_id')
         
-        # Idempotency check
-        if self.sql.message_exists(msg_id):
+        # Idempotency check (Checks both Graph ID and Internet Message ID)
+        internet_msg_id = email.get('internet_message_id')
+        if self.sql.message_exists(msg_id, internet_msg_id):
             logger.debug(f"ℹ️  Message {msg_id[:20]}... already processed (skipping)")
             return None
         
@@ -491,26 +517,35 @@ class SupportAgent:
                     if desc:
                         attachment_descs.append(desc)
                     
-                    # NEW: Always-Render Strategy - Bake inline images into body_html as Base64
-                    # This ensures signatures and small inline screenshots always render without API calls
-                    is_inline = att.get('is_inline', False)
-                    cid = att.get('content_id', '').strip('<>')
+                    # ENHANCED: Always-Render Strategy - Bake image attachments into body_html if referenced by CID
+                    # This bypasses failing live API calls for images that are effectively inline
+                    cid = (att.get('content_id') or '').strip('<>')
+                    att_name = att.get('name', '')
                     
-                    if is_inline and cid and email.get('body_html'):
-                        # Safety: only bake if under 1MB to prevent DB bloat
-                        if size < 1 * 1024 * 1024:
+                    if email.get('body_html') and (cid or att_name):
+                        # Safety: only bake if under 1.5MB to prevent DB bloat
+                        if size < 1.5 * 1024 * 1024:
                             import base64
                             b64_data = base64.b64encode(att_bytes).decode('utf-8')
                             data_uri = f"data:{ct};base64,{b64_data}"
                             
-                            # Replace cid:cid with the data URI
-                            before_len = len(email['body_html'])
-                            email['body_html'] = email['body_html'].replace(f"cid:{cid}", data_uri)
+                            baked = False
+                            # Strategy 1: Match by CID (most common)
+                            if cid:
+                                if f"cid:{cid}" in email['body_html']:
+                                    email['body_html'] = email['body_html'].replace(f"cid:{cid}", data_uri)
+                                    baked = True
                             
-                            if len(email['body_html']) > before_len:
-                                logger.info(f"🖼️  Baked inline image {name} (CID: {cid}) into body_html")
+                            # Strategy 2: Match by filename (fallback for some clients)
+                            if not baked and att_name:
+                                if f"cid:{att_name}" in email['body_html']:
+                                    email['body_html'] = email['body_html'].replace(f"cid:{att_name}", data_uri)
+                                    baked = True
+                            
+                            if baked:
+                                logger.info(f"🖼️  Baked image {att_name} (CID: {cid}) into body_html")
                         else:
-                            logger.info(f"🖼️  Skipping bake for large inline image {name} ({size} bytes)")
+                            logger.info(f"🖼️  Skipping bake for large image {att_name} ({size} bytes)")
                             
                 elif is_table:
                     res = self.tables_processor.process_bytes(att_bytes, filename=name)
@@ -567,9 +602,10 @@ class SupportAgent:
                 else:
                     # Create new ticket
                     ticket_id = f"TKT-{msg_id}"
+                    customer_email = self.find_customer_email(email)
                     
                     success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, sender, actor=sender
+                        ticket_id, conv_id, subject, customer_email, actor=sender
                     )
                     
                     if success:
@@ -644,9 +680,10 @@ class SupportAgent:
                 if is_direct_to_support:
                     # Create new ticket
                     ticket_id = f"TKT-{msg_id}"
+                    customer_email = self.find_customer_email(email)
                     
                     success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, sender, actor=sender
+                        ticket_id, conv_id, subject, customer_email, actor=sender
                     )
                     
                     if success:
@@ -883,25 +920,22 @@ class SupportAgent:
                             f"ID: {email.get('id', 'unknown')[:20]}...: {e}"
                         )
                 
-                # Process AI Drafts (New emails + Forced Regeneration)
-                tickets_to_regen = self.sql.get_tickets_needing_regeneration()
-                if tickets_to_regen:
-                    logger.info(f"🔄 Found {len(tickets_to_regen)} tickets flagged for AI regeneration.")
-                
-                all_to_process = set(touched).union(set(tickets_to_regen))
-                
-                for ticket_id in all_to_process:
+                # Process AI Drafts for new emails only (Regeneration is now handled synchronously by the dashboard)
+                # Cleanup any accidental legacy flags
+                legacy_regen = self.sql.get_tickets_needing_regeneration()
+                if legacy_regen:
+                    logger.info(f"🧹 Clearing {len(legacy_regen)} legacy AI regeneration flags...")
+                    for t_id in legacy_regen:
+                        with self.sql.conn_manager.get_connection() as conn:
+                            with conn.cursor() as cur:
+                                cur.execute("UPDATE tickets SET needs_ai_generation = FALSE WHERE ticket_id = %s", (t_id,))
+
+                # Initial AI processing for new emails
+                for ticket_id in touched:
                     if self._shutdown_requested:
                         break
                     try:
                         self.generate_ai_response(ticket_id)
-                        
-                        # Failsafe: if this ticket was flagged for regeneration, ensure flag is cleared 
-                        # even if generation returned early or encountered soft error
-                        if ticket_id in tickets_to_regen:
-                            with self.sql.conn_manager.get_connection() as conn:
-                                with conn.cursor() as cur:
-                                    cur.execute("UPDATE tickets SET needs_ai_generation = FALSE WHERE ticket_id = %s", (ticket_id,))
                     except Exception as e:
                         logger.error(f"❌ Error generating AI for {ticket_id}: {e}")
                 

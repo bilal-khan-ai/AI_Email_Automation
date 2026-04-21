@@ -221,6 +221,11 @@ class SQLLogger:
                                            WHERE table_name='ticket_messages' AND column_name='body_html') THEN 
                                 ALTER TABLE ticket_messages ADD COLUMN body_html TEXT;
                             END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='ticket_messages' AND column_name='internet_message_id') THEN 
+                                ALTER TABLE ticket_messages ADD COLUMN internet_message_id TEXT;
+                            END IF;
                         END $$;
                     """)
                     
@@ -259,6 +264,12 @@ class SQLLogger:
                     cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_msg_deleted
                         ON ticket_messages(deleted_at) WHERE deleted_at IS NOT NULL
+                    """)
+
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_msg_internet_id
+                        ON ticket_messages(internet_message_id) 
+                        WHERE internet_message_id IS NOT NULL
                     """)
                     
                     # 4. SLA TRACKING TABLE: TICKET_EVENTS
@@ -411,13 +422,14 @@ class SQLLogger:
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO ticket_messages (
-                            ticket_id, message_id, sender, body_text,
+                            ticket_id, message_id, internet_message_id, sender, body_text,
                             body_html, timestamp, attachments, cc, bcc, is_internal
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO NOTHING
                     """, (
                         ticket_id,
                         message_id,
+                        email.get('internet_message_id'),
                         email.get('sender'),
                         email.get('body_text') or email.get('body'),
                         email.get('body_html') or email.get('body'),
@@ -910,12 +922,14 @@ class SQLLogger:
             logger.error(f"❌ Error finding ticket by conversation_id {conversation_id}: {e}")
             return None
     
-    def message_exists(self, message_id: str) -> bool:
+    def message_exists(self, message_id: str, internet_message_id: Optional[str] = None) -> bool:
         """
-        Check if message exists (regardless of soft-delete status).
+        Check if message exists in the database.
+        Checks both Graph ID and InternetMessageId for robust deduplication across folders.
         
         Args:
-            message_id: Message ID to check
+            message_id: Graph message ID
+            internet_message_id: Global Internet Message ID
             
         Returns:
             bool: True if exists, False otherwise
@@ -923,10 +937,16 @@ class SQLLogger:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT 1 FROM ticket_messages 
-                        WHERE message_id = %s
-                    """, (message_id,))
+                    if internet_message_id:
+                        cur.execute("""
+                            SELECT 1 FROM ticket_messages 
+                            WHERE message_id = %s OR internet_message_id = %s
+                        """, (message_id, internet_message_id))
+                    else:
+                        cur.execute("""
+                            SELECT 1 FROM ticket_messages 
+                            WHERE message_id = %s
+                        """, (message_id,))
                     
                     exists = cur.fetchone() is not None
                     logger.debug(f"ℹ️  Message {message_id[:20]}... exists: {exists}")

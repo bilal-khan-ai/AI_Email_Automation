@@ -15,6 +15,8 @@ from modules.graph_connector import GraphConnector
 import auth
 from auth import init_auth, login_required, socketio_login_required, socketio_admin_required, admin_required, get_current_user, is_admin
 from config import Config
+from modules.openai_agent import OpenAIAgent
+from modules.vector_db import VectorDatabase, BookVectorDB
 
 app = Flask(__name__)
 logger = logging.getLogger(__name__)
@@ -62,6 +64,14 @@ else:
 # Create uploads directory for temporary file storage
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Initialize AI and Vector DBs for synchronous tasks
+ai_agent = OpenAIAgent(Config.OPENAI_API_KEY)
+ai_agent.authenticate()
+
+# Using force_cpu=True for vector DBs in the dashboard process to avoid VRAM contention with the main daemon
+experience_db = VectorDatabase(Config.CHROMA_DB_PATH, Config.COLLECTION_NAME, force_cpu=True)
+documentation_db = BookVectorDB(Config.BOOKSTACK_DB_PATH)
 
 # Track connected users and their rooms
 connected_users = {}
@@ -441,6 +451,9 @@ def update_ticket():
         'last_updated': datetime.now().isoformat()
     }
     
+    # Standardize actor identification
+    actor_username = session.get('user', {}).get('username', 'system')
+    
     # AUTO-ASSIGNMENT: Only assign to the current user if it was previously Unassigned
     # and they didn't manually pick someone else in the dropdown (which is passed in data)
     target_assignee = data.get('assigned_to')
@@ -737,9 +750,12 @@ def view_attachment():
         if not attachment_data:
             return jsonify({'error': 'Attachment not found or failed to download'}), 404
 
-        # Infer mimetype from filename
-        import mimetypes
-        mimetype, _ = mimetypes.guess_type(filename)
+        # Priority: 1. Query parameter, 2. Guess from filename, 3. Default
+        mimetype = request.args.get('content_type')
+        if not mimetype:
+            import mimetypes
+            mimetype, _ = mimetypes.guess_type(filename)
+        
         if not mimetype:
             mimetype = 'application/octet-stream'
 
@@ -797,6 +813,10 @@ def download_attachment():
 @app.route('/api/regenerate_ai', methods=['POST'])
 @login_required
 def regenerate_ai():
+    """DEPRECATED: Use /api/regenerate_ai_sync instead for low-latency updates"""
+    return jsonify({'success': False, 'error': 'This endpoint is deprecated. Please refresh your dashboard.'}), 410
+
+def legacy_regenerate_ai_DEPRECATED():
     """Flag a ticket for AI regeneration"""
     data = request.json
     ticket_id = data.get('ticket_id')
@@ -810,6 +830,87 @@ def regenerate_ai():
         return jsonify({'success': True})
     else:
         return jsonify({'success': False, 'error': 'Database error flagging ticket'}), 500
+
+
+@app.route('/api/regenerate_ai_sync', methods=['POST'])
+@login_required
+def regenerate_ai_sync():
+    """Synchronously regenerate AI draft with optional user instructions"""
+    try:
+        data = request.json
+        ticket_id = data.get('ticket_id')
+        user_instructions = data.get('user_instructions')
+        current_draft = data.get('current_draft')
+        
+        if not ticket_id:
+            return jsonify({'success': False, 'error': 'No ticket ID provided'}), 400
+            
+        # 1. Fetch thread messages
+        messages = sql_logger.get_thread_messages(ticket_id)
+        if not messages:
+            return jsonify({'success': False, 'error': 'No messages found for ticket'}), 404
+            
+        # 2. Get last customer message for query context
+        last_customer_msg = next((m for m in reversed(messages) if not m.get('is_internal')), messages[-1])
+        query = last_customer_msg.get('body_text', '')
+        
+        # 3. DUAL RAG SEARCH
+        # 3a. Search documentation (authoritative)
+        docs_raw = documentation_db.query_bookstack(query, n_results=Config.TOP_K_RESULTS)
+        # Format doc results to match OpenAIAgent expectations
+        docs = []
+        if docs_raw and 'documents' in docs_raw and docs_raw['documents']:
+            for i, doc_text in enumerate(docs_raw['documents'][0]):
+                docs.append({
+                    'content': doc_text,
+                    'metadata': docs_raw['metadatas'][0][i] if 'metadatas' in docs_raw else {},
+                    'distance': docs_raw['distances'][0][i] if 'distances' in docs_raw else 0.5
+                })
+
+        # 3b. Search experience (advisory)
+        experiences = experience_db.search_similar(query, top_k=Config.TOP_K_RESULTS)
+        
+        # 4. Generate response
+        draft, provenance = ai_agent.generate_response(
+            messages=messages,
+            documentation_context=docs,
+            experience_context=experiences,
+            user_instructions=user_instructions,
+            current_draft=current_draft,
+            customer_email=messages[0].get('sender'),
+            subject=messages[0].get('subject')
+        )
+        
+        if not draft:
+            return jsonify({'success': False, 'error': 'AI failed to generate a response'}), 500
+            
+        # 5. Save draft to DB immediately
+        update_payload = {
+            'ai_draft': draft,
+            'last_updated': datetime.now().isoformat()
+        }
+        
+        # Get DB primary key internal ID for this ticket_id
+        ticket = sql_logger.get_ticket_by_id(ticket_id)
+        if ticket:
+            actor = session.get('user', {}).get('username', 'system')
+            sql_logger.update_ticket_fields(ticket['id'], update_payload, actor=actor)
+            
+        # 6. Broadcast update via socket
+        socketio.emit('ticket_updated', {
+            'ticket_id': ticket_id,
+            'updated_by': session.get('user_id')
+        })
+        
+        return jsonify({
+            'success': True, 
+            'draft': draft,
+            'provenance': provenance
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in sync regeneration: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ============================================================================

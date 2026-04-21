@@ -167,6 +167,8 @@ Subject: {subject}
         context_emails: Optional[List[Dict[str, Any]]] = None,          # LEGACY parameter
         documentation_context: Optional[List[Dict[str, Any]]] = None,    # NEW parameter
         experience_context: Optional[List[Dict[str, Any]]] = None,       # NEW parameter
+        user_instructions: Optional[str] = None,               # REFINEMENT parameter
+        current_draft: Optional[str] = None,                   # REFINEMENT parameter
         customer_email: str = "", 
         subject: str = ""
     ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
@@ -178,6 +180,7 @@ Subject: {subject}
         - Internal reasoning framework
         - Sendability gate (safe to send or needs clarification)
         - Documentation overrides experience in conflicts
+        - Instruction-based refinement of existing drafts
         
         BACKWARD COMPATIBILITY:
         - If called with old signature (context_emails), works as before
@@ -188,6 +191,8 @@ Subject: {subject}
             context_emails: [LEGACY] Similar past emails from RAG
             documentation_context: [NEW] BookStack docs from RAG (authority: hard_fact)
             experience_context: [NEW] Past support emails from RAG
+            user_instructions: [REFINEMENT] Specific instructions from the user for this generation
+            current_draft: [REFINEMENT] The current draft to be refined/improved
             customer_email: Customer's email address
             subject: Email subject
             
@@ -344,79 +349,71 @@ Example format:
             # 5. Build user prompt with clearly separated contexts
             if use_enhanced_mode and documentation_context:
                 # Enhanced mode with documentation
+                user_prompt_parts = []
+                
                 if thread_history:
-                    user_prompt = f"""PREVIOUS CONVERSATION THREAD:
-{thread_history}
-
-CURRENT CUSTOMER QUESTION:
-{latest_question}
-
-═══════════════════════════════════════════════════════════════
-SECTION 1: AUTHORITATIVE DOCUMENTATION (Follow EXACTLY)
-═══════════════════════════════════════════════════════════════
-{doc_context}
-
-═══════════════════════════════════════════════════════════════
-SECTION 2: PAST SUPPORT EXPERIENCE (Use ONLY if not contradicting documentation)
-═══════════════════════════════════════════════════════════════
-{exp_context}
-
-═══════════════════════════════════════════════════════════════
-YOUR TASK:
-═══════════════════════════════════════════════════════════════
-1. Apply the Internal Reasoning framework (do not show this to the customer)
-2. Draft a professional email response following the Response Rules
-3. Ensure your response passes the Sendability Gate
-4. Make sure your response is to the point and direct, not wordy
-
-Remember: Documentation is authoritative. Past experience is advisory only."""
+                    user_prompt_parts.append(f"PREVIOUS CONVERSATION THREAD:\n{thread_history}")
+                
+                user_prompt_parts.append(f"CURRENT CUSTOMER QUESTION:\n{latest_question}")
+                
+                if current_draft:
+                    user_prompt_parts.append(f"DRAFT TO REFINE:\n{current_draft}")
+                
+                if user_instructions:
+                    user_prompt_parts.append(f"SPECIFIC USER INSTRUCTIONS:\n{user_instructions}")
+                
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append("SECTION 1: AUTHORITATIVE DOCUMENTATION (Follow EXACTLY)")
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append(doc_context)
+                
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append("SECTION 2: PAST SUPPORT EXPERIENCE (Use ONLY if not contradicting documentation)")
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append(exp_context)
+                
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append("YOUR TASK:")
+                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+                user_prompt_parts.append("1. Apply the Internal Reasoning framework (do not show this to the customer)")
+                
+                if user_instructions:
+                    user_prompt_parts.append(f"2. Execute the USER INSTRUCTIONS faithfully: '{user_instructions}'")
                 else:
-                    # First message in thread
-                    user_prompt = f"""CUSTOMER'S QUESTION:
-{latest_question}
-
-═══════════════════════════════════════════════════════════════
-SECTION 1: AUTHORITATIVE DOCUMENTATION (Follow EXACTLY)
-═══════════════════════════════════════════════════════════════
-{doc_context}
-
-═══════════════════════════════════════════════════════════════
-SECTION 2: PAST SUPPORT EXPERIENCE (Use ONLY if not contradicting documentation)
-═══════════════════════════════════════════════════════════════
-{exp_context}
-
-═══════════════════════════════════════════════════════════════
-YOUR TASK:
-═══════════════════════════════════════════════════════════════
-1. Apply the Internal Reasoning framework (do not show this to the customer)
-2. Draft a professional email response following the Response Rules
-3. Ensure your response passes the Sendability Gate
-4. Make sure your response is to the point and direct, not wordy
-
-Remember: Documentation is authoritative. Past experience is advisory only."""
+                    user_prompt_parts.append("2. Draft a professional email response following the Response Rules")
+                
+                user_prompt_parts.append("3. Ensure your response passes the Sendability Gate")
+                user_prompt_parts.append("4. Make sure your response is to the point and direct, not wordy")
+                
+                if current_draft and user_instructions:
+                    user_prompt_parts.append("5. Since you were given a DRAFT and INSTRUCTIONS, focus on REFINING the draft as requested.")
+                
+                user_prompt_parts.append("\nRemember: Documentation is authoritative. Past experience is advisory only.")
+                
+                user_prompt = "\n\n".join(user_prompt_parts)
             else:
                 # Legacy mode
+                user_prompt_parts = []
+                
                 if thread_history:
-                    user_prompt = f"""PREVIOUS CONVERSATION THREAD:
-{thread_history}
-
-CURRENT CUSTOMER QUESTION:
-{latest_question}
-
-SIMILAR PAST SUPPORT CASES (for reference):
-{exp_context}
-
-Please draft a professional email response that addresses the customer's current question, 
-taking into account the conversation history and insights from similar past cases."""
+                    user_prompt_parts.append(f"PREVIOUS CONVERSATION THREAD:\n{thread_history}")
+                
+                user_prompt_parts.append(f"CURRENT CUSTOMER QUESTION:\n{latest_question}")
+                
+                if current_draft:
+                    user_prompt_parts.append(f"CURRENT DRAFT:\n{current_draft}")
+                
+                if user_instructions:
+                    user_prompt_parts.append(f"INSTRUCTIONS:\n{user_instructions}")
+                
+                user_prompt_parts.append(f"SIMILAR PAST SUPPORT CASES (for reference):\n{exp_context}")
+                
+                if user_instructions:
+                    user_prompt_parts.append(f"Please refine the response based on these instructions: {user_instructions}")
                 else:
-                    # First message in thread
-                    user_prompt = f"""CUSTOMER'S QUESTION:
-{latest_question}
-
-SIMILAR PAST SUPPORT CASES (for reference):
-{exp_context}
-
-Please draft a professional email response that addresses the customer's question. Make sure it's not wordy and it's to the point."""
+                    user_prompt_parts.append("Please draft a professional email response that addresses the customer's current question.")
+                
+                user_prompt = "\n\n".join(user_prompt_parts)
 
             # 6. Call OpenAI API
             logger.info(f"📤 Calling {GENERATION_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {ticket_id}...")

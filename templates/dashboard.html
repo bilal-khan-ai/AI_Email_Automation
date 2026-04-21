@@ -341,6 +341,107 @@
             transform: scale(1.2);
         }
 
+        /* Animated Loading Spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* WhatsApp Style Message Bubbles */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 20px;
+            background: #e5ddd5; /* Classic WhatsApp Background */
+            background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png"); /* WhatsApp pattern */
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            min-height: 200px;
+        }
+
+        body.dark-mode .chat-container {
+            background-color: #0b141a;
+            background-image: opacity(0.1);
+        }
+
+        .message-bubble {
+            max-width: 80%;
+            padding: 8px 12px 20px 12px;
+            border-radius: 8px;
+            position: relative;
+            box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+            font-size: 0.95rem;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message-bubble.staff {
+            align-self: flex-end;
+            background-color: #dcf8c6;
+            color: #303030;
+            border-top-right-radius: 0;
+        }
+
+        body.dark-mode .message-bubble.staff {
+            background-color: #005c4b;
+            color: #e9edef;
+        }
+
+        .message-bubble.customer {
+            align-self: flex-start;
+            background-color: #ffffff;
+            color: #303030;
+            border-top-left-radius: 0;
+        }
+
+        body.dark-mode .message-bubble.customer {
+            background-color: #202c33;
+            color: #e9edef;
+        }
+
+        .message-bubble .bubble-timestamp {
+            position: absolute;
+            bottom: 4px;
+            right: 8px;
+            font-size: 0.75rem;
+            color: rgba(0,0,0,0.45);
+        }
+
+        body.dark-mode .message-bubble .bubble-timestamp {
+            color: rgba(255,255,255,0.5);
+        }
+
+        .message-bubble .bubble-actor {
+            font-weight: bold;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+            display: block;
+            color: #075e54;
+        }
+
+        body.dark-mode .message-bubble .bubble-actor {
+            color: #00a884;
+        }
+
+        .message-bubble iframe {
+            width: 100%;
+            border: none;
+            background: transparent;
+            margin-top: 5px;
+        }
+
         .header h1 {
             font-size: 2rem;
             margin-bottom: 0.5rem;
@@ -431,7 +532,7 @@
             border: 1px solid var(--border-color);
             background: var(--bg-card);
             border-radius: 12px;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem; /* Reduced from 1rem */
             overflow: hidden;
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
@@ -451,7 +552,7 @@
         }
 
         .message-header {
-            padding: 12px 16px;
+            padding: 8px 12px; /* Reduced from 12px 16px */
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -924,7 +1025,7 @@
             margin-top: 0;
             display: block;
             height: auto;
-            min-height: 50px;
+            min-height: 10px; /* Reduced from 50px */
         }
 
         body.dark-mode .email-iframe-container {
@@ -978,7 +1079,7 @@
             display: flex;
             align-items: flex-start;
             justify-content: center;
-            padding: 2rem 0;
+            padding: 1rem 0; /* Reduced from 2rem */
         }
 
         .modal-content {
@@ -1056,7 +1157,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 0.5rem; /* Reduced from 1rem */
             min-width: 0;
             overflow-y: auto;
             padding-right: 0.5rem;
@@ -1113,7 +1214,7 @@
 
         .info-section {
             background: var(--section-bg-info);
-            padding: 1rem;
+            padding: 0.75rem 1rem; /* Reduced vertical padding */
             border-radius: 8px;
             border-left: 4px solid #667eea;
         }
@@ -1705,7 +1806,7 @@
                         </div>
                     </div>
 
-                    <h3 style="margin-bottom: 1rem; color: var(--text-primary);">Conversation History</h3>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem;">Conversation History</h3>
                     <div id="threadLoading" style="display:none; text-align:center; padding: 20px;">
                         Loading messages...
                     </div>
@@ -2675,53 +2776,31 @@
         }
 
 
-        function processCidImages(body, attachments, messageId) {
+        function processCidImages(body, cidMap) {
             if (!body) return '';
             let newBody = body;
             
-            let attList = [];
-            try {
-                if (attachments) {
-                    attList = typeof attachments === 'string' ? JSON.parse(attachments) : attachments;
-                }
-            } catch (e) { console.error('Attachment parse error in processCidImages', e); }
-
-            if (!attList || attList.length === 0) return body;
+            if (!cidMap || Object.keys(cidMap).length === 0) return body;
 
             // Safe regex escape helper
             const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-            attList.forEach(att => {
-                if (!att.id) return;
+            Object.keys(cidMap).forEach(cid => {
+                const att = cidMap[cid];
+                // Use absolute URL and include content_type to ensure reliable rendering
+                const viewUrl = `${window.location.origin}/api/view_attachment?message_id=${encodeURIComponent(att.msgId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(att.ct || '')}`;
                 
-                const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}`;
+                const escapedCid = escapeRegExp(cid);
                 
-                // If content_id is present, try multiple match strategies
-                if (att.content_id) {
-                    const cid = att.content_id.replace(/^<|>$/g, '').trim();
-                    const escapedCid = escapeRegExp(cid);
-                    
-                    // Match simple cid:URI and encoded variations
-                    const cidPatterns = [
-                        new RegExp(`cid:${escapedCid}`, 'gi'),
-                        new RegExp(`cid:${escapeRegExp(encodeURIComponent(cid))}`, 'gi')
-                    ];
-                    
-                    cidPatterns.forEach(pattern => {
-                        newBody = newBody.replace(pattern, viewUrl);
-                    });
-                }
+                // Match simple cid:URI and encoded variations
+                const cidPatterns = [
+                    new RegExp(`cid:${escapedCid}`, 'gi'),
+                    new RegExp(`cid:${escapeRegExp(encodeURIComponent(cid))}`, 'gi')
+                ];
                 
-                // Fallback: match by filename if it appears in a cid: reference
-                if (att.name) {
-                    const cleanName = att.name.trim();
-                    const namePattern = new RegExp(`cid:${escapeRegExp(cleanName)}`, 'gi');
-                    newBody = newBody.replace(namePattern, viewUrl);
-                    
-                    // Also check for encoded filename
-                    const encodedNamePattern = new RegExp(`cid:${escapeRegExp(encodeURIComponent(cleanName))}`, 'gi');
-                    newBody = newBody.replace(encodedNamePattern, viewUrl);
-                }
+                cidPatterns.forEach(pattern => {
+                    newBody = newBody.replace(pattern, viewUrl);
+                });
             });
             
             return newBody;
@@ -2819,6 +2898,23 @@
             const sortedMessages = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             container.innerHTML = ''; 
 
+            // Build a global CID map from ALL messages in the thread to handle cross-message references
+            const globalCidMap = {};
+            messages.forEach(m => {
+                try {
+                    const atts = typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || []);
+                    atts.forEach(a => {
+                        if (a.content_id) {
+                            const cleanCid = a.content_id.replace(/^<|>$/g, '').trim();
+                            globalCidMap[cleanCid] = { id: a.id, msgId: m.message_id, name: a.name, ct: a.content_type };
+                        }
+                        if (a.name) {
+                            globalCidMap[a.name.trim()] = { id: a.id, msgId: m.message_id, name: a.name, ct: a.content_type };
+                        }
+                    });
+                } catch (e) {}
+            });
+
             sortedMessages.forEach((msg, index) => {
                 const messageCard = document.createElement('div');
                 messageCard.className = `message-card ${msg.is_internal ? 'internal-note' : 'customer-message'}`;
@@ -2826,7 +2922,7 @@
                 
                 const sender = escapeHtml(msg.sender || 'Unknown');
                 const timestamp = formatDate(msg.timestamp);
-                const processedBody = processCidImages(msg.body_html || msg.body || msg.body_text || '', msg.attachments, msg.message_id);
+                const processedBody = processCidImages(msg.body_html || msg.body || msg.body_text || '', globalCidMap);
                 const rawBody = (processedBody || '').trim();
                 
                 let displayBody = rawBody;
@@ -2863,7 +2959,7 @@
                 const bccList = msg.bcc ? escapeHtml(msg.bcc) : '';
                 
                 messageCard.innerHTML = `
-                    <div class="message-header" style="flex-direction: column; align-items: flex-start; padding: 12px 16px;">
+                    <div class="message-header" style="flex-direction: column; align-items: flex-start; padding: 8px 12px;">
                         <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
                             <span class="message-sender">${sender} <span style="font-weight:normal; opacity:0.8; font-size:0.8rem;">(${msg.is_internal ? 'Internal Note' : 'Customer'})</span></span>
                             <span class="message-time">${timestamp}</span>
@@ -2914,33 +3010,45 @@
                         <!DOCTYPE html>
                         <html>
                         <head>
+                            <base href="${window.location.origin}/">
                             <style>
                                 :root {
                                     color-scheme: ${isDarkMode ? 'dark' : 'light'};
                                 }
                                 body { 
                                     font-family: Calibri, 'Segoe UI', Arial, sans-serif; 
-                                    margin: 16px; 
+                                    margin: 8px 12px; 
                                     color: ${textColor};
                                     background: ${bgColor};
                                     word-wrap: break-word;
-                                    line-height: 1.5;
-                                    padding-bottom: 30px; /* Buffer for visibility */
+                                    line-height: 1.4;
+                                    padding-bottom: 8px; /* Buffer for visibility */
                                     ${isHtml ? '' : 'white-space: pre-wrap; font-size: 14px;'}
                                 }
-                                /* Dark Mode Overrides for HTML Emails */
+                                /* Enhanced Universal Dark Mode Sanitization for HTML Emails */
                                 ${isDarkMode ? `
-                                    [style*="background-color: white"], [style*="background-color: #fff"], [style*="background-color: #ffffff"] {
+                                    /* 1. Universal Attribute Sanitization */
+                                    [style*="background-color: white"], [style*="background-color: #fff"], [style*="background-color: #ffffff"],
+                                    [style*="background: white"], [style*="background: #fff"], [style*="background: #ffffff"],
+                                    [style*="background-color:rgb(255, 255, 255)"], [style*="background-color: rgb(255, 255, 255)"],
+                                    [bgcolor="#ffffff"], [bgcolor="white"], [bgcolor="#fff"], [bgcolor="#FFFFFF"] {
                                         background-color: transparent !important;
                                     }
-                                    [style*="background: white"], [style*="background: #fff"], [style*="background: #ffffff"] {
-                                        background: transparent !important;
+                                    
+                                    /* 2. Neutralize Dark Text on Dark Backgrounds */
+                                    [style*="color: #000"], [style*="color: #000000"], [style*="color: black"],
+                                    [style*="color:rgb(0, 0, 0)"], [style*="color: rgb(0, 0, 0)"],
+                                    font[color="#000000"], font[color="black"] {
+                                        color: ${textColor} !important;
                                     }
-                                    /* Force light text if current color is too dark */
-                                    div, p, span, font, td {
-                                        color: inherit !important;
+
+                                    /* 3. Force Inheritance for common structural tags if they have legacy styles */
+                                    div, p, span, font, td, table, tbody, tr { 
+                                        border-color: rgba(255,255,255,0.1) !important;
                                     }
+                                    
                                     a { color: #818cf8 !important; }
+                                    img { filter: brightness(0.9) contrast(1.1); }
                                 ` : `
                                     a { color: #2563eb !important; }
                                 `}
@@ -2954,6 +3062,49 @@
                             <div class="email-content-wrapper">${content}</div>
                         </body>
                         <script>
+                            function applyUniversalDarkMode() {
+                                const isDark = ${isDarkMode};
+                                if (!isDark) return;
+
+                                const elements = document.querySelectorAll('.email-content-wrapper, .email-content-wrapper *');
+                                elements.forEach(el => {
+                                    const style = window.getComputedStyle(el);
+                                    
+                                    // 1. Fix Backgrounds (Luminance check)
+                                    const bg = style.backgroundColor;
+                                    if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                                        const rgb = bg.match(/\\d+/g);
+                                        if (rgb && rgb.length >= 3) {
+                                            const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                                            if (brightness > 200) { // If background is too bright
+                                                el.style.setProperty('background-color', 'transparent', 'important');
+                                                el.style.setProperty('background-image', 'none', 'important');
+                                            }
+                                        }
+                                    }
+                                    
+                                    // 2. Fix Text Colors (Luminance check)
+                                    const color = style.color;
+                                    if (color) {
+                                        const rgb = color.match(/\\d+/g);
+                                        if (rgb && rgb.length >= 3) {
+                                            const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                                            if (brightness < 100) { // If text is too dark
+                                                el.style.setProperty('color', '${textColor}', 'important');
+                                            }
+                                        }
+                                    }
+                                });
+
+                                // 3. Catch legacy bgcolor attributes
+                                document.querySelectorAll('[bgcolor]').forEach(el => {
+                                    const bg = el.getAttribute('bgcolor');
+                                    if (bg && (bg.startsWith('#f') || bg.startsWith('#F') || bg === 'white')) {
+                                        el.style.setProperty('background-color', 'transparent', 'important');
+                                    }
+                                });
+                            }
+
                             function sendSize() {
                                 const height = Math.max(
                                     document.body.scrollHeight, 
@@ -2964,15 +3115,22 @@
                                 window.parent.postMessage({
                                     type: 'resize-iframe',
                                     id: '${iframeId}',
-                                    height: height + 25 // Added buffer to prevent cutting off last lines
+                                    height: height + 5 // Reduced buffer to save space
                                 }, '*');
                             }
                             window.onload = () => {
+                                applyUniversalDarkMode();
                                 sendSize();
                                 // Second pass for dynamic elements (images, etc)
-                                setTimeout(sendSize, 500);
+                                setTimeout(() => {
+                                    applyUniversalDarkMode();
+                                    sendSize();
+                                }, 500);
                             };
-                            new ResizeObserver(sendSize).observe(document.body);
+                            new ResizeObserver(() => {
+                                applyUniversalDarkMode();
+                                sendSize();
+                            }).observe(document.body);
                             window.addEventListener('message', (e) => {
                                 if (e.data === 'trigger-resize') sendSize();
                             });
@@ -3066,7 +3224,7 @@
 
             previewModal.classList.add('active');
 
-            const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(attachmentId)}&filename=${encodeURIComponent(filename)}`;
+            const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(attachmentId)}&filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType || '')}`;
             
             btnDownloadPreview.onclick = (e) => {
                 e.stopPropagation();
@@ -3252,33 +3410,48 @@
         async function regenerateAI() {
             if (isTicketLocked || !currentTicketIdStr) return;
 
-            document.getElementById('btnRegenerateAI').disabled = true;
-            document.getElementById('btnRegenerateAI').innerHTML = '⏳ Generating...';
+            // Prompt for optional instructions
+            const userInstructions = prompt("Any specific instructions for the AI? (e.g. 'Make it more formal', 'Address the error code specifically', or leave blank for a standard regen)");
+            
+            // If user cancels prompt, abort
+            if (userInstructions === null) return;
+
+            const btn = document.getElementById('btnRegenerateAI');
+            const originalHTML = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span>Generating...';
 
             try {
-                const response = await fetch('/api/regenerate_ai', {
+                const currentDraft = quillEditor ? quillEditor.root.innerHTML : '';
+                
+                const response = await fetch('/api/regenerate_ai_sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticket_id: currentTicketIdStr })
+                    body: JSON.stringify({ 
+                        ticket_id: currentTicketIdStr,
+                        user_instructions: userInstructions,
+                        current_draft: currentDraft
+                    })
                 });
 
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    showToast('🔄 AI regeneration triggered successfully. Waiting for background generation...', false);
-                    if (quillEditor) quillEditor.setText('Regenerating AI Draft... Please wait.');
-                    setTimeout(() => {
-                        loadTickets(); // Poll periodically
-                    }, 5000);
+                    showToast('✅ AI Draft regenerated successfully!', false);
+                    if (quillEditor && data.draft) {
+                        quillEditor.root.innerHTML = data.draft;
+                        // Scroll to top of editor to show the change
+                        quillEditor.setSelection(0, 0);
+                    }
                 } else {
-                    showToast(data.error || 'Failed to trigger regeneration', true);
+                    showToast(data.error || 'Failed to regenerate AI draft', true);
                 }
             } catch (error) {
-                console.error('Error triggering regeneration:', error);
-                showToast('Network error while requesting regeneration', true);
+                console.error('Error in synchronous regeneration:', error);
+                showToast('Network error while regenerating AI draft', true);
             } finally {
-                document.getElementById('btnRegenerateAI').disabled = false;
-                document.getElementById('btnRegenerateAI').innerHTML = '🔄 Regenerate AI';
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
             }
         }
 
