@@ -93,7 +93,7 @@ class ImageProcessor:
             image.close()
 
             # Step 2: Choose model
-            model = "gpt-4o" if is_complex_table else "gpt-4o-mini"
+            model = self.ai.ANALYSIS_MODEL if is_complex_table else self.ai.INTERPRETATION_MODEL
             
             # Step 3: Call OpenAI Vision
             logger.info(f"📤 Rerouting image to OpenAI ({model})...")

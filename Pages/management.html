@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Management Console - AI Email Automation</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛡️</text></svg>">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='management/management.css') }}">
+</head>
+
+<body>
+    <div class="header">
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+            <div>
+                <h1>🛡️ Management Console</h1>
+                <p>Support Administration</p>
+                <div style="font-weight: 500; font-size: 0.85rem; opacity: 0.9; margin-top: 0.5rem;">
+                    👤 Active Admin: <strong style="text-decoration: underline;">{{ user.username }}</strong>
+                </div>
+            </div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
+                </button>
+                <button onclick="showChangePasswordModal('{{ user.username }}')" class="btn btn-outline-light btn-sm"
+                    style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                    🔑 My Password
+                </button>
+                <a href="{{ url_for('index', view='staff') }}" class="btn btn-outline-light btn-sm"
+                    style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
+                    📊 Staff Dashboard
+                </a>
+                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm"
+                    style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem;">
+                    🚪 Logout
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show card" role="alert"
+            style="margin-bottom: 1rem; border-left: 5px solid {{ 'green' if category=='success' else 'red' }}">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <!-- Quick Navigation Bar -->
+        <div class="quick-nav">
+            <div class="nav-tab active" onclick="showSection('staff')">👨‍💼 Staff</div>
+            <div class="nav-tab" onclick="showSection('client')">🏢 Client</div>
+            <div class="nav-tab" onclick="showSection('management')">👥 Management</div>
+            <div class="nav-tab" onclick="showSection('tracking')">🕒 Tracking</div>
+            <div class="nav-tab" onclick="showSection('reassignment')">🔄 Reassignment</div>
+            <div class="nav-tab" onclick="showSection('settings')">⚙️ Settings</div>
+        </div>
+
+        <!-- Staff Section -->
+        <div id="section-staff" class="management-section active">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+            <h3 class="mb-0">👨‍💼 Staff Performance</h3>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-secondary small">Range:</span>
+                <select id="timeRangeSelect" class="form-select form-select-sm" style="width: auto;">
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                    <option value="year">This Year</option>
+                    <option value="all" selected>All Time</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="metrics-grid" id="staffMetricsGrid">
+            {% for staff in staff_members %}
+            <div class="staff-metric-card" id="metric-{{ staff.username }}">
+                <div class="staff-name">
+                    <span>👤</span> {{ staff.username }}
+                    {% if not staff.is_assignable %}
+                    <span class="badge bg-warning text-dark ms-auto" style="font-size: 0.6rem;">Opted-out</span>
+                    {% endif %}
+                    {% if not staff.is_active %}
+                    <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">Disabled</span>
+                    {% endif %}
+                </div>
+                <div class="metric-stats">
+                    <div class="metric-item">
+                        <span class="metric-value text-primary" id="assigned-{{ staff.username }}">0</span>
+                        <span class="metric-label">Assigned</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-value text-success" id="open-{{ staff.username }}">0</span>
+                        <span class="metric-label">Open</span>
+                    </div>
+                    <div class="metric-item">
+                        <span class="metric-value text-secondary" id="closed-{{ staff.username }}">0</span>
+                        <span class="metric-label">Closed</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not staff_members %}
+            <div class="col-12 text-center py-5 text-secondary">
+                <p>No staff members found. Create one below to see performance metrics.</p>
+            </div>
+            {% endif %}
+        </div>
+        </div> <!-- End Staff Section -->
+
+        <!-- Client Section -->
+        <div id="section-client" class="management-section">
+            <div class="card">
+                <div class="card-header">
+                    <span>🏢 Client-Level Statistics (Domain Name Grouping)</span>
+                    <div class="d-flex align-items-center gap-2">
+                         <span class="text-secondary small">Filter:</span>
+                         <select id="clientTimeRange" class="form-select form-select-sm" style="width: auto;" onchange="refreshClientStats()">
+                            <option value="today">Today</option>
+                            <option value="week">This Week</option>
+                            <option value="month">This Month</option>
+                            <option value="all" selected>All Time</option>
+                         </select>
+                    </div>
+                </div>
+                <div class="p-3 bg-light border-bottom">
+                    <div class="search-box-container">
+                        <input type="text" id="clientSearch" class="form-control" placeholder="Search by Domain Name..." oninput="filterClientCards()">
+                    </div>
+                </div>
+                <div class="card-body p-4 bg-light">
+                    <div class="metrics-grid" id="clientStatsGrid">
+                        <!-- Populated by SocketIO -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Management Section -->
+        <div id="section-management" class="management-section">
+
+        <div class="row">
+            <!-- Left: User List -->
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <span>👥 User Management</span>
+                        <span class="badge bg-primary">{{ users|length }} Total</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>Role</th>
+                                    <th>Assignable</th>
+                                    <th>Login</th>
+                                    <th>Last Active</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user_row in users %}
+                                <tr class="{{ 'opacity-50' if not user_row.is_active }}">
+                                    <td>
+                                        <div class="fw-bold">{{ user_row.username }}</div>
+                                        <div class="small text-secondary">ID: {{ user_row.id }}</div>
+                                    </td>
+                                    <td>
+                                        <span
+                                            class="badge {{ 'badge-admin' if user_row.role == 'admin' else 'badge-staff' }}">
+                                            {{ user_row.role | upper }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <form method="POST"
+                                            action="{{ url_for('admin_toggle_user_assignment', username=user_row.username) }}">
+                                            <button type="submit" class="border-0 bg-transparent p-0"
+                                                title="Toggle Ticket Assignment">
+                                                <div class="status-toggle {{ 'active' if user_row.is_assignable }}">
+                                                </div>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <form method="POST"
+                                            action="{{ url_for('admin_toggle_user_status', username=user_row.username) }}">
+                                            <button type="submit" class="border-0 bg-transparent p-0"
+                                                title="Toggle Login Access" {{ 'disabled' if
+                                                user_row.username==user.username }}>
+                                                <div
+                                                    class="status-toggle {{ 'active' if user_row.is_active }} {{ 'opacity-50' if user_row.username == user.username }}">
+                                                </div>
+                                            </button>
+                                        </form>
+                                    </td>
+                                    <td>
+                                        <small>{{ user_row.last_login[:16] if user_row.last_login else 'Never'
+                                            }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex gap-2">
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-light border dropdown-toggle"
+                                                    type="button" data-bs-toggle="dropdown">
+                                                    Actions
+                                                </button>
+                                                <ul class="dropdown-menu shadow">
+                                                    {% if user_row.role != 'admin' or user_row.username == user.username
+                                                    %}
+                                                    <li><a class="dropdown-item" href="#"
+                                                            onclick="showChangePasswordModal('{{ user_row.username }}')">🔑
+                                                            Reset Password</a></li>
+                                                    {% else %}
+                                                    <li><span class="dropdown-item text-secondary small"
+                                                            title="Admin passwords can only be changed by the user themselves.">🔒
+                                                            Reset Restricted</span></li>
+                                                    {% endif %}
+                                                </ul>
+                                            </div>
+                                            {% if user_row.username != user.username %}
+                                            <form method="POST"
+                                                action="{{ url_for('admin_delete_user', username=user_row.username) }}"
+                                                onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                    title="Permanently Delete User">
+                                                    🗑️
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Create New Staff -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <span>➕ Create Staff</span>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('admin_create_user') }}">
+                            <div class="mb-3">
+                                <label class="form-label">Username</label>
+                                <input type="text" name="username" class="form-control" placeholder="e.g. john_doe"
+                                    required pattern="[a-zA-Z0-9_]+">
+                                <div class="form-text">Letters, numbers, and underscores only.</div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Initial Password</label>
+                                <input type="password" name="password" class="form-control" required minlength="6">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Role</label>
+                                <select name="role" class="form-select">
+                                    <option value="staff" selected>Support Staff</option>
+                                    <option value="admin">Administrator</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">✨ Create Account</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <span>📊 Global Overview</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="metric-stats">
+                            <div class="metric-item">
+                                <span class="metric-value">{{ global_stats.total }}</span>
+                                <span class="metric-label">Total Tickets</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-value">{{ global_stats.open }}</span>
+                                <span class="metric-label">All Open</span>
+                            </div>
+                            <div class="metric-item">
+                                <span class="metric-value">{{ global_stats.closed }}</span>
+                                <span class="metric-label">All Closed</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div> <!-- End Management Section -->
+
+        <!-- Reassignment Section -->
+        <div id="section-reassignment" class="management-section">
+            <div class="card mt-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>🔄 Quick Ticket Reassignment</span>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-success" id="btnAutoAssign"
+                            title="Automatically assign all open, unassigned tickets to the least busy staff">✨ Auto Assign</button>
+                        <button class="btn btn-sm btn-outline-primary" id="btnRefreshTickets">Refresh List</button>
+                    </div>
+                </div>
+                <div class="p-3 bg-light border-bottom">
+                    <div class="search-box-container">
+                        <input type="text" id="reassignSearch" class="form-control" placeholder="Search by Ticket ID, Subject, or Customer email..." oninput="filterReassignmentTable()">
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover" id="reassignmentTable">
+                        <thead>
+                            <tr>
+                                <th>Subject</th>
+                                <th>Assigned To</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reassignmentList">
+                            <tr>
+                                <td colspan="2" class="text-center p-4 text-secondary">Loading active tickets...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            </div>
+        </div> <!-- End Reassignment Section -->
+
+        <!-- Tracking Section -->
+        <div id="section-tracking" class="management-section">
+            <div class="card">
+                <div class="card-header">
+                    <span>🕒 SLA Tracking & System Logs</span>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshSystemLogs()">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="p-3 bg-light border-bottom">
+                    <div class="search-box-container">
+                        <input type="text" id="trackingSearch" class="form-control" placeholder="Search logs by ID, Actor, or Event..." oninput="filterTrackingLogs()">
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="systemLogs" class="small text-secondary" style="max-height: 600px; overflow-y: auto;">
+                        <p class="text-center py-4">Click "Refresh" to load recent system-wide ticket events.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="section-settings" class="management-section">
+            <div class="card">
+                <div class="card-header">
+                    <span>⚙️ System Settings (.env Manager)</span>
+                    <button class="btn btn-sm btn-primary" onclick="saveSettings()">💾 Save All Settings</button>
+                </div>
+                <div class="card-body">
+                    <form id="settingsForm">
+                        <div class="row g-4">
+                            <!-- Background Tasks -->
+                            <div class="col-md-6">
+                                <h5 class="mb-3">🔄 Background Processing</h5>
+                                <div class="mb-3">
+                                    <label class="form-label">Incoming Email Polling (seconds)</label>
+                                    <input type="number" class="form-control" name="POLLING_INTERVAL" placeholder="300">
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" name="ENABLE_TICKET_CLEANUP_DAEMON" id="cleanupSwitch">
+                                        <label class="form-check-label" for="cleanupSwitch">Enable Ticket Cleanup Daemon</label>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Processing Lookback (days)</label>
+                                    <input type="number" class="form-control" name="PROCESSING_DAYS_BACK" placeholder="2">
+                                </div>
+                            </div>
+                            <!-- Retention -->
+                            <div class="col-md-6">
+                                <h5 class="mb-3">🗑️ Data Retention</h5>
+                                <div class="mb-3">
+                                    <label class="form-label">Soft-Delete Closed after (days)</label>
+                                    <input type="number" class="form-control" name="SOFT_DELETE_CLOSED_AFTER_DAYS" placeholder="14">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Hard-Delete after (days)</label>
+                                    <input type="number" class="form-control" name="HARD_DELETE_AFTER_DAYS" placeholder="16">
+                                </div>
+                            </div>
+                            <!-- Global Config -->
+                             <div class="col-md-12">
+                                <hr>
+                                <h5 class="mb-3">📧 Global Configuration</h5>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Support Email Address</label>
+                                        <input type="email" class="form-control" name="USER_EMAIL" placeholder="support@example.com">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-check form-switch mt-4">
+                                            <input class="form-check-input" type="checkbox" name="TEST_MODE" id="testModeSwitch">
+                                            <label class="form-check-label" for="testModeSwitch">Enable Test Mode</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Test Receiver Email</label>
+                                        <input type="email" class="form-control" name="TEST_EMAIL" placeholder="test@example.com">
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Test Mode CCs (Comma separated)</label>
+                                        <input type="text" class="form-control" name="TEST_CC" placeholder="cc1@example.com, cc2@example.com">
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Test Mode Subject Prefix</label>
+                                        <input type="text" class="form-control" name="TEST_SUBJECT_TAG" placeholder="[TEST MODE] ">
+                                    </div>
+                                </div>
+                             </div>
+                             <div class="col-md-12">
+                                <hr>
+                                <h5 class="mb-3">🧠 AI Model Configuration</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Generation Model (Generational)</label>
+                                        <input type="text" class="form-control" name="GENERATIONAL_MODEL" placeholder="gpt-5-mini">
+                                        <div class="form-text small">Used for drafting final responses.</div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Interpretation Model (Stage 1)</label>
+                                        <input type="text" class="form-control" name="INTERPRETATION_MODEL" placeholder="gpt-4.1-nano-...">
+                                        <div class="form-text small">Used for intent & summary.</div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Analysis Model (Vision/Complex)</label>
+                                        <input type="text" class="form-control" name="ANALYSIS_MODEL" placeholder="gpt-4.1-mini-...">
+                                        <div class="form-text small">Used for images & tables.</div>
+                                    </div>
+                                </div>
+                             </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div class="modal fade" id="changePasswordModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🔑 Reset Password</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" id="changePasswordForm">
+                    <div class="modal-body">
+                        <p>Updating password for: <strong id="changePasswordUsername"></strong></p>
+                        <div class="mb-3">
+                            <label class="form-label">New Secure Password</label>
+                            <input type="password" class="form-control" name="new_password" required minlength="6">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const allUsers = {{ users | tojson | safe }};
+        const staffMembers = {{ staff_members | tojson | safe }};
+    </script>
+    <script src="{{ url_for('static', filename='management/management.js') }}"></script>
+
+</body>
+
+</html>

@@ -76,6 +76,8 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            /* Prevent unwanted text cursors on non-selectable areas */
+            cursor: default;
         }
 
         body {
@@ -83,6 +85,41 @@
             background: var(--bg-primary);
             color: var(--text-primary);
             transition: background 0.3s, color 0.3s;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Allow text selection only where appropriate */
+        p,
+        span,
+        div,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        td,
+        th,
+        li {
+            cursor: auto;
+        }
+
+        button,
+        a,
+        .ticket-row,
+        .message-card,
+        .message-header,
+        .filter-btn,
+        .clickable,
+        [onclick] {
+            cursor: pointer !important;
+        }
+
+        input,
+        textarea,
+        .ql-editor,
+        [contenteditable="true"] {
+            cursor: text !important;
         }
 
         body.modal-open {
@@ -182,7 +219,8 @@
             max-height: 100%;
             object-fit: contain;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            background: white; /* Checkerboard pattern for transparency? Maybe later */
+            background: white;
+            /* Checkerboard pattern for transparency? Maybe later */
         }
 
         #previewModal iframe {
@@ -199,7 +237,8 @@
 
         .attachment-preview-btn {
             padding: 6px 14px;
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%); /* Greenish for preview */
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            /* Greenish for preview */
             color: white;
             border: none;
             border-radius: 6px;
@@ -218,7 +257,8 @@
 
         .attachment-download-btn {
             padding: 6px 14px;
-            background: #3b82f6; /* Consistent blue */
+            background: #3b82f6;
+            /* Consistent blue */
             color: white;
             border: none;
             border-radius: 6px;
@@ -228,7 +268,7 @@
             transition: all 0.2s;
             box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
         }
-        
+
         .attachment-download-btn:hover {
             background-color: #2563eb;
             transform: translateY(-1px);
@@ -252,7 +292,8 @@
             background-color: #e9ecef !important;
             cursor: not-allowed !important;
             border-color: #dee2e6 !important;
-            color: #495057 !important; /* Dark text for light background */
+            color: #495057 !important;
+            /* Dark text for light background */
         }
 
         body.dark-mode .test-mode-input {
@@ -265,7 +306,8 @@
         .autocomplete-suggestions {
             position: absolute;
             top: 100%;
-            left: 60px; /* Offset to align with input after label (min-width: 60px) */
+            left: 60px;
+            /* Offset to align with input after label (min-width: 60px) */
             right: 0;
             background: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -355,7 +397,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         /* WhatsApp Style Message Bubbles */
@@ -364,8 +408,10 @@
             flex-direction: column;
             gap: 15px;
             padding: 20px;
-            background: #e5ddd5; /* Classic WhatsApp Background */
-            background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png"); /* WhatsApp pattern */
+            background: #e5ddd5;
+            /* Classic WhatsApp Background */
+            background-image: url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png");
+            /* WhatsApp pattern */
             border-radius: 8px;
             margin-bottom: 2rem;
             min-height: 200px;
@@ -381,7 +427,7 @@
             padding: 8px 12px 20px 12px;
             border-radius: 8px;
             position: relative;
-            box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+            box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
             font-size: 0.95rem;
             line-height: 1.4;
             word-wrap: break-word;
@@ -416,11 +462,11 @@
             bottom: 4px;
             right: 8px;
             font-size: 0.75rem;
-            color: rgba(0,0,0,0.45);
+            color: rgba(0, 0, 0, 0.45);
         }
 
         body.dark-mode .message-bubble .bubble-timestamp {
-            color: rgba(255,255,255,0.5);
+            color: rgba(255, 255, 255, 0.5);
         }
 
         .message-bubble .bubble-actor {
@@ -532,7 +578,8 @@
             border: 1px solid var(--border-color);
             background: var(--bg-card);
             border-radius: 12px;
-            margin-bottom: 0.5rem; /* Reduced from 1rem */
+            margin-bottom: 0.5rem;
+            /* Reduced from 1rem */
             overflow: hidden;
             transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             cursor: pointer;
@@ -552,7 +599,8 @@
         }
 
         .message-header {
-            padding: 8px 12px; /* Reduced from 12px 16px */
+            padding: 8px 12px;
+            /* Reduced from 12px 16px */
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -582,10 +630,12 @@
         }
 
         .message-body {
-            padding: 0; /* Changed to 0 so iframe can fill edge-to-edge if needed, we add margin to iframe body */
+            padding: 0;
+            /* Changed to 0 so iframe can fill edge-to-edge if needed, we add margin to iframe body */
             background-color: var(--bg-card);
             display: none;
-            overflow: visible; /* Ensure it grows */
+            overflow: visible;
+            /* Ensure it grows */
         }
 
         .filter-btn {
@@ -598,7 +648,7 @@
             font-size: 0.85rem;
             font-weight: 600;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
         }
 
         .filter-btn:hover {
@@ -615,7 +665,7 @@
         /* Pill Toggle for Visibility (My/All) */
         .pill-toggle {
             display: flex;
-            background: rgba(0,0,0,0.05);
+            background: rgba(0, 0, 0, 0.05);
             border: 1px solid var(--border-color);
             border-radius: 50px;
             padding: 3px;
@@ -625,7 +675,7 @@
             width: fit-content;
             margin-right: 1.5rem;
             min-width: 240px;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
             height: 42px;
             align-items: center;
         }
@@ -685,7 +735,7 @@
             align-items: center;
             gap: 0.5rem;
             min-width: 170px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
         }
 
         .filter-dropdown-btn:hover {
@@ -1025,7 +1075,8 @@
             margin-top: 0;
             display: block;
             height: auto;
-            min-height: 10px; /* Reduced from 50px */
+            min-height: 10px;
+            /* Reduced from 50px */
         }
 
         body.dark-mode .email-iframe-container {
@@ -1079,7 +1130,8 @@
             display: flex;
             align-items: flex-start;
             justify-content: center;
-            padding: 1rem 0; /* Reduced from 2rem */
+            padding: 1rem 0;
+            /* Reduced from 2rem */
         }
 
         .modal-content {
@@ -1121,7 +1173,8 @@
             display: flex;
             align-items: center;
             gap: 1rem;
-            flex-wrap: nowrap; /* Keep items in one line for the header */
+            flex-wrap: nowrap;
+            /* Keep items in one line for the header */
             margin-bottom: 1.5rem;
             flex-shrink: 0;
             width: 100%;
@@ -1157,7 +1210,8 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem; /* Reduced from 1rem */
+            gap: 0.5rem;
+            /* Reduced from 1rem */
             min-width: 0;
             overflow-y: auto;
             padding-right: 0.5rem;
@@ -1214,7 +1268,8 @@
 
         .info-section {
             background: var(--section-bg-info);
-            padding: 0.75rem 1rem; /* Reduced vertical padding */
+            padding: 0.75rem 1rem;
+            /* Reduced vertical padding */
             border-radius: 8px;
             border-left: 4px solid #667eea;
         }
@@ -1714,9 +1769,8 @@
 
     <div class="controls">
         <div class="search-box">
-            <input type="search" id="search" name="search" autocomplete="off" 
-                   role="searchbox" aria-label="Search tickets"
-                   placeholder="🔍 Search by email, subject, or ticket ID...">
+            <input type="search" id="search" name="search" autocomplete="off" role="searchbox"
+                aria-label="Search tickets" placeholder="🔍 Search by email, subject, or ticket ID...">
         </div>
         <div class="filter-buttons">
             <div class="pill-toggle" id="visibilityPill" data-active="all">
@@ -1757,25 +1811,28 @@
 
     <div class="modal" id="ticketModal">
         <div class="modal-content" style="max-height: 95vh; display: flex; flex-direction: column;">
-            <div class="modal-header-actions" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+            <div class="modal-header-actions"
+                style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                 <h2 id="modal-subject"
                     style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1rem;">
                 </h2>
-                
+
                 <div id="lockStatus" class="lock-status" style="margin-right: 1rem;">🔒 Locked by another user</div>
-                
+
                 <!-- New Take/Close Buttons in Header -->
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <button class="btn btn-primary btn-sm" id="btnTakeTicket" onclick="takeTicket()" title="Assign this ticket to yourself">
-                         Take Ticket
+                    <button class="btn btn-primary btn-sm" id="btnTakeTicket" onclick="takeTicket()"
+                        title="Assign this ticket to yourself">
+                        Take Ticket
                     </button>
-                    
+
                     <button class="btn btn-danger btn-sm" id="btnToggleStatus" onclick="toggleTicketStatus()">
                         <span id="toggleStatusIcon">✓</span> <span id="toggleStatusText">Close Ticket</span>
                     </button>
 
                     <div class="assignment-dropdown">
-                        <select id="modal-assignment" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onchange="changeAssignment()">
+                        <select id="modal-assignment" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;"
+                            onchange="changeAssignment()">
                             <option value="Unassigned">Unassigned</option>
                             {% for staff in staff_members %}
                             <option value="{{ staff.username }}">{{ staff.username }}</option>
@@ -1783,7 +1840,8 @@
                         </select>
                     </div>
 
-                    <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)" style="position:static; margin-left: 0.5rem;">&times;</button>
+                    <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)"
+                        style="position:static; margin-left: 0.5rem;">&times;</button>
                 </div>
             </div>
 
@@ -1806,7 +1864,8 @@
                         </div>
                     </div>
 
-                    <h3 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem;">Conversation History</h3>
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem;">Conversation
+                        History</h3>
                     <div id="threadLoading" style="display:none; text-align:center; padding: 20px;">
                         Loading messages...
                     </div>
@@ -1908,12 +1967,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <!-- Timeline Modal -->
     <div id="timelineModal" class="modal">
-        <div class="modal-content" style="max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
-            <div class="modal-header" style="padding: 1.25rem; border-bottom: 2px solid var(--border-color); flex-shrink: 0; position: relative;">
+        <div class="modal-content"
+            style="max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+            <div class="modal-header"
+                style="padding: 1.25rem; border-bottom: 2px solid var(--border-color); flex-shrink: 0; position: relative;">
                 <h2 class="mb-0">🕒 Ticket Lifecycle Timeline</h2>
                 <button type="button" class="close-btn" onclick="closeTimeline()" title="Close">&times;</button>
             </div>
-            <div id="timelineTicketInfo" class="px-3 py-2 border-bottom fw-bold" style="background: var(--input-bg); flex-shrink: 0;"></div>
+            <div id="timelineTicketInfo" class="px-3 py-2 border-bottom fw-bold"
+                style="background: var(--input-bg); flex-shrink: 0;"></div>
             <div class="modal-body" style="overflow-y: auto; padding: 1.25rem; flex-grow: 1;">
                 <div id="timelineList" class="timeline-container">
                     <!-- Populated by JS -->
@@ -1928,8 +1990,10 @@
             <div class="preview-header">
                 <h3 id="previewTitle" style="margin:0; font-size: 1.1rem; color: var(--text-primary);">Preview</h3>
                 <div>
-                    <button class="btn btn-secondary btn-sm" id="btnDownloadPreview" style="margin-right: 0.5rem;">Download</button>
-                    <button type="button" class="close-btn" style="position:static; padding: 0 5px;" onclick="closePreview()">&times;</button>
+                    <button class="btn btn-secondary btn-sm" id="btnDownloadPreview"
+                        style="margin-right: 0.5rem;">Download</button>
+                    <button type="button" class="close-btn" style="position:static; padding: 0 5px;"
+                        onclick="closePreview()">&times;</button>
                 </div>
             </div>
             <div class="preview-body" id="previewBody">
@@ -1975,19 +2039,19 @@
 
             input.addEventListener('input', () => {
                 const parts = input.value.split(',');
-                const value = parts[parts.length - 1].trim(); 
-                
+                const value = parts[parts.length - 1].trim();
+
                 if (value.length < 2) {
                     suggestions.style.display = 'none';
                     return;
                 }
 
-                const filtered = allContacts.filter(c => 
+                const filtered = allContacts.filter(c =>
                     c.toLowerCase().includes(value.toLowerCase())
                 ).slice(0, 10);
 
                 if (filtered.length > 0) {
-                    suggestions.innerHTML = filtered.map((c, i) => 
+                    suggestions.innerHTML = filtered.map((c, i) =>
                         `<div class="autocomplete-suggestion" data-index="${i}">${c}</div>`
                     ).join('');
                     suggestions.style.display = 'block';
@@ -2007,7 +2071,7 @@
 
             input.addEventListener('keydown', (e) => {
                 if (suggestions.style.display === 'none') return;
-                
+
                 const items = suggestions.querySelectorAll('.autocomplete-suggestion');
                 if (e.key === 'ArrowDown') {
                     activeIndex = (activeIndex + 1) % items.length;
@@ -2043,12 +2107,12 @@
             function applySuggestion(targetInput, email) {
                 const parts = targetInput.value.split(',').map(p => p.trim());
                 parts.pop(); // Remove the partial string
-                
+
                 // Add the new email if not already present
                 if (!parts.includes(email)) {
                     parts.push(email);
                 }
-                
+
                 targetInput.value = parts.filter(p => p !== '').join(', ') + ', ';
                 targetInput.focus();
             }
@@ -2157,17 +2221,17 @@
 
         function cleanMessageBody(text) {
             if (!text) return '';
-            
+
             // If it looks like HTML, let's keep it mostly intact but sanitized.
             // We only want to strip the "On ... wrote:" parts if it's plain text.
             // But since we now fetch uniqueBody from Graph, this function is mostly a fallback.
-            
+
             // If it's HTML (contains tags), return as is (sanitization happens after)
             if (text.includes('<') && text.includes('>')) {
                 return text;
             }
 
-            let cleaned = text; 
+            let cleaned = text;
             let div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
@@ -2485,7 +2549,7 @@
             if (currentVisibility === 'mine') {
                 statsBase = statsBase.filter(t => t.assigned_to === currentUsername);
             }
-            
+
             const dynamicStats = {
                 total: statsBase.length,
                 open: statsBase.filter(t => normalizeStatus(t.status) === 'Open').length,
@@ -2598,7 +2662,7 @@
             rightPanel.classList.add('collapsed');
 
             const testEmail = "{{ test_email }}";
-            
+
             if (testMode) {
                 document.getElementById('emailTo').value = testEmail;
                 document.getElementById('emailTo').readOnly = true;
@@ -2697,10 +2761,10 @@
                     const latest = sorted[0];
                     emailCC.value = latest.cc || '';
                     emailBCC.value = latest.bcc || '';
-                    
+
                     if (emailCC.value) ccField.classList.remove('hidden');
                     else ccField.classList.add('hidden');
-                    
+
                     if (emailBCC.value) bccField.classList.remove('hidden');
                     else bccField.classList.add('hidden');
                 } else {
@@ -2779,7 +2843,7 @@
         function processCidImages(body, cidMap) {
             if (!body) return '';
             let newBody = body;
-            
+
             if (!cidMap || Object.keys(cidMap).length === 0) return body;
 
             // Safe regex escape helper
@@ -2789,20 +2853,15 @@
                 const att = cidMap[cid];
                 // Use absolute URL and include content_type to ensure reliable rendering
                 const viewUrl = `${window.location.origin}/api/view_attachment?message_id=${encodeURIComponent(att.msgId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(att.ct || '')}`;
-                
+
                 const escapedCid = escapeRegExp(cid);
-                
-                // Match simple cid:URI and encoded variations
-                const cidPatterns = [
-                    new RegExp(`cid:${escapedCid}`, 'gi'),
-                    new RegExp(`cid:${escapeRegExp(encodeURIComponent(cid))}`, 'gi')
-                ];
-                
-                cidPatterns.forEach(pattern => {
-                    newBody = newBody.replace(pattern, viewUrl);
-                });
+                const encodedCid = escapeRegExp(cid.replace('@', '%40'));
+
+                // Robust pattern: cid:ID, cid:<ID>, and encoded versions, case-insensitive
+                const pattern = new RegExp(`cid:<?(${escapedCid}|{encodedCid})>?`, 'gi');
+                newBody = newBody.replace(pattern, viewUrl);
             });
-            
+
             return newBody;
         }
 
@@ -2870,14 +2929,14 @@
             }
             const body = card.querySelector('.message-body');
             const isHiding = body.classList.contains('visible');
-            
+
             if (isHiding) {
                 body.classList.remove('visible');
                 card.classList.remove('expanded');
             } else {
                 body.classList.add('visible');
                 card.classList.add('expanded');
-                
+
                 // Trigger resize for all iframes within this body
                 const iframes = body.querySelectorAll('iframe');
                 iframes.forEach(ifr => {
@@ -2896,7 +2955,7 @@
             }
 
             const sortedMessages = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            container.innerHTML = ''; 
+            container.innerHTML = '';
 
             // Build a global CID map from ALL messages in the thread to handle cross-message references
             const globalCidMap = {};
@@ -2905,29 +2964,34 @@
                     const atts = typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || []);
                     atts.forEach(a => {
                         if (a.content_id) {
+                            // Clean brackets and trim
                             const cleanCid = a.content_id.replace(/^<|>$/g, '').trim();
                             globalCidMap[cleanCid] = { id: a.id, msgId: m.message_id, name: a.name, ct: a.content_type };
                         }
+                        // Also map by name if it exists (fallback)
                         if (a.name) {
-                            globalCidMap[a.name.trim()] = { id: a.id, msgId: m.message_id, name: a.name, ct: a.content_type };
+                            const cleanName = a.name.trim();
+                            if (!globalCidMap[cleanName]) {
+                                globalCidMap[cleanName] = { id: a.id, msgId: m.message_id, name: a.name, ct: a.content_type };
+                            }
                         }
                     });
-                } catch (e) {}
+                } catch (e) { }
             });
 
             sortedMessages.forEach((msg, index) => {
                 const messageCard = document.createElement('div');
                 messageCard.className = `message-card ${msg.is_internal ? 'internal-note' : 'customer-message'}`;
                 if (index === 0) messageCard.classList.add('expanded');
-                
+
                 const sender = escapeHtml(msg.sender || 'Unknown');
                 const timestamp = formatDate(msg.timestamp);
                 const processedBody = processCidImages(msg.body_html || msg.body || msg.body_text || '', globalCidMap);
                 const rawBody = (processedBody || '').trim();
-                
+
                 let displayBody = rawBody;
                 let threadSplit = -1;
-                
+
                 // Optimized splitters
                 const splitters = [/From:\s.+/i, /Sent:\s.+/i, /________________________________/];
                 for (let reg of splitters) {
@@ -2957,7 +3021,7 @@
 
                 const ccList = msg.cc ? escapeHtml(msg.cc) : '';
                 const bccList = msg.bcc ? escapeHtml(msg.bcc) : '';
-                
+
                 messageCard.innerHTML = `
                     <div class="message-header" style="flex-direction: column; align-items: flex-start; padding: 8px 12px;">
                         <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
@@ -2969,14 +3033,14 @@
                     </div>
                     <div class="message-body ${index === 0 ? 'visible' : ''}">
                         <div class="email-iframe-container">
-                            <iframe id="iframe-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts" scrolling="no"></iframe>
+                            <iframe id="iframe-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox" scrolling="no"></iframe>
                         </div>
                         
                         ${sanitizedThread ? `
                         <div class="thread-toggle-container" style="padding: 0 16px;">
                             <button class="quoted-text-btn" onclick="event.stopPropagation(); const container = this.nextElementSibling; const isHiding = container.style.display === 'none'; container.style.display = isHiding ? 'block' : 'none'; this.textContent = isHiding ? 'Hide Thread ▲' : 'Show Full Thread ▼'; if (isHiding) { const ifr = container.querySelector('iframe'); ifr.contentWindow.postMessage('trigger-resize', '*'); }">Show Full Thread ▼</button>
                             <div class="email-iframe-container" style="display: none; border-top: none; border-radius: 0 0 8px 8px; opacity: 0.9;">
-                                <iframe id="iframe-thread-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts" scrolling="no"></iframe>
+                                <iframe id="iframe-thread-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox" scrolling="no"></iframe>
                             </div>
                         </div>
                         ` : ''}
@@ -2987,7 +3051,7 @@
                     </div>
                 `;
 
-                messageCard.addEventListener('click', function(e) {
+                messageCard.addEventListener('click', function (e) {
                     toggleMessage(this, e);
                 });
 
@@ -2996,13 +3060,12 @@
                 const initIframe = (iframeId, content) => {
                     const iframe = document.getElementById(iframeId);
                     if (!iframe) return;
-                    
+
                     const isDarkMode = document.body.classList.contains('dark-mode');
                     const isHtml = /<[a-z][\s\S]*>/i.test(content);
-                    
+
                     const bgColor = isDarkMode ? '#1a1a1a' : '#ffffff';
                     const textColor = isDarkMode ? '#e2e8f0' : '#2d3748';
-                    const linkColor = isDarkMode ? '#818cf8' : '#3182ce';
 
                     const doc = iframe.contentWindow.document;
                     doc.open();
@@ -3010,11 +3073,9 @@
                         <!DOCTYPE html>
                         <html>
                         <head>
-                            <base href="${window.location.origin}/">
+                            <base href="${window.location.origin}/" target="_blank">
                             <style>
-                                :root {
-                                    color-scheme: ${isDarkMode ? 'dark' : 'light'};
-                                }
+                                :root { color-scheme: ${isDarkMode ? 'dark' : 'light'}; }
                                 body { 
                                     font-family: Calibri, 'Segoe UI', Arial, sans-serif; 
                                     margin: 8px 12px; 
@@ -3022,133 +3083,90 @@
                                     background: ${bgColor};
                                     word-wrap: break-word;
                                     line-height: 1.4;
-                                    padding-bottom: 8px; /* Buffer for visibility */
+                                    padding-bottom: 8px;
+                                    cursor: auto;
                                     ${isHtml ? '' : 'white-space: pre-wrap; font-size: 14px;'}
                                 }
-                                /* Enhanced Universal Dark Mode Sanitization for HTML Emails */
-                                ${isDarkMode ? `
-                                    /* 1. Universal Attribute Sanitization */
-                                    [style*="background-color: white"], [style*="background-color: #fff"], [style*="background-color: #ffffff"],
-                                    [style*="background: white"], [style*="background: #fff"], [style*="background: #ffffff"],
-                                    [style*="background-color:rgb(255, 255, 255)"], [style*="background-color: rgb(255, 255, 255)"],
-                                    [bgcolor="#ffffff"], [bgcolor="white"], [bgcolor="#fff"], [bgcolor="#FFFFFF"] {
-                                        background-color: transparent !important;
-                                    }
-                                    
-                                    /* 2. Neutralize Dark Text on Dark Backgrounds */
-                                    [style*="color: #000"], [style*="color: #000000"], [style*="color: black"],
-                                    [style*="color:rgb(0, 0, 0)"], [style*="color: rgb(0, 0, 0)"],
-                                    font[color="#000000"], font[color="black"] {
-                                        color: ${textColor} !important;
-                                    }
-
-                                    /* 3. Force Inheritance for common structural tags if they have legacy styles */
-                                    div, p, span, font, td, table, tbody, tr { 
-                                        border-color: rgba(255,255,255,0.1) !important;
-                                    }
-                                    
-                                    a { color: #818cf8 !important; }
-                                    img { filter: brightness(0.9) contrast(1.1); }
-                                ` : `
-                                    a { color: #2563eb !important; }
-                                `}
-                                img { max-width: 100%; height: auto; display: block; margin: 8px 0; border-radius: 4px; }
+                                img {
+                                    cursor: pointer;
+                                    max-width: 100%;
+                                }
+                                a {
+                                    cursor: pointer;
+                                }
                                 * { max-width: 100%; box-sizing: border-box; }
                                 table { border-collapse: collapse; width: 100% !important; height: auto !important; }
                                 blockquote { border-left: 4px solid #cbd5e1; padding-left: 1rem; margin: 1rem 0; color: ${isDarkMode ? '#94a3b8' : '#64748b'}; font-style: italic; }
                             </style>
                         </head>
-                        <body>
+                        <body spellcheck="false">
                             <div class="email-content-wrapper">${content}</div>
-                        </body>
-                        <script>
-                            function applyUniversalDarkMode() {
-                                const isDark = ${isDarkMode};
-                                if (!isDark) return;
+                            <script>
+                                function applyUniversalDarkMode() {
+                                    const isDark = ${isDarkMode};
+                                    if (!isDark) return;
 
-                                const elements = document.querySelectorAll('.email-content-wrapper, .email-content-wrapper *');
-                                elements.forEach(el => {
-                                    const style = window.getComputedStyle(el);
-                                    
-                                    // 1. Fix Backgrounds (Luminance check)
-                                    const bg = style.backgroundColor;
-                                    if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-                                        const rgb = bg.match(/\\d+/g);
-                                        if (rgb && rgb.length >= 3) {
-                                            const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
-                                            if (brightness > 200) { // If background is too bright
-                                                el.style.setProperty('background-color', 'transparent', 'important');
-                                                el.style.setProperty('background-image', 'none', 'important');
+                                    const elements = document.querySelectorAll('.email-content-wrapper, .email-content-wrapper *');
+                                    elements.forEach(el => {
+                                        const style = window.getComputedStyle(el);
+                                        const bg = style.backgroundColor;
+                                        if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+                                            const rgb = bg.match(/\\d+/g);
+                                            if (rgb && rgb.length >= 3) {
+                                                const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                                                if (brightness > 200) {
+                                                    el.style.setProperty('background-color', 'transparent', 'important');
+                                                    el.style.setProperty('background-image', 'none', 'important');
+                                                }
                                             }
                                         }
-                                    }
-                                    
-                                    // 2. Fix Text Colors (Luminance check)
-                                    const color = style.color;
-                                    if (color) {
-                                        const rgb = color.match(/\\d+/g);
-                                        if (rgb && rgb.length >= 3) {
-                                            const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
-                                            if (brightness < 100) { // If text is too dark
-                                                el.style.setProperty('color', '${textColor}', 'important');
+                                        const color = style.color;
+                                        if (color) {
+                                            const rgb = color.match(/\\d+/g);
+                                            if (rgb && rgb.length >= 3) {
+                                                const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+                                                if (brightness < 100) {
+                                                    el.style.setProperty('color', '${textColor}', 'important');
+                                                }
                                             }
                                         }
-                                    }
-                                });
+                                    });
+                                }
 
-                                // 3. Catch legacy bgcolor attributes
-                                document.querySelectorAll('[bgcolor]').forEach(el => {
-                                    const bg = el.getAttribute('bgcolor');
-                                    if (bg && (bg.startsWith('#f') || bg.startsWith('#F') || bg === 'white')) {
-                                        el.style.setProperty('background-color', 'transparent', 'important');
-                                    }
-                                });
-                            }
-
-                            function sendSize() {
-                                const height = Math.max(
-                                    document.body.scrollHeight, 
-                                    document.documentElement.scrollHeight,
-                                    document.body.offsetHeight,
-                                    document.documentElement.offsetHeight
-                                );
-                                window.parent.postMessage({
-                                    type: 'resize-iframe',
-                                    id: '${iframeId}',
-                                    height: height + 5 // Reduced buffer to save space
-                                }, '*');
-                            }
-                            window.onload = () => {
-                                applyUniversalDarkMode();
-                                sendSize();
-                                // Second pass for dynamic elements (images, etc)
-                                setTimeout(() => {
-                                    applyUniversalDarkMode();
-                                    sendSize();
-                                }, 500);
-                            };
-                            new ResizeObserver(() => {
-                                applyUniversalDarkMode();
-                                sendSize();
-                            }).observe(document.body);
-                            window.addEventListener('message', (e) => {
-                                if (e.data === 'trigger-resize') sendSize();
-                            });
-                            // Toggle parent message card on click
-                            document.addEventListener('click', (e) => {
-                                if (!e.target.closest('a') && !e.target.closest('button')) {
+                                function sendSize() {
+                                    const height = document.body.scrollHeight;
                                     window.parent.postMessage({
-                                        type: 'toggle-message',
-                                        id: '${iframeId}'
+                                        type: 'resize-iframe',
+                                        id: '${iframeId}',
+                                        height: height + 10
                                     }, '*');
                                 }
-                            });
-                            // Safety checks
-                            setTimeout(sendSize, 100);
-                            setTimeout(sendSize, 500);
-                            setTimeout(sendSize, 2000);
-                        <\/script>
-                        </html>
+
+                                document.addEventListener('click', function(e) {
+                                    if (e.target.tagName === 'IMG') {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        window.open(e.target.src, '_blank');
+                                        return;
+                                    }
+                                    const link = e.target.closest('a');
+                                    if (link) {
+                                        link.target = '_blank';
+                                    }
+                                });
+
+                                window.onload = () => {
+                                    applyUniversalDarkMode();
+                                    sendSize();
+                                    setTimeout(sendSize, 500);
+                                };
+
+                                window.addEventListener('message', (e) => {
+                                    if (e.data === 'trigger-resize') sendSize();
+                                });
+                            <\/script>
+                        <\/body>
+                        <\/html>
                     `);
                     doc.close();
                 };
@@ -3171,13 +3189,13 @@
                                 });
                             }
                         });
-                    } catch (e) {}
+                    } catch (e) { }
                 }
             });
         }
 
         // Handle Iframe Resizing and Toggling Messages
-        window.addEventListener('message', function(event) {
+        window.addEventListener('message', function (event) {
             if (event.data.type === 'resize-iframe') {
                 const iframe = document.getElementById(event.data.id);
                 if (iframe) {
@@ -3214,7 +3232,7 @@
                     <p style="margin-top: 1rem; color: var(--text-secondary);">Preparing preview...</p>
                 </div>
             `;
-            
+
             if (!document.getElementById('spinStyle')) {
                 const style = document.createElement('style');
                 style.id = 'spinStyle';
@@ -3225,7 +3243,7 @@
             previewModal.classList.add('active');
 
             const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(attachmentId)}&filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType || '')}`;
-            
+
             btnDownloadPreview.onclick = (e) => {
                 e.stopPropagation();
                 downloadAttachment(attachmentId, messageId, filename);
@@ -3312,9 +3330,9 @@
         // Update assignment immediately when changed in dropdown
         async function changeAssignment() {
             if (!currentTicketRow || !currentTicketIdStr) return;
-            
+
             const newAssignee = document.getElementById('modal-assignment').value;
-            
+
             try {
                 const response = await fetch('/api/take_ticket', {
                     method: 'POST',
@@ -3325,7 +3343,7 @@
                         assigned_to: newAssignee
                     })
                 });
-                
+
                 const result = await response.json();
                 if (result.success) {
                     showToast(`Ticket assigned to ${newAssignee}`, 'success');
@@ -3342,7 +3360,7 @@
         // Manually take a ticket (assign to self)
         async function takeTicket() {
             if (!currentTicketIdStr) return;
-            
+
             try {
                 const response = await fetch('/api/take_ticket', {
                     method: 'POST',
@@ -3352,7 +3370,7 @@
                         row_number: currentTicketRow
                     })
                 });
-                
+
                 const result = await response.json();
                 if (result.success) {
                     showToast('Ticket assigned to you!', 'success');
@@ -3412,7 +3430,7 @@
 
             // Prompt for optional instructions
             const userInstructions = prompt("Any specific instructions for the AI? (e.g. 'Make it more formal', 'Address the error code specifically', or leave blank for a standard regen)");
-            
+
             // If user cancels prompt, abort
             if (userInstructions === null) return;
 
@@ -3423,11 +3441,11 @@
 
             try {
                 const currentDraft = quillEditor ? quillEditor.root.innerHTML : '';
-                
+
                 const response = await fetch('/api/regenerate_ai_sync', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         ticket_id: currentTicketIdStr,
                         user_instructions: userInstructions,
                         current_draft: currentDraft
@@ -3557,7 +3575,7 @@
                 const div = document.createElement('div');
                 div.className = 'timeline-event';
                 const timeStr = new Date(ev.timestamp).toLocaleString();
-                
+
                 // Use the new human-readable event_text field
                 let messageHtml = ev.event_text || `Action: ${ev.event_type}`;
 

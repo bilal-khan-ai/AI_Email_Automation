@@ -56,7 +56,7 @@ class DocumentArchitect:
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
             
             response = self.client.chat.completions.create(
-                model="gpt-4.1-mini", 
+                model=Config.ANALYSIS_MODEL, 
                 messages=[{
                     "role": "user",
                     "content": [
@@ -91,13 +91,13 @@ class DocumentArchitect:
         return re.sub(img_pattern, _replacer, markdown_text)
 
     def generate_semantic_chunks(self, augmented_text: str, book_name: str) -> List[Dict]:
-        """Step 2: Semantic Chunking using GPT-4o-mini"""
+        """Step 2: Semantic Chunking using INTERPRETATION_MODEL"""
         system_prompt = f"""
         You are a Document Architect. Break the document into logical chunks.
         Return ONLY a JSON object: {{"chunks": [ {{"content": "...", "metadata": {{...}} }} ] }}
         """
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini", 
+            model=Config.INTERPRETATION_MODEL, 
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Book Name: {book_name}\n\nDocument:\n{augmented_text}"}

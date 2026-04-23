@@ -14,6 +14,9 @@ class Config:
     
     # OpenAI API
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    GENERATIONAL_MODEL = os.getenv('GENERATIONAL_MODEL', 'gpt-5-mini')
+    INTERPRETATION_MODEL = os.getenv('INTERPRETATION_MODEL', 'gpt-4.1-nano-2025-04-14')
+    ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL', 'gpt-4.1-mini-2025-04-14')
     
     # Chroma Database settings
     CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', './chroma_db')

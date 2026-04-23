@@ -10,12 +10,14 @@ Improvements:
 """
 
 import logging
+import re
+import json
 from openai import OpenAI
 from typing import List, Dict, Optional, Tuple, Any, cast
+from config import Config
 
-# Model Configuration for GPT-5-mini
-GENERATION_MODEL = "gpt-5-mini"
-CONTEXT_WINDOW = 400000  # Updated from 128,000 to 400,000 tokens
+# Model Configuration - Dynamically linked to Config for hot-reloading
+CONTEXT_WINDOW = 400000
 MAX_COMPLETION_TOKENS = 16384
 
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +30,18 @@ class OpenAIAgent:
         self.api_key = api_key
         self.client: Optional[OpenAI] = None
         
+    @property
+    def GENERATIONAL_MODEL(self):
+        return Config.GENERATIONAL_MODEL
+        
+    @property
+    def INTERPRETATION_MODEL(self):
+        return Config.INTERPRETATION_MODEL
+        
+    @property
+    def ANALYSIS_MODEL(self):
+        return Config.ANALYSIS_MODEL
+        
     def authenticate(self):
         """Authenticate with OpenAI API"""
         try:
@@ -37,6 +51,95 @@ class OpenAIAgent:
         except Exception as e:
             logger.error(f"❌ OpenAI authentication failed: {e}")
             return False
+            
+    def _preprocess_text(self, text: str) -> str:
+        """
+        Clean text for interpretation:
+        - Strip common signatures
+        - Remove repeated whitespace
+        """
+        if not text:
+            return ""
+            
+        # 1. Simple signature stripping (heuristics)
+        sig_patterns = [
+            r'(?m)^--\s*$',  # Standard dash signature
+            r'(?i)best regards.*',
+            r'(?i)kind regards.*',
+            r'(?i)thanks and regards.*',
+            r'(?i)thanks,.*',
+            r'(?i)thank you,.*',
+            r'(?i)sincerely,.*',
+            r'(?i)sent from my .*',
+            r'(?i)regards,.*'
+        ]
+        
+        lines = text.split('\n')
+        clean_lines = []
+        for line in lines:
+            is_sig = False
+            for pattern in sig_patterns:
+                if re.search(pattern, line.strip()):
+                    is_sig = True
+                    break
+            if is_sig:
+                break
+            clean_lines.append(line)
+            
+        text = '\n'.join(clean_lines).strip()
+        
+        # 2. Collapse whitespace
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        
+        return text
+
+    def interpret_message(self, text: str, subject: str = "") -> Dict[str, Any]:
+        """
+        Stage 1: Interpretation Layer
+        Classify intent, urgency, and requirements using gpt-4o-mini.
+        """
+        if not self.client:
+            raise Exception("Not authenticated.")
+
+        clean_text = self._preprocess_text(text)
+        
+        try:
+            prompt = f"Subject: {subject}\n\nMessage Body:\n{clean_text}"
+            
+            response = self.client.chat.completions.create(
+                model=Config.INTERPRETATION_MODEL,
+                messages=[
+                    {"role": "system", "content": """Analyze the support email and return a JSON object with:
+- intent: [QUERY, COMPLAINT, RESOLUTION, SCHEDULING, REQUEST, OTHER]
+- urgency: [LOW, MEDIUM, HIGH, CRITICAL]
+- summary: A 1-sentence summary of the core request.
+- requires_human: boolean (true if it's sensitive, legal, or high-stakes).
+- confidence_score: float (0.0 to 1.0).
+
+Intents:
+- QUERY: Asking for information or help.
+- COMPLAINT: Expressing dissatisfaction or reporting a failure.
+- RESOLUTION: Confirming a fix or saying thank you.
+- SCHEDULING: Requesting a call, meeting, or demo.
+- REQUEST: Action request (e.g., reset password, update account).
+- OTHER: None of the above."""},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={ "type": "json_object" },
+                temperature=0.0
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            return result
+        except Exception as e:
+            logger.error(f"Interpretation failed: {e}")
+            return {
+                "intent": "OTHER",
+                "urgency": "MEDIUM",
+                "summary": clean_text[:100],
+                "requires_human": False,
+                "confidence_score": 0.0
+            }
     
     def _format_thread_context(self, messages: List[Dict[str, Any]], max_old_messages: int = 20) -> Tuple[str, str]:
         """
@@ -162,15 +265,17 @@ Subject: {subject}
         return formatted_context, provenance
     
     def generate_response(
-        self, 
+        self,
         messages: List[Dict[str, Any]],
-        context_emails: Optional[List[Dict[str, Any]]] = None,          # LEGACY parameter
-        documentation_context: Optional[List[Dict[str, Any]]] = None,    # NEW parameter
-        experience_context: Optional[List[Dict[str, Any]]] = None,       # NEW parameter
-        user_instructions: Optional[str] = None,               # REFINEMENT parameter
-        current_draft: Optional[str] = None,                   # REFINEMENT parameter
+        context_emails: Optional[List[Dict[str, Any]]] = None,
+        documentation_context: Optional[List[Dict[str, Any]]] = None,
+        experience_context: Optional[List[Dict[str, Any]]] = None,
+        user_instructions: Optional[str] = None,
+        current_draft: Optional[str] = None,
         customer_email: str = "", 
-        subject: str = ""
+        subject: str = "",
+        intent: str = "OTHER",
+        summary: str = ""
     ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
         """
         Generate AI response using GPT-5-mini with enhanced reasoning and sendability gate.
@@ -245,182 +350,86 @@ Subject: {subject}
                 f"{len(experience_context)} past cases"
             )
             
-            # 4. Build system prompt with reasoning framework
-            if use_enhanced_mode and documentation_context:
-                # Enhanced mode with documentation
-                system_prompt = """You are a professional technical support agent for Greenware Solutions.
+            intent_instructions = {
+                "QUERY": "Your goal is to provide accurate, documentation-backed information. Be direct and helpful.",
+                "COMPLAINT": "The customer is frustrated. Be extremely empathetic, acknowledge the issue, and provide a clear path forward or workaround.",
+                "RESOLUTION": "The customer is confirming a fix. Keep it brief, express gratitude, and confirm the ticket can be monitored for further issues.",
+                "SCHEDULING": "The customer wants to meet. Provide clear instructions on how to book a slot or confirm the requested time if possible.",
+                "REQUEST": "The customer is requesting an action. Acknowledge the request, set expectations on processing time, and confirm next steps.",
+                "OTHER": "Provide a standard professional support response."
+            }
+            
+            current_intent_instruction = intent_instructions.get(intent, intent_instructions["OTHER"])
+
+            system_prompt = f"""You are a professional technical support agent for Greenware Solutions.
+CLASSIFIED INTENT: {intent}
+{current_intent_instruction}
 
 CRITICAL OPERATING PRINCIPLES:
 
 1. INTERNAL REASONING (DO NOT SHOW TO USER):
-   Before writing your response, you must internally reason through:
+   Reason through classification, documentation coverage, conflict resolution, and assumption safety.
    
-   a) Problem Classification:
-      - What type of issue is this? (technical, account, billing, feature request, etc.)
-      - What is the customer actually asking for?
-      - Are there implicit questions or concerns?
-   
-   b) Documentation Coverage Check:
-      - Is this issue covered in our AUTHORITATIVE DOCUMENTATION?
-      - If yes, what does the documentation say EXACTLY?
-      - Are there any gaps in the documentation for this specific case?
-   
-   c) Conflict Resolution:
-      - Does past experience contradict or conflict with documentation?
-      - RULE: If documentation exists, it OVERRIDES all past experience 
-      - RULE: Past experience is only valid when it does NOT contradict documentation
-   
-   d) Assumption Safety Check:
-      - Am I about to make any assumptions not grounded in documentation or past experience?
-      - Am I inventing product behavior or features not mentioned in provided context?
-      - Would a senior engineer flag this response as speculative?
-   
-   e) Sendability Decision:
-      - Can I provide a complete, accurate, safe-to-send response?
-      - OR do I need to ask ONE clarifying question?
-      - OR do I need to escalate to a human agent?
-
 2. RESPONSE RULES:
-   - Follow documentation EXACTLY when available (do not paraphrase or interpret loosely)
-   - Use past experience ONLY if it does not contradict documentation
-   - NEVER invent product behavior not mentioned in provided context
-   - If unsure: ask ONE specific clarifying question OR recommend escalation
-   - Do NOT hedge excessively ("might", "could", "possibly") if you have clear documentation
-   - Do NOT apologize unless there was an actual service failure
-
-3. CONTEXT NOTES:
-   - Some context includes "Attachment Descriptions" - automated text descriptions 
-     of customer screenshots. Use these to identify error codes, UI states, or 
-     misconfigurations visible in images that customers didn't mention in text.
-   - If you see an error code in an attachment description, treat it as a primary diagnostic clue.
-
-4. RESPONSE FORMATTING:
-   - Use HTML formatting for email (use <p>, <br>, <strong>, <ul>, <li>, <ol> tags)
-   - Structure your response clearly with paragraphs
-   - End with a professional closing
-   - DO NOT include subject line or "Dear Customer" - start directly with the greeting
-
-EXAMPLE FORMAT:
-<p>Hello,</p>
-<p>Thank you for reaching out to Greenware Solutions support.</p>
-<p>[Your detailed response here]</p>
-<p>If you have any further questions, please don't hesitate to reach out.</p>
-<p>Best regards,</p>
-<p>Greenware Solutions Support Team</p>
+   - Follow documentation EXACTLY when available.
+   - Use past experience ONLY if it does not contradict documentation.
+   - NEVER invent product behavior.
+   - If unsure: ask ONE specific clarifying question.
+   - Use HTML formatting (<p>, <br>, <strong>, <ul>, <li>).
+   - DO NOT include subject line or 'Dear Customer'.
 
 SENDABILITY GATE:
-- If you can provide a complete, accurate response: DO IT
-- If you need clarification: Ask ONE specific question, then provide best-effort guidance
-- If issue requires human expertise: State this clearly and recommend next steps
-- NEVER send a response you're not confident in"""
+- If you can provide a complete, accurate response: DO IT.
+- If you need clarification: Ask ONE specific question.
+- If issue requires human expertise: Recommend escalation.
+"""
+
+            # 5. Build user prompt
+            user_prompt_parts = []
+            
+            if thread_history:
+                user_prompt_parts.append(f"PREVIOUS CONVERSATION THREAD:\n{thread_history}")
+            
+            user_prompt_parts.append(f"CURRENT CUSTOMER QUESTION:\n{latest_question}")
+            
+            if summary:
+                user_prompt_parts.append(f"INTERPRETED SUMMARY: {summary}")
+            
+            if current_draft:
+                user_prompt_parts.append(f"DRAFT TO REFINE:\n{current_draft}")
+            
+            if user_instructions:
+                user_prompt_parts.append(f"SPECIFIC USER INSTRUCTIONS:\n{user_instructions}")
+            
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            user_prompt_parts.append("SECTION 1: AUTHORITATIVE DOCUMENTATION")
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            user_prompt_parts.append(doc_context)
+            
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            user_prompt_parts.append("SECTION 2: PAST SUPPORT EXPERIENCE")
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            user_prompt_parts.append(exp_context)
+            
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            user_prompt_parts.append("YOUR TASK:")
+            user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
+            
+            if user_instructions:
+                user_prompt_parts.append(f"1. Execute the USER INSTRUCTIONS faithfully: '{user_instructions}'")
             else:
-                # Legacy mode or no documentation available
-                system_prompt = """You are a professional technical support agent for Greenware Solutions.
-
-IMPORTANT NOTES:
-- Some RAG context includes "Attachment Descriptions" - these are automated text descriptions 
-  of screenshots provided by customers. Use this to identify error codes, UI states, or 
-  misconfigurations visible in images that customers didn't mention in text.
-- If you see an error code in an attachment description, treat it as a primary diagnostic clue.
-- Use information from past similar support cases when relevant, but always tailor your 
-  response to the current customer's specific situation.
-
-Your responsibilities:
-1. Provide clear, accurate, and helpful responses to customer questions
-2. Leverage past support cases to inform your response (when relevant)
-3. Provide step-by-step instructions when needed
-4. If unsure, acknowledge it and suggest next steps or escalation
-5. Maintain a professional, empathetic tone
-
-Response formatting:
-- Use HTML formatting for email (use <p>, <br>, <strong>, <ul>, <li>, <ol> tags)
-- Structure your response clearly with paragraphs
-- End with a professional closing
-- DO NOT include subject line or "Dear Customer" - start directly with the greeting
-
-Example format:
-<p>Hello, </p>
-<p>Thank you for reaching out to Greenware Solutions support.</p>
-<p>[Your detailed response here]</p>
-<p>If you have any further questions, please don't hesitate to reach out.</p>
-<p>Best regards,</p>
-<p>Greenware Solutions Support Team</p>"""
-
-            # 5. Build user prompt with clearly separated contexts
-            if use_enhanced_mode and documentation_context:
-                # Enhanced mode with documentation
-                user_prompt_parts = []
-                
-                if thread_history:
-                    user_prompt_parts.append(f"PREVIOUS CONVERSATION THREAD:\n{thread_history}")
-                
-                user_prompt_parts.append(f"CURRENT CUSTOMER QUESTION:\n{latest_question}")
-                
-                if current_draft:
-                    user_prompt_parts.append(f"DRAFT TO REFINE:\n{current_draft}")
-                
-                if user_instructions:
-                    user_prompt_parts.append(f"SPECIFIC USER INSTRUCTIONS:\n{user_instructions}")
-                
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append("SECTION 1: AUTHORITATIVE DOCUMENTATION (Follow EXACTLY)")
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append(doc_context)
-                
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append("SECTION 2: PAST SUPPORT EXPERIENCE (Use ONLY if not contradicting documentation)")
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append(exp_context)
-                
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append("YOUR TASK:")
-                user_prompt_parts.append("═══════════════════════════════════════════════════════════════")
-                user_prompt_parts.append("1. Apply the Internal Reasoning framework (do not show this to the customer)")
-                
-                if user_instructions:
-                    user_prompt_parts.append(f"2. Execute the USER INSTRUCTIONS faithfully: '{user_instructions}'")
-                else:
-                    user_prompt_parts.append("2. Draft a professional email response following the Response Rules")
-                
-                user_prompt_parts.append("3. Ensure your response passes the Sendability Gate")
-                user_prompt_parts.append("4. Make sure your response is to the point and direct, not wordy")
-                
-                if current_draft and user_instructions:
-                    user_prompt_parts.append("5. Since you were given a DRAFT and INSTRUCTIONS, focus on REFINING the draft as requested.")
-                
-                user_prompt_parts.append("\nRemember: Documentation is authoritative. Past experience is advisory only.")
-                
-                user_prompt = "\n\n".join(user_prompt_parts)
-            else:
-                # Legacy mode
-                user_prompt_parts = []
-                
-                if thread_history:
-                    user_prompt_parts.append(f"PREVIOUS CONVERSATION THREAD:\n{thread_history}")
-                
-                user_prompt_parts.append(f"CURRENT CUSTOMER QUESTION:\n{latest_question}")
-                
-                if current_draft:
-                    user_prompt_parts.append(f"CURRENT DRAFT:\n{current_draft}")
-                
-                if user_instructions:
-                    user_prompt_parts.append(f"INSTRUCTIONS:\n{user_instructions}")
-                
-                user_prompt_parts.append(f"SIMILAR PAST SUPPORT CASES (for reference):\n{exp_context}")
-                
-                if user_instructions:
-                    user_prompt_parts.append(f"Please refine the response based on these instructions: {user_instructions}")
-                else:
-                    user_prompt_parts.append("Please draft a professional email response that addresses the customer's current question.")
-                
-                user_prompt = "\n\n".join(user_prompt_parts)
+                user_prompt_parts.append(f"1. Draft a professional email response addressing the {intent}.")
+            
+            user_prompt_parts.append("2. Ensure your response is to the point and direct.")
+            
+            user_prompt = "\n\n".join(user_prompt_parts)
 
             # 6. Call OpenAI API
-            logger.info(f"📤 Calling {GENERATION_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {ticket_id}...")
+            logger.info(f"📤 Calling {Config.GENERATIONAL_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {ticket_id}...")
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model=GENERATION_MODEL,
+                model=Config.GENERATIONAL_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -464,7 +473,7 @@ Example format:
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=Config.INTERPRETATION_MODEL,
                 messages=[
                     {"role": "system", "content": "Summarize the following support ticket in 1-2 concise sentences."},
                     {"role": "user", "content": customer_question}
@@ -500,7 +509,7 @@ Example format:
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=Config.INTERPRETATION_MODEL,
                 messages=[
                     {"role": "system", "content": """Categorize this support ticket into ONE of these categories:
 - Technical Issue
@@ -622,13 +631,13 @@ Subject: {subject}
         formatted_context = "\n\n---\n\n".join(formatted_parts)
         
         return formatted_context, provenance
-    def analyze_image(self, image_bytes: bytes, model: str = "gpt-4o-mini") -> Optional[str]:
+    def analyze_image(self, image_bytes: bytes, model: Optional[str] = None) -> Optional[str]:
         """
         Analyze an image using OpenAI Vision.
         
         Args:
             image_bytes: Raw image data
-            model: The model to use ('gpt-4o' or 'gpt-4o-mini')
+            model: The model to use (defaults to Config.ANALYSIS_MODEL)
             
         Returns:
             str: Analysis result or None on error
@@ -636,13 +645,16 @@ Subject: {subject}
         if not self.client:
             raise Exception("Not authenticated. Call authenticate() first.")
         
+        # Use provided model or fall back to config
+        target_model = model if model else Config.ANALYSIS_MODEL
+        
         try:
             # Encode image to base64
             import base64
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
             
             # Determine prompt based on model
-            if model == "gpt-4o":
+            if target_model == Config.ANALYSIS_MODEL:
                 prompt = "Extract all tabular data from this image and format it as a markdown table. Be extremely precise with numbers and headers."
             else:
                 prompt = "What is in this image? If it's a technical error or screenshot, extract the error message and key details. If it's a general image, provide a brief description."
@@ -650,7 +662,7 @@ Subject: {subject}
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
-                model=model,
+                model=target_model,
                 messages=[
                     {
                         "role": "user",
@@ -671,5 +683,5 @@ Subject: {subject}
             return response.choices[0].message.content
             
         except Exception as e:
-            logger.error(f"❌ Error analyzing image with {model}: {e}")
+            logger.error(f"❌ Error analyzing image with {target_model}: {e}")
             return None

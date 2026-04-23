@@ -18,7 +18,7 @@ from config import Config
 from modules.openai_agent import OpenAIAgent
 from modules.vector_db import VectorDatabase, BookVectorDB
 
-app = Flask(__name__, template_folder='Pages')
+app = Flask(__name__)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -353,7 +353,7 @@ def index():
     staff_members = [u for u in users if u.get('is_assignable', True) and u['role'] in ['staff', 'admin']]
     
     # Pass whether the user is an admin to the template
-    return render_template('dashboard.html', 
+    return render_template('dashboard_refactored.html', 
                           user=user, 
                           staff_members=staff_members, 
                           is_admin=(user['role'] == 'admin'),

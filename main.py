@@ -512,40 +512,14 @@ class SupportAgent:
                     continue
 
                 if is_img:
-                    # RAG Image Processing
+                    # RAG Image Processing (for AI context only)
                     desc = self.img_processor.process_image(att_bytes, filename=name)
                     if desc:
                         attachment_descs.append(desc)
                     
-                    # ENHANCED: Always-Render Strategy - Bake image attachments into body_html if referenced by CID
-                    # This bypasses failing live API calls for images that are effectively inline
-                    cid = (att.get('content_id') or '').strip('<>')
-                    att_name = att.get('name', '')
-                    
-                    if email.get('body_html') and (cid or att_name):
-                        # Safety: only bake if under 1.5MB to prevent DB bloat
-                        if size < 1.5 * 1024 * 1024:
-                            import base64
-                            b64_data = base64.b64encode(att_bytes).decode('utf-8')
-                            data_uri = f"data:{ct};base64,{b64_data}"
-                            
-                            baked = False
-                            # Strategy 1: Match by CID (most common)
-                            if cid:
-                                if f"cid:{cid}" in email['body_html']:
-                                    email['body_html'] = email['body_html'].replace(f"cid:{cid}", data_uri)
-                                    baked = True
-                            
-                            # Strategy 2: Match by filename (fallback for some clients)
-                            if not baked and att_name:
-                                if f"cid:{att_name}" in email['body_html']:
-                                    email['body_html'] = email['body_html'].replace(f"cid:{att_name}", data_uri)
-                                    baked = True
-                            
-                            if baked:
-                                logger.info(f"🖼️  Baked image {att_name} (CID: {cid}) into body_html")
-                        else:
-                            logger.info(f"🖼️  Skipping bake for large image {att_name} ({size} bytes)")
+                    # NOTE: Live fetching is now handled by dashboard.js using /api/view_attachment.
+                    # We no longer "bake" base64 images into the DB to save memory and performance.
+                    logger.info(f"🖼️  Processed image {name} for RAG context.")
                             
                 elif is_table:
                     res = self.tables_processor.process_bytes(att_bytes, filename=name)
@@ -749,32 +723,48 @@ class SupportAgent:
             )
             return
         
-        logger.info(f"🧠 Generating AI Draft for ticket {ticket_id}...")
+        logger.info(f"🧠 Stage 1: Interpreting ticket {ticket_id}...")
+        
+        # 2b. INTERPRETATION LAYER
+        interpretation = self.ai.interpret_message(
+            last_msg.get('body_text', ''), 
+            messages[0].get('subject', '')
+        )
+        intent = interpretation.get('intent', 'OTHER')
+        summary = interpretation.get('summary', '')
+        urgency = interpretation.get('urgency', 'MEDIUM')
+        
+        logger.info(f"🔍 Result: Intent={intent} | Urgency={urgency} | Summary={summary}")
+
+        logger.info(f"🧠 Stage 2: Generating AI Draft for ticket {ticket_id}...")
         
         # 3. DUAL RAG SEARCH
-        query = last_msg['body_text']
+        # Use interpreted summary if high confidence, else raw text
+        rag_query = summary if (summary and interpretation.get('confidence_score', 0) > 0.7) else last_msg['body_text']
         
         # 3a. Search documentation (authoritative)
         docs = self.documentation_db.search_similar(
-            query, 
+            rag_query, 
             top_k=Config.TOP_K_RESULTS
         )
         logger.info(f"📚 Documentation search: {len(docs)} chunks found")
         
         # 3b. Search experience (advisory)
         experiences = self.experience_db.search_similar(
-            query, 
+            rag_query, 
             top_k=Config.TOP_K_RESULTS
         )
         logger.info(f"📧 Experience search: {len(experiences)} past cases found")
         
-        # 4. Generate response with SEPARATE contexts
+        # 4. Generate response with SEPARATE contexts and INTENT routing
         draft, provenance = self.ai.generate_response(
             messages=messages,
-            documentation_context=docs,      # NEW: Pass docs separately
-            experience_context=experiences,   # NEW: Pass experience separately
+            documentation_context=docs,      
+            experience_context=experiences,   
             customer_email=messages[0].get('sender'),
-            subject=messages[0].get('subject')
+            subject=messages[0].get('subject'),
+            intent=intent,
+            summary=summary
         )
         
         # 5. Save draft with combined provenance

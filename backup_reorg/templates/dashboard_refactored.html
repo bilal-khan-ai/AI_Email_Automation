@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Support Ticket Dashboard</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎫</text></svg>">
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+
+<body>
+    <!-- Theme toggle moved to header -->
+
+    <div class="header">
+        <div class="header-container">
+            <div>
+                <h1>🎫 Support Ticket Dashboard</h1>
+                <p>Real-time ticket monitoring and management</p>
+                <div class="header-user-info">
+                    👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{
+                    'Administrator' if user.role == 'admin' else 'Support Staff' }})
+                </div>
+            </div>
+            <div class="header-actions">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode">
+                    <span id="theme-icon">🌙</span> <span id="theme-text">Dark Mode</span>
+                </button>
+                <button onclick="showUserPasswordModal()" class="btn btn-outline-light btn-header">
+                    🔑 Change Password
+                </button>
+                {% if user.role == 'admin' %}
+                <a href="{{ url_for('management') }}" class="btn btn-outline-light btn-header">
+                    🛡️ Management
+                </a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm btn-logout">
+                    🚪 Logout
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="stat-total">0</div>
+            <div class="stat-label">Total Tickets</div>
+        </div>
+        <div class="stat-card pending">
+            <div class="stat-value" id="stat-open">0</div>
+            <div class="stat-label">Open Tickets</div>
+        </div>
+        <div class="stat-card completed">
+            <div class="stat-value" id="stat-closed">0</div>
+            <div class="stat-label">Closed Tickets</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="search-box">
+            <input type="search" id="search" name="search" autocomplete="off" 
+                   role="searchbox" aria-label="Search tickets"
+                   placeholder="🔍 Search by email, subject, or ticket ID...">
+        </div>
+        <div class="filter-buttons">
+            <div class="pill-toggle" id="visibilityPill" data-active="all">
+                <div class="pill-option" data-visibility="mine">My Tickets</div>
+                <div class="pill-option active" data-visibility="all">All Tickets</div>
+                <div class="pill-slider"></div>
+            </div>
+            <span style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
+
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="Open">Open</button>
+            <button class="filter-btn" data-filter="Closed">Closed</button>
+
+            <div class="filter-dropdown" id="assignmentFilterDropdown">
+                <button class="filter-dropdown-btn" id="assignmentFilterBtn"
+                    onclick="toggleFilterDropdown('assignment')">
+                    <span id="assignmentFilterText">👤 Assignment</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <div class="filter-dropdown-content" id="assignmentFilterContent"></div>
+            </div>
+
+            <div class="filter-dropdown" id="customerFilterDropdown">
+                <button class="filter-dropdown-btn" id="customerFilterBtn" onclick="toggleFilterDropdown('customer')">
+                    <span id="customerFilterText">📧 Customer</span>
+                    <span class="dropdown-arrow">▼</span>
+                </button>
+                <div class="filter-dropdown-content" id="customerFilterContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tickets-container">
+        <div class="tickets-grid" id="tickets">
+            <div class="loading">Loading tickets...</div>
+        </div>
+    </div>
+
+    <div class="modal" id="ticketModal">
+        <div class="modal-content" style="max-height: 95vh; display: flex; flex-direction: column;">
+            <div class="modal-header-actions" style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+                <h2 id="modal-subject"
+                    style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1rem;">
+                </h2>
+                
+                <div id="lockStatus" class="lock-status" style="margin-right: 1rem;">🔒 Locked by another user</div>
+                
+                <!-- New Take/Close Buttons in Header -->
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button class="btn btn-primary btn-sm" id="btnTakeTicket" onclick="takeTicket()" title="Assign this ticket to yourself">
+                         Take Ticket
+                    </button>
+                    
+                    <button class="btn btn-danger btn-sm" id="btnToggleStatus" onclick="toggleTicketStatus()">
+                        <span id="toggleStatusIcon">✓</span> <span id="toggleStatusText">Close Ticket</span>
+                    </button>
+
+                    <div class="assignment-dropdown">
+                        <select id="modal-assignment" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onchange="changeAssignment()">
+                            <option value="Unassigned">Unassigned</option>
+                            {% for staff in staff_members %}
+                            <option value="{{ staff.username }}">{{ staff.username }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)" style="position:static; margin-left: 0.5rem;">&times;</button>
+                </div>
+            </div>
+
+            <div class="modal-layout">
+                <div class="modal-left-panel">
+                    <div class="info-section">
+                        <h3>📧 Ticket Information</h3>
+                        <div class="info-item">
+                            <strong>Ticket ID:</strong>
+                            <span id="modal-ticket-id" class="ticket-id"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>Customer:</strong>
+                            <span id="modal-email"></span>
+                        </div>
+
+                        <div class="info-item">
+                            <strong>Last Activity:</strong>
+                            <span id="modal-date"></span>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem;">Conversation History</h3>
+                    <div id="threadLoading" style="display:none; text-align:center; padding: 20px;">
+                        Loading messages...
+                    </div>
+                    <div id="emailChainContainer" class="message-thread"></div>
+                </div>
+
+                <div class="modal-right-panel collapsed" id="rightPanel">
+                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Expand Draft Panel">◀</button>
+
+                    <div class="email-composer">
+                        <div class="email-composer-header">
+                            <h4 style="display:inline-block; margin:0;">Draft Response</h4>
+                            <button class="btn btn-outline-primary btn-sm" onclick="regenerateAI()" id="btnRegenerateAI"
+                                style="margin-left: 1rem; padding: 2px 8px; font-size: 0.8rem;"
+                                title="Regenerate AI Draft">🔄 Regenerate AI</button>
+                            <button class="header-collapse-btn" onclick="toggleRightPanel()"
+                                title="Collapse Panel">▶</button>
+
+                            <div class="composer-field" style="margin-top:1rem;">
+                                <label>To:</label>
+                                <input type="email" id="emailTo">
+                                <div id="suggestionsTo" class="autocomplete-suggestions"></div>
+                            </div>
+                            <div class="composer-field hidden" id="ccField">
+                                <label>CC:</label>
+                                <input type="text" id="emailCC" placeholder="email1@example.com, email2@example.com">
+                                <div id="suggestionsCC" class="autocomplete-suggestions"></div>
+                            </div>
+                            <div class="composer-field hidden" id="bccField">
+                                <label>BCC:</label>
+                                <input type="text" id="emailBCC" placeholder="email1@example.com, email2@example.com">
+                                <div id="suggestionsBCC" class="autocomplete-suggestions"></div>
+                            </div>
+                            <div class="toggle-cc-bcc">
+                                <button onclick="toggleField('ccField')">+ CC</button>
+                                <button onclick="toggleField('bccField')">+ BCC</button>
+                            </div>
+                        </div>
+
+                        <div id="editor" class="editor-container"></div>
+
+                        <div class="attachments-composer">
+                            <h4>📎 Attachments</h4>
+                            <div class="attachment-input-wrapper">
+                                <label for="attachmentInput" class="file-input-label">
+                                    <span>📁</span> Choose Files
+                                </label>
+                                <input type="file" id="attachmentInput" multiple>
+                                <span id="fileCount" style="font-size: 0.85rem; color: var(--text-secondary);">No files
+                                    selected</span>
+                            </div>
+                            <div class="attached-files" id="attachedFiles"></div>
+                        </div>
+                    </div>
+
+                    <div class="modal-actions">
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button class="btn btn-primary" id="btnSave" onclick="saveTicket()">
+                                <span>💾</span> Save
+                            </button>
+                            <button class="btn btn-success" id="btnSend" onclick="sendToCustomer()">
+                                <span>📧</span> Send
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="refresh-indicator" id="refreshIndicator">
+        🔄 Auto-refreshing...
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Change Password Modal -->
+    <div class="modal" id="userPasswordModal">
+        <div class="modal-content password-modal-content">
+            <button type="button" class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
+            <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">🔑 Change Your Password</h3>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New
+                    Password</label>
+                <input type="password" id="newUserPassword" autocomplete="new-password"
+                    class="password-input"
+                    placeholder="Minimum 6 characters">
+            </div>
+            <div style="display: flex; gap: 1rem;">
+                <button onclick="updateUserPassword()" id="btnUpdateUserPassword" class="btn btn-primary"
+                    style="flex: 1; justify-content: center; font-weight: 600;">✨ Update Password</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <!-- Timeline Modal -->
+    <div id="timelineModal" class="modal">
+        <div class="modal-content" style="max-width: 600px; max-height: 85vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
+            <div class="modal-header" style="padding: 1.25rem; border-bottom: 2px solid var(--border-color); flex-shrink: 0; position: relative;">
+                <h2 class="mb-0">🕒 Ticket Lifecycle Timeline</h2>
+                <button type="button" class="close-btn" onclick="closeTimeline()" title="Close">&times;</button>
+            </div>
+            <div id="timelineTicketInfo" class="px-3 py-2 border-bottom fw-bold" style="background: var(--input-bg); flex-shrink: 0;"></div>
+            <div class="modal-body" style="overflow-y: auto; padding: 1.25rem; flex-grow: 1;">
+                <div id="timelineList" class="timeline-container">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <div class="preview-header">
+                <h3 id="previewTitle" style="margin:0; font-size: 1.1rem; color: var(--text-primary);">Preview</h3>
+                <div>
+                    <button class="btn btn-secondary btn-sm" id="btnDownloadPreview" style="margin-right: 0.5rem;">Download</button>
+                    <button type="button" class="close-btn" style="position:static; padding: 0 5px;" onclick="closePreview()">&times;</button>
+                </div>
+            </div>
+            <div class="preview-body" id="previewBody">
+                <!-- Content injected by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+        const currentUsername = '{{ user.username }}';
+        const testMode = {{ 'true' if test_mode else 'false' }};
+        const testEmail = "{{ test_email }}";
+        const testCC = "{{ test_cc }}";
+    </script>
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+
+</html>

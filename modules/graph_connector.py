@@ -346,6 +346,20 @@ class AsyncioWorker:
             
             while messages and messages.value:
                 for msg in messages.value:
+                    # FALLBACK: Fetch attachments if missing but referenced in body or has_attachments is true
+                    # Some clients don't set has_attachments flag for inline images
+                    body_content = getattr(msg.body, 'content', '') if msg.body else ''
+                    has_cid = 'cid:' in body_content
+                    if (getattr(msg, 'has_attachments', False) or has_cid) and (not hasattr(msg, 'attachments') or not msg.attachments):
+                        try:
+                            logger.info(f"🔍 Fetching missing attachments for message {msg.id[:10]}...")
+                            att_resp = await self.client.users.by_user_id(user_email).messages.by_message_id(msg.id).attachments.get()
+                            if att_resp and att_resp.value:
+                                msg.attachments = att_resp.value
+                                logger.info(f"✅ Found {len(msg.attachments)} missing attachments")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Failed to fetch missing attachments for {msg.id[:10]}: {e}")
+
                     emails.append(self._parse_email(msg))
                 
                 # Pagination
@@ -422,7 +436,7 @@ class AsyncioWorker:
     def _parse_email(self, msg) -> Dict:
         """Convert Graph Object to Dictionary (synchronous helper)"""
         attachments = []
-        if hasattr(msg, 'has_attachments') and msg.has_attachments and hasattr(msg, 'attachments') and msg.attachments:
+        if hasattr(msg, 'attachments') and msg.attachments:
             for att in msg.attachments:
                 if getattr(att, 'odata_type', '') == '#microsoft.graph.itemAttachment':
                     continue
