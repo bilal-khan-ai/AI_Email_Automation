@@ -382,6 +382,9 @@ SENDABILITY GATE:
 - If you can provide a complete, accurate response: DO IT.
 - If you need clarification: Ask ONE specific question.
 - If issue requires human expertise: Recommend escalation.
+
+NOTE ON EXPERIENCE:
+Past Support Cases labeled [RESOLVED] are verified high-quality resolutions. Regard them as authoritative examples of how to handle similar issues.
 """
 
             # 5. Build user prompt
@@ -607,14 +610,17 @@ Source: {book} - {section}
             distance = email.get('distance', 0.0)
             similarity_score = 1.0 - distance
             
-            # Extract subject from content or metadata
+            # Extract metadata
             subject = metadata.get('subject', 'N/A')
+            is_resolved = metadata.get('is_resolved', False)
+            status_label = "[RESOLVED]" if is_resolved else "[ONGOING]"
             
             # Store provenance
             provenance.append({
                 'rank': i,
                 'source': 'experience',
                 'subject': subject,
+                'is_resolved': is_resolved,
                 'similarity_score': round(float(similarity_score), 3),
                 'metadata': metadata
             })
@@ -623,7 +629,7 @@ Source: {book} - {section}
             content_preview = content[0:5000] + "..." if len(content) > 5000 else content
             
             formatted_parts.append(f"""
-Past Support Case #{i} (Similarity: {similarity_score:.1%}):
+Past Support Case #{i} {status_label} (Similarity: {similarity_score:.1%}):
 Subject: {subject}
 {content_preview}
 """.strip())

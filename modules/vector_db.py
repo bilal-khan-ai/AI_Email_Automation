@@ -185,6 +185,7 @@ class VectorDatabase:
             meta = {
                 "subject": subject,
                 "sender": sender,
+                "is_resolved": metadata.get('is_resolved', False) if metadata else False,
                 **(metadata or {})
             }
             
@@ -198,7 +199,8 @@ class VectorDatabase:
             
             logger.info(
                 f"✅ Added email to vector DB: {email_id[0:20]} | "
-                f"Ticket: {meta.get('ticket_id', 'N/A')}"
+                f"Ticket: {meta.get('ticket_id', 'N/A')} | "
+                f"Resolved: {meta.get('is_resolved', False)}"
             )
             return True
         
@@ -250,6 +252,7 @@ class VectorDatabase:
                 metadatas.append({
                     "subject": email['subject'],
                     "sender": email['sender'],
+                    "is_resolved": email.get('metadata', {}).get('is_resolved', False),
                     **(email.get('metadata', {}))
                 })
             
@@ -497,6 +500,47 @@ class VectorDatabase:
         """Get number of soft-deleted documents"""
         return self.deleted_collection.count()
     
+    def update_ticket_status(self, ticket_id: str, is_resolved: bool) -> int:
+        """
+        Update is_resolved metadata for all emails belonging to a ticket.
+        
+        Args:
+            ticket_id: Ticket ID to update
+            is_resolved: New resolved status
+            
+        Returns:
+            int: Number of vectors updated
+        """
+        try:
+            # Find all vectors for this ticket
+            results = self.collection.get(
+                where={"ticket_id": ticket_id}
+            )
+            
+            if not results or not results['ids']:
+                logger.info(f"ℹ️  No vectors found for ticket {ticket_id} to update status")
+                return 0
+            
+            ids = results['ids']
+            metadatas = results['metadatas']
+            
+            # Update metadata for each
+            for meta in metadatas:
+                meta['is_resolved'] = is_resolved
+            
+            # Update in ChromaDB
+            self.collection.update(
+                ids=ids,
+                metadatas=metadatas
+            )
+            
+            logger.info(f"✨ Updated resolution status to {is_resolved} for {len(ids)} vectors in ticket {ticket_id}")
+            return len(ids)
+            
+        except Exception as e:
+            logger.error(f"❌ Error updating ticket status in vector DB: {e}")
+            return 0
+
     def cleanup(self):
         """
         Force cleanup of all resources.
@@ -514,19 +558,14 @@ class BookVectorDB:
         )
         
         import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2",
-            device=device
-        )
-        logger.info(f"📚 BookVectorDB: Initialized with {device}")
+        logger.info(f"📚 BookVectorDB: Initialized with {self.device} (Manual Embedding)")
     
     def get_bookstack_collection(self):
         """Get or create the bookstack_db collection."""
         return self.client.get_or_create_collection(
             name="bookstack_db",
-            embedding_function=self.embedding_function,
             metadata={"hnsw:space": "cosine"}
         )
     
@@ -555,6 +594,14 @@ class BookVectorDB:
         """
         collection = self.get_bookstack_collection()
         
+        # Manually encode query using the VRAM-safe context manager
+        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
+            if model is None:
+                logger.error("❌ Embedding model not available for BookStack query")
+                return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
+            
+            query_embedding = model.encode(query_text).tolist()
+        
         where = {}
         if product:
             where["product"] = product
@@ -566,7 +613,7 @@ class BookVectorDB:
             where["failure_related"] = str(failure_related)
         
         results = collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=n_results,
             where=where if where else None
         )
@@ -589,14 +636,23 @@ class BookVectorDB:
         """
         collection = self.get_bookstack_collection()
         
+        # Manually encode documents using the VRAM-safe context manager
+        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
+            if model is None:
+                logger.error("❌ Embedding model not available for BookStack add")
+                return
+            
+            embeddings = model.encode(documents).tolist()
+        
         if ids is None:
             start_idx = collection.count()
             ids = [f"chunk_{i}" for i in range(start_idx, start_idx + len(documents))]
         
         collection.add(
+            ids=ids,
+            embeddings=embeddings,
             documents=documents,
-            metadatas=metadatas,
-            ids=ids
+            metadatas=metadatas
         )
     
     def delete_from_bookstack(
@@ -645,13 +701,18 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query troubleshooting content specifically."""
+        # Manually encode query
+        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
+            if model is None: return {"ids": [[]]}
+            query_embedding = model.encode(query_text).tolist()
+
         where = {"intent": "troubleshooting"}
         if product:
             where["product"] = product
         
         collection = self.get_bookstack_collection()
         return collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=n_results,
             where=where
         )
@@ -662,9 +723,14 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query for content that includes UI screenshots and VLM descriptions."""
+        # Manually encode query
+        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
+            if model is None: return {"ids": [[]]}
+            query_embedding = model.encode(query_text).tolist()
+
         collection = self.get_bookstack_collection()
         return collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=n_results,
             where={"has_visual": "True"}
         )
@@ -676,13 +742,18 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query for failure-related content."""
+        # Manually encode query
+        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
+            if model is None: return {"ids": [[]]}
+            query_embedding = model.encode(query_text).tolist()
+
         where = {"failure_related": "True"}
         if product:
             where["product"] = product
         
         collection = self.get_bookstack_collection()
         return collection.query(
-            query_texts=[query_text],
+            query_embeddings=[query_embedding],
             n_results=n_results,
             where=where
         )

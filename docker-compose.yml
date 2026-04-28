@@ -20,7 +20,7 @@ services:
   web:
     build: .
     restart: always
-    command: python dashboard_socketio.py
+    command: gunicorn -k eventlet -w 1 dashboard:application --bind 0.0.0.0:5000 --log-level info --timeout 120
     ports:
       - "5000:5000"
     env_file:

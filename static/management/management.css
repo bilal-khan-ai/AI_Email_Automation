@@ -459,3 +459,67 @@ body.dark-mode .search-box-container input {
     border-color: #444 !important;
     color: #fff !important;
 }
+
+/* Drilldown & Hover Effects */
+.staff-metric-card, .client-card {
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.staff-metric-card:hover, .client-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+    border-color: var(--primary-color) !important;
+}
+
+.staff-metric-card::after, .client-card::after {
+    content: 'View Detailed Analytics →';
+    position: absolute;
+    bottom: -30px;
+    left: 0;
+    right: 0;
+    background: var(--primary-color);
+    color: white;
+    font-size: 0.7rem;
+    padding: 4px;
+    text-align: center;
+    transition: bottom 0.3s ease;
+    z-index: 10;
+}
+
+.staff-metric-card:hover::after, .client-card:hover::after {
+    bottom: 0;
+}
+
+/* Modal Enhancements */
+#drilldownModal .modal-header {
+    background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+}
+
+.card.shadow-sm {
+    transition: transform 0.2s ease;
+}
+
+.card.shadow-sm:hover {
+    transform: scale(1.02);
+}
+
+body.dark-mode #drilldownModal .modal-body {
+    background: #0f172a !important;
+}
+
+body.dark-mode #drilldownModal .card.shadow-sm {
+    background: #1e293b !important;
+    border: 1px solid #334155 !important;
+}
+
+body.dark-mode #drilldownModal .text-secondary {
+    color: #94a3b8 !important;
+}
+
+body.dark-mode #drilldownModal .h3, 
+body.dark-mode #drilldownModal h5 {
+    color: #f1f5f9 !important;
+}

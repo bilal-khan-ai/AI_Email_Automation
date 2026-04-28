@@ -1,79 +1,106 @@
 #!/bin/bash
 # Deployment script for AI Email Automation
-# Usage: ./deploy.sh [VM_IP_ADDRESS] [SSH_USER]
-# Alternatively: ./deploy.sh vm-linux-user1@40.81.231.178
-
-VM_IP=${1:-"40.81.231.178"}
-SSH_USER=${2:-"vm-linux-user1"}
-PROJECT_DIR="AI_Email_Automation"
-
-# If the user passes user@ip as the first argument, handle it correctly
-if [[ "$VM_IP" == *"@"* ]]; then
-    SSH_USER=$(echo $VM_IP | cut -d'@' -f1)
-    VM_IP=$(echo $VM_IP | cut -d'@' -f2)
+# Usage: ./deploy.sh [VM_IP] [SSH_USER] [build|update] [PASSWORD]
+# Example: ./deploy.sh vm-linux-user1@40.81.231.178 build - for rebuilding
+# Example: ./deploy.sh vm-linux-user1@40.81.231.178 - for updating           
+# Handle user@ip or separate arguments
+if [[ "$1" == *"@"* ]]; then
+    SSH_USER=$(echo "$1" | cut -d'@' -f1)
+    VM_IP=$(echo "$1" | cut -d'@' -f2)
+    MODE=${2:-"update"}
+    ARG_PASS=$3
+else
+    VM_IP=${1:-"40.81.231.178"}
+    SSH_USER=${2:-"vm-linux-user1"}
+    MODE=${3:-"update"}
+    ARG_PASS=$4
 fi
 
-echo "Deploying to $SSH_USER@$VM_IP..."
+PROJECT_DIR="AI_Email_Automation"
 
-# Step 1: Package files locally (avoids missing 'rsync' on Windows Git Bash)
-echo "Packing files locally..."
+# --- Password Handling (Industry Standard) ---
+# 1. Use argument if provided, otherwise prompt securely
+if [ -n "$ARG_PASS" ]; then
+    PASSWORD="$ARG_PASS"
+else
+    echo -n "🔑 Enter VM Password for $SSH_USER: "
+    read -s PASSWORD
+    echo ""
+fi
+
+# 2. Export for sshpass (prevents password appearing in 'ps' output)
+export SSHPASS="$PASSWORD"
+
+# 3. Configure SSH/SCP commands
+SSH_CMD="ssh"
+SCP_CMD="scp"
+if [ -n "$PASSWORD" ]; then
+    if command -v sshpass &> /dev/null; then
+        # Use -e to read from SSHPASS environment variable
+        SSH_CMD="sshpass -e ssh -o StrictHostKeyChecking=no"
+        SCP_CMD="sshpass -e scp -o StrictHostKeyChecking=no"
+    else
+        echo "⚠️  sshpass not found. Falling back to manual password prompts."
+    fi
+fi
+
+echo "🚀 Deploying to $SSH_USER@$VM_IP ($MODE mode)..."
+
+# Step 1: Package files locally
+echo "📦 Packing files..."
 tar -czvf deploy_pkg.tar.gz --exclude='deploy_pkg.tar.gz' --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='uploads' --exclude='Books' --exclude='data' --exclude='chroma_db' --exclude='chromaDB' .
 
-# Step 2: Ensure directory exists & SCP upload
-echo "Uploading package to remote server..."
-ssh $SSH_USER@$VM_IP "mkdir -p ~/$PROJECT_DIR"
-scp deploy_pkg.tar.gz $SSH_USER@$VM_IP:~/$PROJECT_DIR/
-
-# Cleanup local tar file
+# Step 2: Upload
+echo "📤 Uploading package..."
+$SSH_CMD $SSH_USER@$VM_IP "mkdir -p ~/$PROJECT_DIR"
+$SCP_CMD deploy_pkg.tar.gz $SSH_USER@$VM_IP:~/$PROJECT_DIR/
 rm deploy_pkg.tar.gz
 
-# Step 3: Extract and start docker on VM
-echo "Executing deployment on remote server..."
-ssh $SSH_USER@$VM_IP << EOF
+# Step 3: Remote Execution
+echo "⚙️  Executing remote deployment..."
+$SSH_CMD $SSH_USER@$VM_IP << EOF
     set -e
     cd ~/$PROJECT_DIR
 
-    echo "Extracting package..."
+    # Sudo helper that uses the passed password
+    SUDO="echo '$PASSWORD' | sudo -S"
+
+    echo "📂 Extracting files..."
     tar -xzvf deploy_pkg.tar.gz
     rm deploy_pkg.tar.gz
 
-    # CREATE TEMPORARY SWAP FILE (Crucial for small VMs)
+    # SWAP setup
     if [ ! -f /swapfile ]; then
-        echo "Creating 4GB swap file for build stability..."
-        sudo fallocate -l 4G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
-        echo "Swap file created and enabled."
-    else
-        echo "Swap file already exists."
+        eval "\$SUDO fallocate -l 4G /swapfile" || eval "\$SUDO dd if=/dev/zero of=/swapfile bs=1M count=4096"
+        eval "\$SUDO chmod 600 /swapfile"
+        eval "\$SUDO mkswap /swapfile"
+        eval "\$SUDO swapon /swapfile"
     fi
 
-    # Install Docker if not present
+    # Docker check & Install
     if ! command -v docker &> /dev/null; then
-        echo "Docker not found. Installing Docker..."
         curl -fsSL https://get.docker.com -o get-docker.sh
-        sudo sh get-docker.sh
-        sudo usermod -aG docker \$USER
-        echo "Docker installed. You may need to log out and log back in for group changes to take effect."
+        eval "\$SUDO sh get-docker.sh"
+        eval "\$SUDO usermod -aG docker \$USER"
     fi
 
-    # Install Docker Compose if not present
+    # Docker Compose check & Install
     if ! command -v docker-compose &> /dev/null; then
-        echo "Docker Compose not found. Installing..."
-        sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-\$(uname -s)-\$(uname -m)" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
+        eval "\$SUDO curl -L \"https://github.com/docker/compose/releases/latest/download/docker-compose-\$(uname -s)-\$(uname -m)\" -o /usr/local/bin/docker-compose"
+        eval "\$SUDO chmod +x /usr/local/bin/docker-compose"
     fi
 
-    # Update/Restart containers (volume mapping will pick up new code)
-    echo "⚡ Applying updates and restarting services..."
-    sudo docker-compose up -d
-    
-    # Reload worker specifically to apply main.py changes immediately
-    sudo docker-compose restart worker
+    # Deployment
+    if [ "$MODE" == "build" ]; then
+        eval "\$SUDO docker-compose up -d --build"
+    else
+        eval "\$SUDO docker-compose up -d"
+        eval "\$SUDO docker-compose restart web"
+    fi
+    eval "\$SUDO docker-compose restart worker"
 
-    echo "✅ Rapid deployment successful! (Changes applied via volume mount)"
-    sudo docker-compose ps
+    echo "✅ Deployment successful!"
+    eval "\$SUDO docker-compose ps"
 EOF
 
-echo "Deployment complete."
+echo "🏁 Done."

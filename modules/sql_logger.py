@@ -9,12 +9,33 @@ import os
 from contextlib import contextmanager
 import threading
 from config import Config
+import time
+import hashlib
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class ActionType:
+    TICKET_CREATED = "TICKET_CREATED"
+    MESSAGE_RECEIVED = "MESSAGE_RECEIVED"
+    MESSAGE_SENT = "MESSAGE_SENT"
+    NOTE_ADDED = "NOTE_ADDED"
+    STATUS_CHANGED = "STATUS_CHANGED"
+    ASSIGNMENT_CHANGED = "ASSIGNMENT_CHANGED"
+    AI_DRAFT_GENERATED = "AI_DRAFT_GENERATED"
+    AI_DRAFT_UPDATED = "AI_DRAFT_UPDATED"
+    TICKET_DELETED = "TICKET_DELETED"
+    TICKET_RESTORED = "TICKET_RESTORED"
+
+
+class ActorType:
+    SYSTEM = "SYSTEM"
+    USER = "USER"
+    AI = "AI"
 
 
 class PostgreSQLConnectionManager:
@@ -177,6 +198,11 @@ class SQLLogger:
                                            WHERE table_name='tickets' AND column_name='needs_ai_generation') THEN 
                                 ALTER TABLE tickets ADD COLUMN needs_ai_generation BOOLEAN DEFAULT FALSE;
                             END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='source_received_at') THEN 
+                                ALTER TABLE tickets ADD COLUMN source_received_at TIMESTAMPTZ;
+                            END IF;
                         END $$;
                     """)
 
@@ -294,6 +320,58 @@ class SQLLogger:
                         CREATE INDEX IF NOT EXISTS idx_event_timestamp 
                         ON ticket_events(timestamp DESC)
                     """)
+
+                    # 5. NEW AUDIT LOGS TABLE (v2)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS ticket_audit_logs (
+                            id SERIAL PRIMARY KEY,
+                            ticket_id TEXT NOT NULL,
+                            action_type TEXT NOT NULL,
+                            actor_type TEXT NOT NULL,
+                            actor_id TEXT NOT NULL,
+                            description TEXT,
+                            metadata JSONB,
+                            timestamp TIMESTAMPTZ DEFAULT NOW(),
+                            event_hash TEXT UNIQUE,
+                            FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
+                        )
+                    """)
+
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_audit_ticket 
+                        ON ticket_audit_logs(ticket_id)
+                    """)
+
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_audit_timestamp 
+                        ON ticket_audit_logs(timestamp DESC)
+                    """)
+
+                    # 6. TICKET METRICS TABLE (Flattened for Analytics)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS ticket_metrics (
+                            ticket_id TEXT PRIMARY KEY,
+                            customer_email TEXT,
+                            assigned_agent TEXT,
+                            created_at TIMESTAMPTZ,
+                            first_response_at TIMESTAMPTZ,
+                            resolved_at TIMESTAMPTZ,
+                            first_response_duration INTEGER,
+                            total_resolution_duration INTEGER,
+                            total_customer_wait_duration INTEGER,
+                            total_agent_work_duration INTEGER,
+                            message_count_customer INTEGER DEFAULT 0,
+                            message_count_agent INTEGER DEFAULT 0,
+                            reopen_count INTEGER DEFAULT 0,
+                            sla_frt_breached BOOLEAN DEFAULT FALSE,
+                            sla_resolution_breached BOOLEAN DEFAULT FALSE,
+                            last_updated_at TIMESTAMPTZ DEFAULT NOW(),
+                            FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
+                        )
+                    """)
+
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_metrics_agent ON ticket_metrics(assigned_agent)")
+                    cur.execute("CREATE INDEX IF NOT EXISTS idx_metrics_created ON ticket_metrics(created_at)")
                     
             logger.info("✅ PostgreSQL schema initialized (with provenance + soft-delete support)")
             return True
@@ -303,7 +381,7 @@ class SQLLogger:
             return False
     
     def create_ticket(self, ticket_id: str, conversation_id: str, subject: str, 
-                     customer_email: str, actor: str = 'system') -> bool:
+                     customer_email: str, actor: str = 'system', source_received_at: Union[datetime, str] = None) -> bool:
         """
         Create a new ticket (idempotent).
         
@@ -319,10 +397,19 @@ class SQLLogger:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    now = datetime.now()
+                    now = datetime.now() # System creation time is ALWAYS local now
                     
-                    # Generate human-readable Display ID
-                    # Format: DOMAIN-MMDD-SEQ
+                    # Ensure source_received_at is parsed if provided
+                    parsed_source_time = source_received_at
+                    if isinstance(parsed_source_time, str):
+                        try:
+                            if parsed_source_time.endswith('Z'):
+                                parsed_source_time = parsed_source_time.replace('Z', '+00:00')
+                            parsed_source_time = datetime.fromisoformat(parsed_source_time)
+                        except:
+                            parsed_source_time = None
+
+                    # Generate human-readable Display ID based on SYSTEM creation time
                     domain = customer_email.split('@')[-1].split('.')[0].upper()
                     date_str = now.strftime('%m%d')
                     
@@ -342,17 +429,25 @@ class SQLLogger:
                         INSERT INTO tickets (
                             ticket_id, display_id, conversation_id, subject, 
                             customer_email, created_at, last_updated,
-                            assigned_to
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            assigned_to, source_received_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (ticket_id) DO NOTHING
-                    """, (ticket_id, display_id, conversation_id, subject, customer_email, now, now, assignee))
+                    """, (ticket_id, display_id, conversation_id, subject, customer_email, now, now, assignee, parsed_source_time))
                     
                     created = cur.rowcount > 0
                     
                     if created:
                         logger.info(f"✅ Created ticket {display_id} | Customer: {customer_email} | Subject: {subject[:50]}")
-                        # Log SLA Event in the SAME transaction to avoid FK violation
-                        self._log_ticket_event_with_cursor(cur, ticket_id, 'created', actor)
+                        # Log Audit Event using SOURCE time for timeline accuracy
+                        self.log_audit_event(
+                            ticket_id=ticket_id,
+                            action_type=ActionType.TICKET_CREATED,
+                            actor_type=ActorType.USER if actor != 'system' else ActorType.SYSTEM,
+                            actor_id=actor,
+                            description=f"Ticket created in system.",
+                            cur=cur,
+                            timestamp=parsed_source_time or now
+                        )
                         # No assignment event here as it starts unassigned
                     else:
                         logger.debug(f"ℹ️  Ticket {ticket_id} already exists (idempotent)")
@@ -383,25 +478,204 @@ class SQLLogger:
         except Exception as e:
             logger.error(f"❌ Error backfilling display_ids: {e}")
     
-    def _log_ticket_event_with_cursor(self, cur, ticket_id: str, event_type: str, actor: str, details: dict = None):
+    def _log_ticket_event_with_cursor(self, cur, ticket_id: str, event_type: str, actor: str, details: dict = None, timestamp: datetime = None):
         """Internal helper to log event using an existing cursor/transaction."""
         cur.execute("""
             INSERT INTO ticket_events (ticket_id, event_type, actor, details, timestamp)
             VALUES (%s, %s, %s, %s, %s)
-        """, (ticket_id, event_type, actor, json.dumps(details) if details else None, datetime.now()))
+        """, (ticket_id, event_type, actor, json.dumps(details) if details else None, timestamp or datetime.now()))
 
-    def log_ticket_event(self, ticket_id: str, event_type: str, actor: str, details: dict = None) -> bool:
+    def log_audit_event(self, ticket_id: str, action_type: str, actor_id: str, 
+                        actor_type: str = ActorType.SYSTEM, description: str = None, 
+                        metadata: dict = None, cur = None, timestamp: datetime = None) -> bool:
         """
-        Add an entry to the ticket_events table for SLA tracking.
+        Standardized logging for all ticket events with idempotency.
         """
         try:
-            with self.conn_manager.get_connection() as conn:
-                with conn.cursor() as cur:
-                    self._log_ticket_event_with_cursor(cur, ticket_id, event_type, actor, details)
+            # Ensure timestamp is a datetime object if a string was passed
+            if isinstance(timestamp, str):
+                try:
+                    if timestamp.endswith('Z'):
+                        timestamp = timestamp.replace('Z', '+00:00')
+                    timestamp = datetime.fromisoformat(timestamp)
+                except:
+                    timestamp = None # Fallback to NOW() later
+
+            # 1. Generate idempotency hash (action + ticket + actor + 5sec window)
+            time_window = int(time.time() / 5)
+            hash_input = f"{ticket_id}:{action_type}:{actor_id}:{time_window}"
+            event_hash = hashlib.md5(hash_input.encode()).hexdigest()
+
+            query = """
+                INSERT INTO ticket_audit_logs (
+                    ticket_id, action_type, actor_type, actor_id, 
+                    description, metadata, event_hash, timestamp
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (event_hash) DO NOTHING
+            """
+            params = (
+                ticket_id, action_type, actor_type, actor_id,
+                description, json.dumps(metadata) if metadata else None,
+                event_hash,
+                timestamp or datetime.now()
+            )
+
+            if cur:
+                # Use provided cursor
+                cur.execute(query, params)
+                if cur.rowcount > 0:
+                    legacy_type_map = {
+                        ActionType.TICKET_CREATED: 'created',
+                        ActionType.MESSAGE_RECEIVED: 'email_received',
+                        ActionType.MESSAGE_SENT: 'responded',
+                        ActionType.NOTE_ADDED: 'note_added',
+                        ActionType.STATUS_CHANGED: 'status_changed',
+                        ActionType.ASSIGNMENT_CHANGED: 'assigned',
+                        ActionType.AI_DRAFT_GENERATED: 'draft_saved',
+                        ActionType.TICKET_DELETED: 'closed'
+                    }
+                    legacy_type = legacy_type_map.get(action_type, action_type.lower())
+                    self._log_ticket_event_with_cursor(cur, ticket_id, legacy_type, actor_id, metadata, timestamp=timestamp)
+                    self._update_ticket_metrics_with_cursor(cur, ticket_id, action_type, actor_type, actor_id, metadata, timestamp=timestamp)
+            else:
+                # Open new connection
+                with self.conn_manager.get_connection() as conn:
+                    with conn.cursor() as cur_new:
+                        cur_new.execute(query, params)
+                        if cur_new.rowcount > 0:
+                            legacy_type_map = {
+                                ActionType.TICKET_CREATED: 'created',
+                                ActionType.MESSAGE_RECEIVED: 'email_received',
+                                ActionType.MESSAGE_SENT: 'responded',
+                                ActionType.NOTE_ADDED: 'note_added',
+                                ActionType.STATUS_CHANGED: 'status_changed',
+                                ActionType.ASSIGNMENT_CHANGED: 'assigned',
+                                ActionType.AI_DRAFT_GENERATED: 'draft_saved',
+                                ActionType.TICKET_DELETED: 'closed'
+                            }
+                            legacy_type = legacy_type_map.get(action_type, action_type.lower())
+                            self._log_ticket_event_with_cursor(cur_new, ticket_id, legacy_type, actor_id, metadata, timestamp=timestamp)
+                            self._update_ticket_metrics_with_cursor(cur_new, ticket_id, action_type, actor_type, actor_id, metadata, timestamp=timestamp)
+                        
             return True
         except Exception as e:
-            logger.error(f"❌ Error logging ticket event {event_type} for {ticket_id}: {e}")
+            logger.error(f"❌ Error logging audit event {action_type} for {ticket_id}: {e}")
             return False
+
+    def _update_ticket_metrics_with_cursor(self, cur, ticket_id: str, action_type: str, 
+                                         actor_type: str, actor_id: str, metadata: dict, timestamp: datetime = None):
+        """
+        Incrementally update the ticket_metrics table based on a new audit event.
+        """
+        try:
+            event_time = timestamp or datetime.now()
+
+            # Ensure a metrics row exists
+            cur.execute("""
+                INSERT INTO ticket_metrics (ticket_id, created_at, customer_email, assigned_agent)
+                SELECT ticket_id, created_at, customer_email, assigned_to
+                FROM tickets WHERE ticket_id = %s
+                ON CONFLICT (ticket_id) DO UPDATE SET 
+                    customer_email = EXCLUDED.customer_email,
+                    assigned_agent = EXCLUDED.assigned_agent,
+                    last_updated_at = %s
+            """, (ticket_id, event_time))
+
+            if action_type == ActionType.TICKET_CREATED:
+                cur.execute("UPDATE ticket_metrics SET created_at = %s WHERE ticket_id = %s", (event_time, ticket_id))
+
+            elif action_type == ActionType.MESSAGE_RECEIVED:
+                cur.execute("""
+                    UPDATE ticket_metrics 
+                    SET message_count_customer = message_count_customer + 1,
+                        last_updated_at = %s
+                    WHERE ticket_id = %s
+                """, (event_time, ticket_id))
+
+            elif action_type == ActionType.MESSAGE_SENT:
+                # Calculate FRT if not already set
+                cur.execute("""
+                    UPDATE ticket_metrics 
+                    SET first_response_at = COALESCE(first_response_at, %s),
+                        first_response_duration = COALESCE(first_response_duration, 
+                            EXTRACT(EPOCH FROM (%s - created_at))::INT),
+                        message_count_agent = message_count_agent + 1,
+                        last_updated_at = %s
+                    WHERE ticket_id = %s
+                """, (event_time, event_time, event_time, ticket_id))
+
+            elif action_type == ActionType.NOTE_ADDED:
+                # OPTIONAL: Treat internal note as a response if configured
+                if Config.INTERNAL_NOTE_AS_RESPONSE:
+                    cur.execute("""
+                        UPDATE ticket_metrics 
+                        SET first_response_at = COALESCE(first_response_at, %s),
+                            first_response_duration = COALESCE(first_response_duration, 
+                                EXTRACT(EPOCH FROM (%s - created_at))::INT),
+                            message_count_agent = message_count_agent + 1,
+                            last_updated_at = %s
+                        WHERE ticket_id = %s
+                    """, (event_time, event_time, event_time, ticket_id))
+
+            elif action_type == ActionType.STATUS_CHANGED:
+                new_status = (metadata or {}).get('to', '').lower()
+                old_status = (metadata or {}).get('from', '').lower()
+                
+                if new_status in ['closed', 'resolved']:
+                    cur.execute("""
+                        UPDATE ticket_metrics 
+                        SET resolved_at = %s,
+                            total_resolution_duration = EXTRACT(EPOCH FROM (%s - created_at))::INT,
+                            last_updated_at = %s
+                        WHERE ticket_id = %s
+                    """, (event_time, event_time, event_time, ticket_id))
+                
+                if old_status in ['closed', 'resolved'] and new_status not in ['closed', 'resolved']:
+                    cur.execute("""
+                        UPDATE ticket_metrics 
+                        SET reopen_count = reopen_count + 1,
+                            resolved_at = NULL,
+                            last_updated_at = %s
+                        WHERE ticket_id = %s
+                    """, (event_time, ticket_id))
+
+            elif action_type == ActionType.ASSIGNMENT_CHANGED:
+                new_agent = (metadata or {}).get('to')
+                cur.execute("UPDATE ticket_metrics SET assigned_agent = %s WHERE ticket_id = %s", (new_agent, ticket_id))
+
+        except Exception as e:
+            logger.error(f"⚠️ Failed to update metrics for {ticket_id}: {e}")
+
+    def log_ticket_event(self, ticket_id: str, event_type: str, actor: str, details: dict = None, cur = None) -> bool:
+        """
+        Legacy logging method - redirected to new audit system.
+        """
+        # Map legacy types to new ActionTypes
+        mapping = {
+            'created': ActionType.TICKET_CREATED,
+            'email_received': ActionType.MESSAGE_RECEIVED,
+            'responded': ActionType.MESSAGE_SENT,
+            'note_added': ActionType.NOTE_ADDED,
+            'assigned': ActionType.ASSIGNMENT_CHANGED,
+            'ticket_taken': ActionType.ASSIGNMENT_CHANGED,
+            'ticket_assigned': ActionType.ASSIGNMENT_CHANGED,
+            'closed': ActionType.STATUS_CHANGED,
+            'reopened': ActionType.TICKET_RESTORED,
+            'draft_saved': ActionType.AI_DRAFT_UPDATED
+        }
+        
+        action = mapping.get(event_type, event_type.upper())
+        actor_type = ActorType.SYSTEM if actor == 'system' else ActorType.USER
+        
+        return self.log_audit_event(
+            ticket_id=ticket_id,
+            action_type=action,
+            actor_type=actor_type,
+            actor_id=actor,
+            description=f"Action: {event_type} performed by {actor}",
+            metadata=details,
+            cur=cur
+        )
     
     def log_message(self, ticket_id: str, email: dict, is_internal: bool = False) -> bool:
         """
@@ -442,7 +716,9 @@ class SQLLogger:
                     
                     logged = cur.rowcount > 0
                     
-                    # Update ticket's last_updated timestamp
+                    received_time = email.get('received')
+                    
+                    # Update ticket's last_updated timestamp (System metadata uses NOW)
                     cur.execute("""
                         UPDATE tickets 
                         SET last_updated = %s 
@@ -455,9 +731,27 @@ class SQLLogger:
                             f"✅ Logged message {message_id[:20]}... to ticket {ticket_id} "
                             f"| Speaker: {speaker} | Sender: {email.get('sender', 'unknown')}"
                         )
-                        # Log SLA Event
-                        event_type = 'email_received' if not is_internal else 'note_added'
-                        self.log_ticket_event(ticket_id, event_type, email.get('sender', 'unknown'))
+                        # Log Audit Event
+                        if not is_internal:
+                            self.log_audit_event(
+                                ticket_id=ticket_id,
+                                action_type=ActionType.MESSAGE_RECEIVED,
+                                actor_type=ActorType.SYSTEM,
+                                actor_id=email.get('sender', 'unknown'),
+                                description=f"New message received from customer.",
+                                cur=cur,
+                                timestamp=received_time
+                            )
+                        else:
+                            self.log_audit_event(
+                                ticket_id=ticket_id,
+                                action_type=ActionType.NOTE_ADDED,
+                                actor_type=ActorType.USER,
+                                actor_id=email.get('sender', 'unknown'),
+                                description=f"Internal note added by staff.",
+                                cur=cur,
+                                timestamp=received_time
+                            )
                     else:
                         logger.debug(f"ℹ️  Message {message_id[:20]}... already exists (idempotent)")
             
@@ -513,6 +807,7 @@ class SQLLogger:
                             f"✅ Updated AI draft for ticket {ticket_id} "
                             f"| Provenance: {len(provenance)} RAG docs stored"
                         )
+                        self.log_audit_event(ticket_id, ActionType.AI_DRAFT_GENERATED, "AI_AGENT", ActorType.AI, "AI generated a response draft.")
                     else:
                         cur.execute("""
                             UPDATE tickets 
@@ -523,6 +818,7 @@ class SQLLogger:
                         """, (draft, datetime.now(), ticket_id))
                         
                         logger.info(f"✅ Updated AI draft for ticket {ticket_id} (no provenance)")
+                        self.log_audit_event(ticket_id, ActionType.AI_DRAFT_GENERATED, "AI_AGENT", ActorType.AI, "AI generated a response draft (no context).")
             
             return True
             
@@ -599,6 +895,7 @@ class SQLLogger:
                     
                     if cur.rowcount > 0:
                         logger.info(f"✅ Soft-deleted ticket {ticket_id}")
+                        self.log_audit_event(ticket_id, ActionType.TICKET_DELETED, "system", ActorType.SYSTEM, "Ticket soft-deleted.")
                         return True
                     else:
                         logger.warning(f"⚠️  Ticket {ticket_id} not found for soft-delete")
@@ -634,6 +931,7 @@ class SQLLogger:
                     
                     if cur.rowcount > 0:
                         logger.info(f"🔄 Re-opened ticket {ticket_id}")
+                        self.log_audit_event(ticket_id, ActionType.TICKET_RESTORED, "system", ActorType.SYSTEM, "Ticket re-opened.")
                         return True
                     else:
                         logger.warning(f"⚠️  Ticket {ticket_id} not found for re-opening")
@@ -1197,7 +1495,7 @@ class SQLLogger:
                                  self.log_ticket_event(t_id, 'assigned', actor or 'system', {
                                      'from': old_assignment, 
                                      'to': new_assignment
-                                 })
+                                 }, cur=cur)
                         
                         # Log Status Change if changed
                         if 'status' in fields and t_id:
@@ -1207,7 +1505,18 @@ class SQLLogger:
                                  self.log_ticket_event(t_id, event_type, actor or 'system', {
                                      'from': old_status, 
                                      'to': new_status
-                                 })
+                                 }, cur=cur)
+                        
+                        # Log Draft Update if changed
+                        if 'ai_draft' in fields and t_id:
+                            self.log_audit_event(
+                                ticket_id=t_id,
+                                action_type=ActionType.AI_DRAFT_UPDATED,
+                                actor_type=ActorType.USER if actor != 'system' else ActorType.SYSTEM,
+                                actor_id=actor,
+                                description=f"Draft response updated by {actor}.",
+                                cur=cur
+                            )
                                  
                         return True
                     else:
@@ -1218,6 +1527,19 @@ class SQLLogger:
             logger.error(f"❌ Error updating ticket identifier {identifier}: {e}")
             return False
 
+    def log_response_sent(self, ticket_id: str, actor: str, recipient: str = None) -> bool:
+        """
+        Log that a response was sent to the customer.
+        """
+        return self.log_audit_event(
+            ticket_id=ticket_id,
+            action_type=ActionType.MESSAGE_SENT,
+            actor_type=ActorType.USER,
+            actor_id=actor,
+            description=f"Response sent to {recipient or 'customer'} by {actor}.",
+            metadata={'recipient': recipient}
+        )
+
     def get_staff_metrics(self, staff_username: str, time_range: str = 'all') -> Dict:
         """
         Get Assigned, Open, and Closed ticket counts for a specific staff member.
@@ -1227,19 +1549,23 @@ class SQLLogger:
                 with conn.cursor() as cur:
                     time_filter, params = self._get_time_filter(time_range)
                     
-                    # Base query
+                    # Base query with advanced metrics join
                     query = """
                         SELECT 
-                            COUNT(*) as assigned,
-                            COUNT(*) FILTER (WHERE status = 'Open') as open,
-                            COUNT(*) FILTER (WHERE status = 'Closed') as closed
-                        FROM tickets
-                        WHERE assigned_to = %s
-                        AND deleted_at IS NULL
+                            COUNT(t.id) as assigned,
+                            COUNT(t.id) FILTER (WHERE t.status = 'Open') as open,
+                            COUNT(t.id) FILTER (WHERE t.status = 'Closed') as closed,
+                            AVG(m.first_response_duration) / 60 as avg_frt,
+                            AVG(m.total_resolution_duration) / 3600 as avg_res,
+                            COALESCE(SUM(m.reopen_count), 0) as reopens
+                        FROM tickets t
+                        LEFT JOIN ticket_metrics m ON t.ticket_id = m.ticket_id
+                        WHERE t.assigned_to = %s
+                        AND t.deleted_at IS NULL
                     """
                     
                     if time_filter:
-                        query += f" AND {time_filter}"
+                        query += f" AND t.{time_filter}"
                     
                     cur.execute(query, [staff_username] + params)
                     row = cur.fetchone()
@@ -1248,7 +1574,10 @@ class SQLLogger:
                         'username': staff_username,
                         'assigned': row[0] or 0,
                         'open': row[1] or 0,
-                        'closed': row[2] or 0
+                        'closed': row[2] or 0,
+                        'avg_frt': round(row[3] or 0, 1),
+                        'avg_res': round(row[4] or 0, 1),
+                        'reopens': int(row[5] or 0)
                     }
         except Exception as e:
             logger.error(f"❌ Error getting staff metrics for {staff_username}: {e}")
@@ -1274,17 +1603,20 @@ class SQLLogger:
                     
                     query = """
                         SELECT 
-                            split_part(customer_email, '@', 2) as domain,
-                            COUNT(*) as total,
-                            COUNT(*) FILTER (WHERE status = 'Open') as open,
-                            COUNT(*) FILTER (WHERE status = 'Closed') as closed,
-                            MAX(last_updated) as last_activity
-                        FROM tickets
-                        WHERE deleted_at IS NULL AND customer_email LIKE '%%@%%'
+                            split_part(t.customer_email, '@', 2) as domain,
+                            COUNT(t.id) as total,
+                            COUNT(t.id) FILTER (WHERE t.status = 'Open') as open,
+                            COUNT(t.id) FILTER (WHERE t.status = 'Closed') as closed,
+                            MAX(t.last_updated) as last_activity,
+                            AVG(m.first_response_duration) / 60 as avg_frt,
+                            AVG(m.total_resolution_duration) / 3600 as avg_res
+                        FROM tickets t
+                        LEFT JOIN ticket_metrics m ON t.ticket_id = m.ticket_id
+                        WHERE t.deleted_at IS NULL AND t.customer_email LIKE '%%@%%'
                     """
                     
                     if time_filter:
-                        query += f" AND {time_filter}"
+                        query += f" AND t.{time_filter}"
                     
                     query += " GROUP BY domain ORDER BY total DESC"
                     
@@ -1296,7 +1628,9 @@ class SQLLogger:
                         'total_tickets': row[1],
                         'open_tickets': row[2],
                         'closed_tickets': row[3],
-                        'last_activity': row[4].isoformat() if row[4] else None
+                        'last_activity': row[4].isoformat() if row[4] else None,
+                        'avg_frt': round(row[5] or 0, 1),
+                        'avg_res': round(row[6] or 0, 1)
                     } for row in rows]
         except Exception as e:
             logger.error(f"❌ Error getting client stats: {e}")
@@ -1304,26 +1638,26 @@ class SQLLogger:
 
     def get_ticket_timeline(self, ticket_id: str) -> List[Dict]:
         """
-        Get all lifecycle events for a ticket. If ticket_id is 'GLOBAL', returns recent events.
+        Get all lifecycle events for a ticket from the structured audit log.
         """
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                     if ticket_id == 'GLOBAL':
                         cur.execute("""
-                            SELECT e.*, t.display_id 
-                            FROM ticket_events e
-                            LEFT JOIN tickets t ON e.ticket_id = t.ticket_id
-                            ORDER BY e.timestamp DESC 
+                            SELECT a.*, t.display_id 
+                            FROM ticket_audit_logs a
+                            LEFT JOIN tickets t ON a.ticket_id = t.ticket_id
+                            ORDER BY a.timestamp DESC 
                             LIMIT 100
                         """)
                     else:
                         cur.execute("""
-                            SELECT e.*, t.display_id 
-                            FROM ticket_events e
-                            LEFT JOIN tickets t ON e.ticket_id = t.ticket_id
-                            WHERE e.ticket_id = %s 
-                            ORDER BY e.timestamp ASC
+                            SELECT a.*, t.display_id 
+                            FROM ticket_audit_logs a
+                            LEFT JOIN tickets t ON a.ticket_id = t.ticket_id
+                            WHERE a.ticket_id = %s 
+                            ORDER BY a.timestamp ASC
                         """, (ticket_id,))
                     
                     rows = cur.fetchall()
@@ -1337,29 +1671,28 @@ class SQLLogger:
                         else:
                             ts_str = str(ts)
 
-                        actor = event.get('actor', 'unknown')
-                        etype = event.get('event_type', '')
-                        details = event.get('details') or {}
+                        actor = event.get('actor_id', 'unknown')
+                        atype = event.get('action_type', '')
+                        details = event.get('metadata') or {}
                         
-                        # Map to user's requested human-readable format
-                        if etype == 'created':
-                            event['event_text'] = f"ticket created on {ts_str} by {actor}."
-                        elif etype == 'assigned':
-                            event['event_text'] = f"ticket assigned to {details.get('to', 'someone')}."
-                        elif etype == 'draft_saved':
-                            event['event_text'] = f"{actor} saved a draft."
-                        elif etype == 'ticket_taken':
-                            event['event_text'] = f"{actor} takes ticket."
-                        elif etype == 'responded' or etype == 'response_sent':
-                            event['event_text'] = f"{actor} sends a response."
-                        elif etype == 'closed':
-                            event['event_text'] = f"{actor} closes the ticket."
-                        elif etype == 'email_received':
-                            event['event_text'] = f"new response from customer {actor}."
-                        elif etype == 'note_added':
-                            event['event_text'] = f"internal update from {actor}."
+                        # Generate human-readable description if not present or needs formatting
+                        if event.get('description'):
+                            event['event_text'] = event['description']
                         else:
-                            event['event_text'] = f"{actor} triggered {etype}."
+                            if atype == ActionType.TICKET_CREATED:
+                                event['event_text'] = f"Ticket created by {actor}."
+                            elif atype == ActionType.ASSIGNMENT_CHANGED:
+                                event['event_text'] = f"Ticket assigned to {details.get('to', 'someone')}."
+                            elif atype == ActionType.STATUS_CHANGED:
+                                event['event_text'] = f"Status changed to {details.get('to', 'Closed')} by {actor}."
+                            elif atype == ActionType.MESSAGE_RECEIVED:
+                                event['event_text'] = f"New message from customer {actor}."
+                            elif atype == ActionType.MESSAGE_SENT:
+                                event['event_text'] = f"Reply sent by {actor}."
+                            elif atype == ActionType.AI_DRAFT_GENERATED:
+                                event['event_text'] = f"AI generated a draft response."
+                            else:
+                                event['event_text'] = f"{actor} performed {atype}."
                             
                         events.append(event)
                     return events
@@ -1455,6 +1788,55 @@ class SQLLogger:
             logger.error(f"❌ Error fetching all contact emails: {e}")
             return []
     
+    def get_agent_performance(self) -> List[Dict]:
+        """
+        Get aggregated performance metrics for all agents.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT 
+                            assigned_agent as agent,
+                            COUNT(*) as total_tickets,
+                            COUNT(*) FILTER (WHERE resolved_at IS NOT NULL) as resolved,
+                            AVG(first_response_duration) / 60 as avg_frt_minutes,
+                            AVG(total_resolution_duration) / 3600 as avg_resolution_hours,
+                            SUM(reopen_count) as total_reopens
+                        FROM ticket_metrics
+                        WHERE assigned_agent IS NOT NULL AND assigned_agent != 'Unassigned'
+                        GROUP BY assigned_agent
+                        ORDER BY total_tickets DESC
+                    """)
+                    return cur.fetchall()
+        except Exception as e:
+            logger.error(f"❌ Error fetching agent performance: {e}")
+            return []
+
+    def get_weekly_analytics_summary(self) -> Dict:
+        """
+        Get high-level summary for the weekly report.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    # Metrics for last 7 days
+                    cur.execute("""
+                        SELECT 
+                            COUNT(*) as tickets_created,
+                            COUNT(*) FILTER (WHERE resolved_at IS NOT NULL) as tickets_resolved,
+                            AVG(first_response_duration) / 60 as avg_frt_mins,
+                            AVG(total_resolution_duration) / 3600 as avg_res_hours,
+                            (COUNT(*) FILTER (WHERE first_response_duration < 14400))::FLOAT / 
+                                NULLIF(COUNT(*), 0) * 100 as sla_compliance_pct
+                        FROM ticket_metrics
+                        WHERE created_at >= NOW() - INTERVAL '7 days'
+                    """)
+                    return dict(cur.fetchone()) if cur.rowcount > 0 else {}
+        except Exception as e:
+            logger.error(f"❌ Error fetching weekly summary: {e}")
+            return {}
+
     def close(self):
         """Close all database connections"""
         self.conn_manager.close_all()

@@ -7,7 +7,8 @@ Flask-SocketIO==5.3.6
 python-socketio==5.11.2
 python-engineio==4.13.1
 simple-websocket==1.1.0
-eventlet==0.35.2
+eventlet==0.40.3
+gunicorn
 Werkzeug==3.0.3
 Jinja2==3.1.6
 itsdangerous==2.2.0

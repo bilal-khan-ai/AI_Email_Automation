@@ -30,4 +30,4 @@ COPY . /app/
 EXPOSE 5000
 
 # By default, we let docker-compose override the command
-CMD ["python", "dashboard_socketio.py"]
+CMD ["gunicorn", "-k", "eventlet", "-w", "1", "dashboard:application", "--bind", "0.0.0.0:5000", "--log-level", "info", "--timeout", "120"]

@@ -58,6 +58,9 @@ class Config:
     TABLES_INCLUDE_PREVIEW = os.getenv('TABLES_INCLUDE_PREVIEW', 'False').lower() == 'true'
     TABLES_PREVIEW_ROWS = int(os.getenv('TABLES_PREVIEW_ROWS', 8))
 
+    # SLA Analytics Settings
+    INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'
+
     @classmethod
     def reload(cls):
         """Reload configuration from .env file"""
@@ -75,4 +78,5 @@ class Config:
         cls.ENABLE_TICKET_CLEANUP_DAEMON = os.getenv('ENABLE_TICKET_CLEANUP_DAEMON', 'True').lower() == 'true'
         cls.SOFT_DELETE_CLOSED_AFTER_DAYS = int(os.getenv('SOFT_DELETE_CLOSED_AFTER_DAYS', 1))
         cls.HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 6))
+        cls.INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'
         # Add other dynamic settings as needed

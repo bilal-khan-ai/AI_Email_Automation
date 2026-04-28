@@ -996,7 +996,183 @@ body.dark-mode .ticket-card.reopened-tint {
     font-size: 0.9rem;
     color: var(--text-secondary);
     margin-bottom: 1rem;
-    flex-wrap: wrap;
+    flex-wrap: wrap;/* SLA & Timeline Enhancements */
+/* Ticket Audit Logs Refinement */
+.sla-dashboard-container {
+    background: var(--bg-primary);
+}
+
+.audit-controls {
+    background: var(--bg-card);
+}
+
+.sla-metric-card {
+    background: var(--bg-card);
+    padding: 1.25rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 6px var(--shadow);
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transition: transform 0.2s;
+}
+
+.sla-metric-card:hover {
+    transform: translateY(-2px);
+}
+
+.sla-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.sla-value {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+.sla-status-badge {
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+}
+
+.sla-status-badge.met { background: #dcfce7; color: #166534; }
+.sla-status-badge.breached { background: #fee2e2; color: #991b1b; }
+
+.audit-logs-table {
+    font-size: 0.85rem;
+}
+
+.audit-logs-table thead th {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #64748b;
+    padding: 1rem 0.75rem;
+    background: white;
+    border-bottom: 2px solid #f1f5f9;
+}
+
+.audit-logs-table tbody tr {
+    transition: background 0.15s;
+    cursor: pointer;
+}
+
+.audit-logs-table tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.audit-logs-table tbody tr:hover {
+    background-color: #f1f5f9;
+}
+
+.audit-logs-table td {
+    padding: 0.85rem 0.75rem;
+    vertical-align: middle;
+}
+
+.date-separator {
+    background: #f1f5f9;
+    color: #64748b;
+    font-weight: 700;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    text-align: center;
+    padding: 0.5rem;
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.badge-audit {
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.badge-received { background: #dcfce7; color: #166534; }
+.badge-sent { background: #dbeafe; color: #1e40af; }
+.badge-status { background: #fef3c7; color: #92400e; }
+.badge-assign { background: #f3e8ff; color: #6b21a8; }
+.badge-ai { background: #f1f5f9; color: #475569; }
+
+.metadata-block {
+    background: #0f172a;
+    color: #38bdf8;
+    padding: 1rem;
+    border-radius: 8px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+}
+
+.gridjs-th {
+    background-color: #f8fafc !important;
+    color: #64748b !important;
+    text-transform: uppercase !important;
+    font-size: 0.7rem !important;
+}
+
+body.dark-mode .sla-metric-card {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+}
+
+body.dark-mode .gridjs-container {
+    color: var(--text-primary);
+}
+
+body.dark-mode .gridjs-td {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .gridjs-th {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
+    background-color: var(--bg-primary) !important;
+}
+
+.dark-mode .gridjs-footer {
+    background-color: #0f172a !important;
+    border-top-color: #334155 !important;
+    color: #cbd5e1 !important;
+}
+
+.dark-mode .gridjs-search-input {
+    background-color: #1e293b !important;
+    color: white !important;
+    border-color: #334155 !important;
+}
+
+.dark-mode .date-separator {
+    background: #1e293b;
+    color: #94a3b8;
+    border-color: #334155;
+}
+
+.dark-mode .badge-ai { background: #334155; color: #cbd5e1; }
 }
 
 .message-card.customer-message {
@@ -1135,26 +1311,28 @@ body.dark-mode .email-iframe-container {
     position: absolute;
     top: 1rem;
     right: 1.5rem;
-    background: rgba(0, 0, 0, 0.1);
-    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 50%;
-    width: 36px;
-    height: 36px;
-    font-size: 1.5rem;
+    width: 32px;
+    height: 32px;
+    font-size: 1.2rem;
     cursor: pointer;
-    color: var(--text-primary);
+    color: white;
     z-index: 1100;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.2s;
-    line-height: 1;
+    line-height: 0;
+    padding: 0;
 }
 
 .close-btn:hover {
-    background: #e74c3c;
+    background: #ff5252;
     color: white;
-    border-color: #e74c3c;
+    border-color: #ff5252;
+    transform: rotate(90deg);
 }
 
 .modal-header-actions {

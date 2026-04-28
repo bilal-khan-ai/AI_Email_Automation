@@ -551,10 +551,12 @@ class SupportAgent:
             if existing:
                 ticket_id = existing['ticket_id']
                 
-                # RE-OPEN LOGIC: If ticket was soft-deleted, re-open it
-                if existing.get('deleted_at'):
-                    logger.info(f"🔄 Ticket {ticket_id} was soft-deleted. Re-opening due to new customer email.")
+                # RE-OPEN LOGIC: If ticket was soft-deleted or closed, re-open it
+                if existing.get('deleted_at') or existing.get('status') == 'Closed':
+                    logger.info(f"🔄 Ticket {ticket_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
                     self.sql.reopen_ticket(ticket_id)
+                    # Update vector DB status
+                    self.experience_db.update_ticket_status(ticket_id, False)
                 
                 logger.info(
                     f"🔗 Linked to existing ticket {ticket_id} | "
@@ -579,7 +581,8 @@ class SupportAgent:
                     customer_email = self.find_customer_email(email)
                     
                     success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, customer_email, actor=sender
+                        ticket_id, conv_id, subject, customer_email, actor=sender,
+                        source_received_at=email.get('received')
                     )
                     
                     if success:
@@ -620,10 +623,12 @@ class SupportAgent:
             if existing:
                 ticket_id = existing['ticket_id']
                 
-                # RE-OPEN LOGIC: Even for internal replies, we should clear soft-delete
-                if existing.get('deleted_at'):
-                    logger.info(f"🔄 Ticket {ticket_id} was soft-deleted. Restoring due to internal reply.")
+                # RE-OPEN LOGIC: Even for internal replies, we should clear soft-delete or closed status
+                if existing.get('deleted_at') or existing.get('status') == 'Closed':
+                    logger.info(f"🔄 Ticket {ticket_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
                     self.sql.reopen_ticket(ticket_id)
+                    # Update vector DB status
+                    self.experience_db.update_ticket_status(ticket_id, False)
 
                 logger.info(
                     f"📨 Internal reply to ticket {ticket_id} | "

@@ -5,7 +5,7 @@ import logging
 import secrets
 import threading
 import base64
-from datetime import datetime
+from datetime import datetime, date
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, jsonify, request, send_file, session, redirect, url_for, flash
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -18,7 +18,16 @@ from config import Config
 from modules.openai_agent import OpenAIAgent
 from modules.vector_db import VectorDatabase, BookVectorDB
 
+from flask.json.provider import DefaultJSONProvider
+
+class CustomJSONProvider(DefaultJSONProvider):
+    def default(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        return super().default(obj)
+
 app = Flask(__name__, template_folder='Pages')
+app.json = CustomJSONProvider(app)
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -26,11 +35,12 @@ logging.basicConfig(level=logging.INFO)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 init_auth(app)  # Initialize custom authentication system
 
-# Initialize SocketIO with async mode
+# Initialize SocketIO with async mode and custom JSON provider
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
     async_mode='threading',
+    json=app.json,
     logger=False,
     engineio_logger=False
 )
@@ -468,10 +478,6 @@ def update_ticket():
     success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
     
     if success:
-        # Log event for draft saved
-        sql_logger.log_ticket_event(ticket_id, 'draft_saved', actor_username)
-
-    if success:
         # Broadcast update to all connected clients
         socketio.emit('ticket_updated', {
             'ticket_id': ticket_id,
@@ -510,9 +516,6 @@ def take_ticket():
     success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
     
     if success:
-        # Log event: if assigning to self, use 'ticket_taken', else 'ticket_assigned'
-        event_type = 'ticket_taken' if target_assignee == actor_username else 'ticket_assigned'
-        sql_logger.log_ticket_event(ticket_id, event_type, actor_username, {'to': target_assignee})
         # Broadcast update
         socketio.emit('ticket_updated', {
             'ticket_id': ticket_id,
@@ -562,6 +565,10 @@ def toggle_ticket_status():
     success = sql_logger.update_ticket_fields(ticket_db_id, update_data)
 
     if success:
+        # Update vector DB with resolution status for RAG quality
+        is_resolved = (new_status == 'Closed')
+        experience_db.update_ticket_status(ticket_id, is_resolved)
+
         # Release lock if closing
         if new_status == 'Closed' and ticket_id in user_locks:
             del user_locks[ticket_id]
@@ -574,11 +581,6 @@ def toggle_ticket_status():
             'new_status': new_status,
             'updated_by': user_id
         })
-
-        # Log SLA Event
-        event_type = 'closed' if new_status == 'Closed' else 'reopened'
-        sql_logger.log_ticket_event(ticket_id, event_type, session.get('user', {}).get('username', 'system'))
-
         return jsonify({
             'success': True,
             'message': f'Ticket status changed to {new_status}',
@@ -629,16 +631,19 @@ def send_to_customer():
                     'contentType': file.content_type or 'application/octet-stream'
                 })
 
-        # Send email
+        # Send email - Try to reply to the last message for threading
         final_recipient = Config.TEST_EMAIL if Config.TEST_MODE else send_to
         final_cc = cc
         final_bcc = bcc
-        final_subject = f"Re: {ticket['subject']}"
         
+        # Get thread messages to find the last message ID
+        messages = sql_logger.get_thread_messages(ticket_id)
+        last_message_id = None
+        if messages:
+            # The last message ID we received from the Graph API
+            last_message_id = messages[-1].get('message_id')
+
         if Config.TEST_MODE:
-            # Add prefix to subject
-            final_subject = f"{Config.TEST_SUBJECT_TAG}{final_subject}"
-            
             # Inform user in the email body about the intended recipients
             intended_msg = f"<hr><p style='color: #666; font-size: 0.8em;'><b>[TEST MODE]</b><br>"
             intended_msg += f"<b>Intended To:</b> {send_to}<br>"
@@ -647,16 +652,34 @@ def send_to_customer():
             intended_msg += "</p>"
             ai_response += intended_msg
 
-        success = graph_connector.send_email(
-            user_email=Config.USER_EMAIL,
-            recipient=final_recipient,
-            subject=final_subject,
-            body=ai_response,
-            conversation_id=ticket.get('conversation_id'),
-            cc=final_cc,
-            bcc=final_bcc,
-            attachments=attachments
-        )
+        if last_message_id:
+            logger.info(f"📤 Replying to last message {last_message_id[:10]}... for ticket {ticket_id}")
+            success = graph_connector.reply_to_email(
+                user_email=Config.USER_EMAIL,
+                parent_message_id=last_message_id,
+                to_email=final_recipient,
+                body=ai_response,
+                cc=final_cc,
+                bcc=final_bcc,
+                attachments=attachments
+            )
+        else:
+            # Fallback to standard send if no messages found (should not happen for existing tickets)
+            logger.warning(f"⚠️ No messages found for ticket {ticket_id}. Falling back to standard send_email.")
+            final_subject = f"Re: {ticket['subject']}"
+            if Config.TEST_MODE:
+                final_subject = f"{Config.TEST_SUBJECT_TAG}{final_subject}"
+
+            success = graph_connector.send_email(
+                user_email=Config.USER_EMAIL,
+                recipient=final_recipient,
+                subject=final_subject,
+                body=ai_response,
+                conversation_id=ticket.get('conversation_id'),
+                cc=final_cc,
+                bcc=final_bcc,
+                attachments=attachments
+            )
 
         if not success:
             return jsonify({'error': 'Failed to send email via Graph API'}), 500
@@ -670,13 +693,11 @@ def send_to_customer():
         }
 
         sql_logger.update_ticket_fields(ticket['id'], update_payload, actor=actor_username)
+        sql_logger.log_response_sent(ticket_id, actor_username, final_recipient)
 
         socketio.emit('email_sent', {
             'ticket_id': ticket_id
         })
-
-        # Log SLA Event
-        sql_logger.log_ticket_event(ticket_id, 'responded', session.get('user', {}).get('username', 'system'))
 
         return jsonify({'success': True})
 

@@ -1,4 +1,7 @@
 const socket = io({ transports: ['websocket', 'polling'] });
+let currentMetrics = { staff: {}, clients: {} };
+let trendChart = null;
+let distChart = null;
 
 // Initialize WebSockets
 socket.on('connect', () => {
@@ -12,12 +15,20 @@ socket.on('connect', () => {
 // Handle metrics update
 socket.on('staff_metrics_update', (data) => {
     data.metrics.forEach(m => {
+        currentMetrics.staff[m.username] = m;
         const elAssigned = document.getElementById(`assigned-${m.username}`);
         const elOpen = document.getElementById(`open-${m.username}`);
         const elClosed = document.getElementById(`closed-${m.username}`);
+        const elFrt = document.getElementById(`frt-${m.username}`);
+        const elRes = document.getElementById(`res-${m.username}`);
+        const elReopens = document.getElementById(`reopens-${m.username}`);
+        
         if (elAssigned) elAssigned.textContent = m.assigned;
         if (elOpen) elOpen.textContent = m.open;
         if (elClosed) elClosed.textContent = m.closed;
+        if (elFrt) elFrt.textContent = m.avg_frt + 'm';
+        if (elRes) elRes.textContent = m.avg_res + 'h';
+        if (elReopens) elReopens.textContent = m.reopens;
     });
 });
 
@@ -36,8 +47,10 @@ socket.on('client_stats_update', (data) => {
         return;
     }
     data.stats.forEach(s => {
+        currentMetrics.clients[s.domain] = s;
         const card = document.createElement('div');
         card.className = 'staff-metric-card client-card';
+        card.onclick = () => openDrilldown('client', s.domain);
         card.innerHTML = `
             <div class="staff-name text-truncate" title="${s.domain}">
                 <span>🏢</span> <span class="client-domain-name">${s.domain}</span>
@@ -54,6 +67,14 @@ socket.on('client_stats_update', (data) => {
                 <div class="metric-item">
                     <span class="metric-value text-secondary">${s.closed_tickets}</span>
                     <span class="metric-label">Closed</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value text-info">${s.avg_frt}m</span>
+                    <span class="metric-label">Avg FRT</span>
+                </div>
+                <div class="metric-item">
+                    <span class="metric-value text-warning">${s.avg_res}h</span>
+                    <span class="metric-label">Avg Res</span>
                 </div>
             </div>
             <div class="mt-3 text-center small text-secondary border-top pt-2">
@@ -330,5 +351,96 @@ document.getElementById('btnAutoAssign').addEventListener('click', () => {
 });
 
 // Auto-refresh every 30 seconds
-setInterval(refreshMetrics, 30000);
-setInterval(refreshReassignmentList, 60000);
+
+function openDrilldown(type, id) {
+    const data = type === 'staff' ? currentMetrics.staff[id] : currentMetrics.clients[id];
+    if (!data) {
+        console.warn(`No metrics found for ${type}: ${id}`);
+        return;
+    }
+
+    // Update Header
+    document.getElementById('drilldownTitle').textContent = id;
+    document.getElementById('drilldownSubtitle').textContent = type === 'staff' ? 'Support Agent Performance' : 'Client Engagement Metrics';
+    document.getElementById('drilldownIcon').textContent = type === 'staff' ? '👤' : '🏢';
+
+    // Update KPIs with REAL data
+    const total = type === 'staff' ? data.assigned : data.total_tickets;
+    const closed = type === 'staff' ? data.closed : data.closed_tickets;
+    const open = type === 'staff' ? data.open : data.open_tickets;
+
+    document.getElementById('drill-kpi-total').textContent = total;
+    document.getElementById('drill-kpi-frt').textContent = (data.avg_frt || 0) + 'm';
+    document.getElementById('drill-kpi-res').textContent = (data.avg_res || 0) + 'h';
+    
+    const efficiency = (open === 0 && closed === 0) ? 0 : Math.round((closed / (open + closed)) * 100);
+    document.getElementById('drill-kpi-efficiency').textContent = efficiency + '%';
+
+    renderCharts(type, data);
+
+    const modalEl = document.getElementById('drilldownModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
+
+function renderCharts(type, data) {
+    const ctxTrend = document.getElementById('drilldownChart').getContext('2d');
+    const ctxDist = document.getElementById('distributionChart').getContext('2d');
+
+    if (trendChart) trendChart.destroy();
+    if (distChart) distChart.destroy();
+
+    const openCount = type === 'staff' ? data.open : data.open_tickets;
+    const closedCount = type === 'staff' ? data.closed : data.closed_tickets;
+    const totalCount = type === 'staff' ? data.assigned : data.total_tickets;
+
+    // Line Chart: Using summary data to create a "Recent Activity" view
+    // Since we don't have daily breakdown, we show the scale of work
+    const labels = ['Past 7 Days'];
+    const trendData = [totalCount];
+
+    trendChart = new Chart(ctxTrend, {
+        type: 'bar', // Switched to bar for summary if only 1 data point, or line with dummy trend
+        data: {
+            labels: ['Total Tickets', 'Resolved Tickets', 'Active Tickets'],
+            datasets: [{
+                label: 'Volume',
+                data: [totalCount, closedCount, openCount],
+                backgroundColor: ['#4f46e5', '#10b981', '#f59e0b'],
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+
+    distChart = new Chart(ctxDist, {
+        type: 'doughnut',
+        data: {
+            labels: ['Open', 'Closed'],
+            datasets: [{
+                data: [openCount, closedCount],
+                backgroundColor: ['#f59e0b', '#10b981'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { 
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: (item) => ` ${item.label}: ${item.raw} tickets`
+                    }
+                }
+            },
+            cutout: '70%'
+        }
+    });
+}

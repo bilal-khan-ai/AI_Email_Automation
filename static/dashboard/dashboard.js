@@ -11,8 +11,16 @@ let currentCustomerFilter = null;
 let isTicketLocked = false;
 let isRightPanelCollapsed = true;
 let currentTicketStatus = null; // Added this as it was used but not declared globally in the snippet (or was it?)
-const WORKDAY_START = 0; // 0 AM
-const WORKDAY_END = 24;  // 12 AM
+let globalConfig = {};
+async function fetchConfig() {
+    try {
+        const response = await fetch('/api/config');
+        globalConfig = await response.json();
+    } catch (err) {
+        console.error("Error fetching config:", err);
+    }
+}
+fetchConfig();
 
 let allContacts = [];
 async function fetchContacts() {
@@ -1532,39 +1540,202 @@ socket.on('ticket_updated', () => loadTickets());
 socket.on('ticket_status_toggled', () => loadTickets());
 socket.on('email_sent', () => loadTickets());
 
+// Global state for audit logs
+let cachedAuditLogs = [];
+let auditGrid = null;
+
+// Handle timeline updates
 socket.on('ticket_timeline_update', (data) => {
-    const container = document.getElementById('timelineList');
-    if (!container) return;
+    cachedAuditLogs = data.timeline || [];
+    renderAuditLogs();
+    calculateAndDisplaySLA(cachedAuditLogs);
+});
 
-    container.innerHTML = '';
+function renderAuditLogs() {
+    const gridContainer = document.getElementById('auditGrid');
+    const emptyState = document.getElementById('auditEmptyState');
+    if (!gridContainer) return;
+    
+    const internalOnly = document.getElementById('showInternalOnly').checked;
+    
+    // Deduplicate logs (noise reduction)
+    const uniqueLogs = [];
+    const seenEvents = new Set();
+    cachedAuditLogs.forEach(ev => {
+        const key = `${ev.timestamp}-${ev.action_type}-${ev.actor_id}`;
+        if (!seenEvents.has(key)) {
+            uniqueLogs.push(ev);
+            seenEvents.add(key);
+        }
+    });
 
-    if (!data.timeline || data.timeline.length === 0) {
-        container.innerHTML = '<p class="text-center py-4">No events logged for this ticket yet.</p>';
+    const filteredData = uniqueLogs.filter(ev => {
+        if (!internalOnly) {
+            return !['AI_DRAFT_GENERATED', 'NOTE_ADDED', 'AI_DRAFT_UPDATED'].includes(ev.action_type);
+        }
+        return true;
+    }).map(ev => {
+        const ts = new Date(ev.timestamp);
+        return [
+            ts.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true }),
+            ev.action_type,
+            ev.actor_id || 'System',
+            ev.event_text || ev.description
+        ];
+    });
+
+    if (filteredData.length === 0) {
+        gridContainer.classList.add('d-none');
+        emptyState.classList.remove('d-none');
         return;
     }
 
-    data.timeline.forEach(ev => {
-        const div = document.createElement('div');
-        div.className = 'timeline-event';
-        const timeStr = new Date(ev.timestamp).toLocaleString();
-        let messageHtml = ev.event_text || `Action: ${ev.event_type}`;
+    gridContainer.classList.remove('d-none');
+    emptyState.classList.add('d-none');
 
-        div.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <span class="badge" style="background: var(--accent); border-radius: 4px; padding: 4px 8px; font-size: 0.75rem;">${ev.event_type.toUpperCase()}</span>
-                <div style="font-size: 0.8rem; color: var(--text-secondary);">
-                    <span class="badge bg-light text-dark border me-1">${ev.display_id || (ev.ticket_id ? ev.ticket_id.substring(0, 8) + '...' : 'Unknown')}</span>
-                    ${timeStr}
-                </div>
-            </div>
-            <div class="timeline-body" style="background: rgba(0,0,0,0.05); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
-                <div style="margin-bottom: 4px; font-size: 0.95rem; line-height: 1.4;">${messageHtml}</div>
-                <div style="font-size: 0.75rem; color: var(--text-secondary); opacity: 0.8;">${timeStr}</div>
-            </div>
-        `;
-        container.appendChild(div);
+    if (auditGrid) auditGrid.destroy();
+
+    const columns = [
+        { name: 'Date', width: '120px', sort: true },
+        { name: 'Time', width: '100px', sort: true },
+        { 
+            name: 'Action',
+            width: '120px',
+            formatter: (cell) => {
+                let badgeClass = 'badge-ai';
+                let label = cell.replace('_', ' ').toUpperCase();
+                if (cell === 'MESSAGE_RECEIVED') { badgeClass = 'badge-received'; label = 'Received'; }
+                else if (cell === 'MESSAGE_SENT') { badgeClass = 'badge-sent'; label = 'Sent'; }
+                else if (cell === 'STATUS_CHANGED') { badgeClass = 'badge-status'; label = 'Status'; }
+                else if (cell === 'ASSIGNMENT_CHANGED') { badgeClass = 'badge-assign'; label = 'Assign'; }
+                else if (cell === 'NOTE_ADDED') { badgeClass = 'badge-assign'; label = 'Note'; }
+                
+                return gridjs.html(`<span class="badge-audit ${badgeClass}">${label}</span>`);
+            }
+        },
+        { 
+            name: 'Actor',
+            width: '150px',
+            formatter: (cell) => gridjs.html(`<div class="fw-bold text-truncate" title="${cell}">${cell}</div>`)
+        },
+        { name: 'Description' }
+    ];
+
+    // Metadata column removed as per user request
+
+    auditGrid = new gridjs.Grid({
+        columns: columns,
+        data: filteredData,
+        search: true,
+        sort: true,
+        pagination: { limit: 10 },
+        className: { table: 'table table-hover mb-0' }
+    }).render(gridContainer);
+}
+
+// Global helper for metadata popup (Grid.js context doesn't handle inline toggles well without complex plugins)
+window.showMetadataPopup = (meta) => {
+    const metaStr = JSON.stringify(meta, null, 4);
+    alert("Metadata Details:\n\n" + metaStr); // Simplified for now, can be a Toast or another Modal
+};
+
+function calculateAndDisplaySLA(logs) {
+    let createdTime = null;
+    let firstResponseTime = null;
+    let resolvedTime = null;
+    let totalWait = 0;
+    let waitStart = null;
+
+    // Setting check: Internal Note as Response
+    const internalNoteAsResponse = globalConfig.INTERNAL_NOTE_AS_RESPONSE === 'true' || globalConfig.INTERNAL_NOTE_AS_RESPONSE === true;
+
+    logs.forEach(ev => {
+        const ts = new Date(ev.timestamp);
+        if (ev.action_type === 'TICKET_CREATED') createdTime = ts;
+        
+        // Handle response tracking
+        const isOfficialResponse = ev.action_type === 'MESSAGE_SENT';
+        const isNoteAsResponse = internalNoteAsResponse && ev.action_type === 'NOTE_ADDED';
+        
+        if ((isOfficialResponse || isNoteAsResponse) && (!firstResponseTime || ts < firstResponseTime)) {
+            firstResponseTime = ts;
+        }
+
+        if (ev.action_type === 'STATUS_CHANGED' && (ev.metadata?.to === 'Closed' || ev.metadata?.to === 'Resolved')) {
+            resolvedTime = ts;
+        }
+        
+        if (ev.action_type === 'MESSAGE_RECEIVED') waitStart = ts;
+        if (isOfficialResponse && waitStart) {
+            totalWait += (ts - waitStart);
+            waitStart = null;
+        }
     });
-});
+
+    const update = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
+    
+    if (createdTime) {
+        if (firstResponseTime) {
+            const diff = Math.round((firstResponseTime - createdTime) / 60000);
+            update('sla-frt', diff + 'm');
+            const badge = document.getElementById('sla-status');
+            if (badge) {
+                badge.textContent = diff < 240 ? 'SLA Met' : 'SLA Breached';
+                badge.className = 'sla-status-badge ' + (diff < 240 ? 'met' : 'breached');
+            }
+        } else update('sla-frt', '-');
+
+        if (resolvedTime) {
+            update('sla-res', ((resolvedTime - createdTime) / 3600000).toFixed(1) + 'h');
+        } else update('sla-res', '-');
+
+        update('sla-wait', (totalWait / 3600000).toFixed(1) + 'h');
+    }
+}
+
+function exportTimeline() {
+    const internalOnly = document.getElementById('showInternalOnly').checked;
+    
+    const toExport = cachedAuditLogs.filter(ev => {
+        if (!internalOnly) {
+            return !['AI_DRAFT_GENERATED', 'NOTE_ADDED', 'AI_DRAFT_UPDATED'].includes(ev.action_type);
+        }
+        return true;
+    });
+
+    if (toExport.length === 0) return alert("No filtered data to export");
+
+    const headers = ["Date", "Time", "Action", "Actor", "Description"];
+    if (internalOnly) headers.push("Metadata");
+
+    const rows = toExport.map(ev => {
+        const ts = new Date(ev.timestamp);
+        const row = [
+            ts.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+            ts.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
+            ev.action_type,
+            ev.actor_id,
+            ev.event_text || ev.description || ""
+        ];
+        if (internalOnly) {
+            row.push(JSON.stringify(ev.metadata || {}));
+        }
+        return row;
+    });
+
+    let csvContent = "data:text/csv;charset=utf-8," 
+        + headers.map(h => `"${h}"`).join(",") + "\n"
+        + rows.map(row => row.map(cell => `"${(cell || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `ticket_${currentTicketIdStr || 'logs'}_audit.csv`);
+    document.body.appendChild(link); // Required for FF
+    link.click();
+    document.body.removeChild(link);
+}
 
 socket.on('ticket_locked', (data) => {
     const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);

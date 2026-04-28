@@ -36,6 +36,7 @@ class RequestType(Enum):
     FETCH_EMAILS = "fetch_emails"
     GET_ATTACHMENT = "get_attachment"
     SEND_EMAIL = "send_email"
+    REPLY_TO_EMAIL = "reply_to_email"
     SHUTDOWN = "shutdown"
 
 
@@ -309,6 +310,16 @@ class AsyncioWorker:
                 )
                 response = GraphResponse(success=True, data=result)
             
+            elif request.request_type == RequestType.REPLY_TO_EMAIL:
+                result = self.loop.run_until_complete(
+                    retry_with_backoff(
+                        lambda: self._reply_to_email_async(**request.params),
+                        self.retry_config,
+                        "reply_to_email"
+                    )
+                )
+                response = GraphResponse(success=True, data=result)
+            
             else:
                 response = GraphResponse(
                     success=False,
@@ -532,6 +543,74 @@ class AsyncioWorker:
         body.save_to_sent_items = True
 
         await self.client.users.by_user_id(user_email).send_mail.post(body=body)
+        return True
+
+    async def _reply_to_email_async(
+        self,
+        user_email: str,
+        parent_message_id: str,
+        body_html: str,
+        to_email: str = None,
+        cc: str = "",
+        bcc: str = "",
+        attachments: list = None
+    ) -> bool:
+        """
+        Reply to an existing message using the Graph API's dedicated reply endpoint.
+        This automatically handles In-Reply-To, References, and Subject (Re:).
+        """
+        from msgraph.generated.users.item.messages.item.reply.reply_post_request_body import ReplyPostRequestBody
+        from msgraph.generated.models.message import Message
+        from msgraph.generated.models.item_body import ItemBody
+        from msgraph.generated.models.body_type import BodyType
+        from msgraph.generated.models.recipient import Recipient
+        from msgraph.generated.models.email_address import EmailAddress
+        from msgraph.generated.models.file_attachment import FileAttachment
+
+        # 1. Create the reply message structure
+        reply_message = Message()
+        reply_message.body = ItemBody()
+        reply_message.body.content_type = BodyType.Html
+        reply_message.body.content = body_html
+
+        # 2. Add Recipients (To, CC, BCC)
+        def make_recipient(email):
+            r = Recipient()
+            r.email_address = EmailAddress()
+            r.email_address.address = email
+            return r
+
+        if to_email:
+            reply_message.to_recipients = [make_recipient(to_email)]
+
+        if cc:
+            reply_message.cc_recipients = [make_recipient(e.strip()) for e in cc.split(',') if e.strip()]
+
+        if bcc:
+            reply_message.bcc_recipients = [make_recipient(e.strip()) for e in bcc.split(',') if e.strip()]
+
+        # 3. Add attachments if provided
+        if attachments:
+            files = []
+            for att in attachments:
+                fa = FileAttachment()
+                fa.name = att['name']
+                fa.content_type = att['contentType']
+                fa.content_bytes = base64.b64decode(att['content'])
+                files.append(fa)
+            reply_message.attachments = files
+
+        # 4. Prepare the request body
+        request_body = ReplyPostRequestBody()
+        request_body.message = reply_message
+
+        # 5. Execute the reply
+        # Graph API POST /users/{id}/messages/{messageId}/reply
+        await self.client.users.by_user_id(user_email)\
+            .messages.by_message_id(parent_message_id)\
+            .reply.post(body=request_body)
+
+        logger.info(f"✅ Successfully replied to message {parent_message_id[:10]}...")
         return True
 
     
@@ -783,6 +862,37 @@ class GraphConnector:
             return response.success
         except Exception as e:
             logger.error(f"❌ send_email failed: {e}")
+            return False
+
+    def reply_to_email(
+        self,
+        user_email: str,
+        parent_message_id: str,
+        body: str,
+        to_email: str = None,
+        cc: str = "",
+        bcc: str = "",
+        attachments: list = None
+    ) -> bool:
+        """
+        Reply to an existing email (SYNCHRONOUS with retry).
+        """
+        try:
+            response = self._send_request(
+                RequestType.REPLY_TO_EMAIL,
+                {
+                    'user_email': user_email,
+                    'parent_message_id': parent_message_id,
+                    'body_html': body,
+                    'to_email': to_email,
+                    'cc': cc,
+                    'bcc': bcc,
+                    'attachments': attachments
+                }
+            )
+            return response.success
+        except Exception as e:
+            logger.error(f"❌ reply_to_email failed: {e}")
             return False
     
     def shutdown(self):
