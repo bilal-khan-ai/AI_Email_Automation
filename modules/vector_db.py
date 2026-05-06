@@ -144,7 +144,8 @@ class VectorDatabase:
     
     def add_email(self, email_id: str, subject: str, body: str, sender: str, 
                   image_descriptions: Optional[List[str]] = None, 
-                  metadata: Optional[Dict] = None) -> bool:
+                  metadata: Optional[Dict] = None,
+                  display_id: str = None) -> bool:
         """
         Add email to vector database.
         
@@ -186,8 +187,12 @@ class VectorDatabase:
                 "subject": subject,
                 "sender": sender,
                 "is_resolved": metadata.get('is_resolved', False) if metadata else False,
+                "is_authority": metadata.get('is_authority', False) if metadata else False,
                 **(metadata or {})
             }
+            
+            # ChromaDB MetadataValue cannot be None
+            meta = {k: v for k, v in meta.items() if v is not None}
             
             # Add to ChromaDB
             self.collection.add(
@@ -197,9 +202,10 @@ class VectorDatabase:
                 metadatas=[meta]
             )
             
+            log_ticket = display_id or meta.get('ticket_id', 'N/A')
             logger.info(
                 f"✅ Added email to vector DB: {email_id[0:20]} | "
-                f"Ticket: {meta.get('ticket_id', 'N/A')} | "
+                f"Ticket: {log_ticket} | "
                 f"Resolved: {meta.get('is_resolved', False)}"
             )
             return True
@@ -253,8 +259,12 @@ class VectorDatabase:
                     "subject": email['subject'],
                     "sender": email['sender'],
                     "is_resolved": email.get('metadata', {}).get('is_resolved', False),
+                    "is_authority": email.get('metadata', {}).get('is_authority', False),
                     **(email.get('metadata', {}))
                 })
+            
+            # Clean metadatas (ChromaDB does not allow None values)
+            metadatas = [{k: v for k, v in m.items() if v is not None} for m in metadatas]
             
             # Load embedding model, generate all embeddings, unload
             with embedding_model_context(self.force_cpu) as (model, device):
@@ -303,39 +313,45 @@ class VectorDatabase:
                 
                 query_embedding = model.encode(query).tolist()
             
-            # Search in ChromaDB (fetch extra to account for potential deleted docs)
+            # Search in ChromaDB (fetch extra to handle ranking and deleted docs)
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k * 2  # Fetch 2x to handle deleted docs
+                n_results=top_k * 4  # Fetch 4x to handle trust-based re-ranking and deletions
             )
             
             # Filter out soft-deleted documents
-            formatted_results = []
+            candidates = []
             if results['documents'] and results['documents'][0]:
                 result_ids = results['ids'][0]
                 deleted_ids = self._get_deleted_ids(result_ids)
                 
                 for i, doc in enumerate(results['documents'][0]):
                     doc_id = result_ids[i]
-                    
-                    # Skip if soft-deleted
                     if doc_id in deleted_ids:
                         continue
                     
-                    formatted_results.append({
+                    candidates.append({
                         'id': doc_id,
                         'content': doc,
                         'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
                         'distance': results['distances'][0][i] if results['distances'] else 0
                     })
-                    
-                    # Stop once we have enough results
-                    if len(formatted_results) >= top_k:
-                        break
+            
+            # Trust Hierarchy Re-ranking:
+            # 1. is_authority (Gold Label) - Highest priority
+            # 2. is_resolved (Known solution) - Medium priority
+            # 3. Distance (Semantic similarity) - Raw matching
+            candidates.sort(key=lambda x: (
+                x['metadata'].get('is_authority', False),
+                x['metadata'].get('is_resolved', False),
+                -x['distance']  # Smaller distance is better, so negate for reverse sort
+            ), reverse=True)
+            
+            formatted_results = candidates[:top_k]
             
             logger.info(
-                f"🔍 Search returned {len(formatted_results)} results "
-                f"(filtered from {len(results.get('ids', [[]])[0])} total)"
+                f"🔍 Search returned {len(formatted_results)} ranked results "
+                f"(candidates: {len(candidates)}, top authority: {formatted_results[0]['metadata'].get('is_authority', False) if formatted_results else 'N/A'})"
             )
             return formatted_results
         
@@ -500,7 +516,7 @@ class VectorDatabase:
         """Get number of soft-deleted documents"""
         return self.deleted_collection.count()
     
-    def update_ticket_status(self, ticket_id: str, is_resolved: bool) -> int:
+    def update_ticket_status(self, ticket_id: str, is_resolved: bool, display_id: str = None) -> int:
         """
         Update is_resolved metadata for all emails belonging to a ticket.
         
@@ -517,8 +533,9 @@ class VectorDatabase:
                 where={"ticket_id": ticket_id}
             )
             
+            log_id = display_id or ticket_id
             if not results or not results['ids']:
-                logger.info(f"ℹ️  No vectors found for ticket {ticket_id} to update status")
+                logger.info(f"ℹ️  No vectors found for ticket {log_id} to update status")
                 return 0
             
             ids = results['ids']
@@ -534,11 +551,40 @@ class VectorDatabase:
                 metadatas=metadatas
             )
             
-            logger.info(f"✨ Updated resolution status to {is_resolved} for {len(ids)} vectors in ticket {ticket_id}")
+            logger.info(f"✨ Updated resolution status to {is_resolved} for {len(ids)} vectors in ticket {log_id}")
             return len(ids)
             
         except Exception as e:
             logger.error(f"❌ Error updating ticket status in vector DB: {e}")
+            return 0
+
+    def update_authority_status(self, ticket_id: str, is_authority: bool, display_id: str = None) -> int:
+        """
+        Mark all emails in a ticket as authoritative (Gold Label).
+        
+        Args:
+            ticket_id: Ticket ID to update
+            is_authority: New authority status
+            
+        Returns:
+            int: Number of vectors updated
+        """
+        try:
+            results = self.collection.get(where={"ticket_id": ticket_id})
+            if not results or not results['ids']:
+                return 0
+            
+            ids = results['ids']
+            metadatas = results['metadatas']
+            for meta in metadatas:
+                meta['is_authority'] = is_authority
+                
+            log_id = display_id or ticket_id
+            self.collection.update(ids=ids, metadatas=metadatas)
+            logger.info(f"🏆 Marked {len(ids)} vectors as authority={is_authority} for ticket {log_id}")
+            return len(ids)
+        except Exception as e:
+            logger.error(f"❌ Error updating authority status: {e}")
             return 0
 
     def cleanup(self):

@@ -172,6 +172,8 @@ class SQLLogger:
                             assigned_to TEXT DEFAULT 'Unassigned',
                             ai_draft TEXT,
                             rag_provenance JSONB,
+                            issue_state JSONB,
+                            is_authority BOOLEAN DEFAULT FALSE,
                             created_at TIMESTAMPTZ NOT NULL,
                             last_updated TIMESTAMPTZ NOT NULL,
                             deleted_at TIMESTAMPTZ,
@@ -180,7 +182,7 @@ class SQLLogger:
                         )
                     """)
                     
-                    # Ensure reopened column exists (for existing databases)
+                    # Ensure new columns exist (for existing databases)
                     cur.execute("""
                         DO $$ 
                         BEGIN 
@@ -202,6 +204,16 @@ class SQLLogger:
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='tickets' AND column_name='source_received_at') THEN 
                                 ALTER TABLE tickets ADD COLUMN source_received_at TIMESTAMPTZ;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='issue_state') THEN 
+                                ALTER TABLE tickets ADD COLUMN issue_state JSONB;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='is_authority') THEN 
+                                ALTER TABLE tickets ADD COLUMN is_authority BOOLEAN DEFAULT FALSE;
                             END IF;
                         END $$;
                     """)
@@ -255,7 +267,26 @@ class SQLLogger:
                         END $$;
                     """)
                     
-                    # 3. INDEXES
+                    # 3. ATTACHMENT CONTEXT TABLE (NEW)
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS ticket_attachments_context (
+                            id SERIAL PRIMARY KEY,
+                            ticket_id TEXT NOT NULL,
+                            message_id TEXT NOT NULL,
+                            filename TEXT,
+                            content_summary TEXT,
+                            metadata JSONB,
+                            created_at TIMESTAMPTZ DEFAULT NOW(),
+                            FOREIGN KEY(ticket_id) REFERENCES tickets(ticket_id) ON DELETE CASCADE
+                        )
+                    """)
+
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_attach_ctx_ticket 
+                        ON ticket_attachments_context(ticket_id)
+                    """)
+
+                    # 4. INDEXES
                     cur.execute("""
                         CREATE INDEX IF NOT EXISTS idx_conv_id 
                         ON tickets(conversation_id)
@@ -298,7 +329,7 @@ class SQLLogger:
                         WHERE internet_message_id IS NOT NULL
                     """)
                     
-                    # 4. SLA TRACKING TABLE: TICKET_EVENTS
+                    # 5. SLA TRACKING TABLE: TICKET_EVENTS
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS ticket_events (
                             id SERIAL PRIMARY KEY,
@@ -321,7 +352,7 @@ class SQLLogger:
                         ON ticket_events(timestamp DESC)
                     """)
 
-                    # 5. NEW AUDIT LOGS TABLE (v2)
+                    # 6. NEW AUDIT LOGS TABLE (v2)
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS ticket_audit_logs (
                             id SERIAL PRIMARY KEY,
@@ -347,7 +378,7 @@ class SQLLogger:
                         ON ticket_audit_logs(timestamp DESC)
                     """)
 
-                    # 6. TICKET METRICS TABLE (Flattened for Analytics)
+                    # 7. TICKET METRICS TABLE (Flattened for Analytics)
                     cur.execute("""
                         CREATE TABLE IF NOT EXISTS ticket_metrics (
                             ticket_id TEXT PRIMARY KEY,
@@ -727,8 +758,10 @@ class SQLLogger:
                     
                     if logged:
                         speaker = "INTERNAL" if is_internal else "CUSTOMER"
+                        # Resolve friendly ID for logging
+                        display_id = self.get_display_id(ticket_id)
                         logger.info(
-                            f"✅ Logged message {message_id[:20]}... to ticket {ticket_id} "
+                            f"✅ Logged message {message_id[:20]}... to ticket {display_id} "
                             f"| Speaker: {speaker} | Sender: {email.get('sender', 'unknown')}"
                         )
                         # Log Audit Event
@@ -803,8 +836,10 @@ class SQLLogger:
                             WHERE ticket_id = %s
                         """, (draft, provenance_json, datetime.now(), ticket_id))
                         
+                        # Resolve friendly ID for logging
+                        display_id = self.get_display_id(ticket_id)
                         logger.info(
-                            f"✅ Updated AI draft for ticket {ticket_id} "
+                            f"✅ Updated AI draft for ticket {display_id} "
                             f"| Provenance: {len(provenance)} RAG docs stored"
                         )
                         self.log_audit_event(ticket_id, ActionType.AI_DRAFT_GENERATED, "AI_AGENT", ActorType.AI, "AI generated a response draft.")
@@ -817,12 +852,15 @@ class SQLLogger:
                             WHERE ticket_id = %s
                         """, (draft, datetime.now(), ticket_id))
                         
-                        logger.info(f"✅ Updated AI draft for ticket {ticket_id} (no provenance)")
+                        # Resolve friendly ID for logging
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"✅ Updated AI draft for ticket {display_id} (no provenance)")
                         self.log_audit_event(ticket_id, ActionType.AI_DRAFT_GENERATED, "AI_AGENT", ActorType.AI, "AI generated a response draft (no context).")
             
             return True
             
         except Exception as e:
+            # Fallback to ticket_id for error log if resolution fails
             logger.error(f"❌ Error updating AI draft for ticket {ticket_id}: {e}")
             return False
     
@@ -842,7 +880,8 @@ class SQLLogger:
                     """, (datetime.now(), ticket_id))
                     
                     if cur.rowcount > 0:
-                        logger.info(f"✅ Flagged ticket {ticket_id} for AI regeneration")
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"✅ Flagged ticket {display_id} for AI regeneration")
                         return True
                     return False
         except Exception as e:
@@ -867,6 +906,105 @@ class SQLLogger:
         except Exception as e:
             logger.error(f"❌ Error getting tickets needing regeneration: {e}")
             return []
+    
+    def update_ticket_issue_state(self, ticket_id: str, issue_state: Dict) -> bool:
+        """Update the persistent issue state for a ticket."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE tickets 
+                        SET issue_state = %s::jsonb,
+                            last_updated = %s
+                        WHERE ticket_id = %s
+                    """, (json.dumps(issue_state), datetime.now(), ticket_id))
+                    
+                    if cur.rowcount > 0:
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"✅ Updated issue state for ticket {display_id}")
+                        return True
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Error updating issue state for ticket {ticket_id}: {e}")
+            return False
+
+    def get_display_id(self, ticket_id: str) -> str:
+        """Resolve a long Outlook ticket_id to its friendly display_id."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT display_id FROM tickets WHERE ticket_id = %s", (ticket_id,))
+                    res = cur.fetchone()
+                    return res[0] if res else ticket_id
+        except Exception as e:
+            logger.error(f"Error resolving display_id for {ticket_id}: {e}")
+            return ticket_id
+
+    def get_ticket_issue_state(self, ticket_id: str) -> Optional[Dict]:
+        """Retrieve the persistent issue state for a ticket."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT issue_state FROM tickets WHERE ticket_id = %s", (ticket_id,))
+                    row = cur.fetchone()
+                    if row and row[0]:
+                        return row[0]
+                    return None
+        except Exception as e:
+            logger.error(f"❌ Error fetching issue state for ticket {ticket_id}: {e}")
+            return None
+
+    def store_attachment_context(self, ticket_id: str, message_id: str, filename: str, 
+                                 content_summary: str, metadata: Dict = None) -> bool:
+        """Store processed attachment context linked to a ticket."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO ticket_attachments_context (
+                            ticket_id, message_id, filename, content_summary, metadata
+                        ) VALUES (%s, %s, %s, %s, %s)
+                    """, (ticket_id, message_id, filename, content_summary, json.dumps(metadata) if metadata else None))
+                    return True
+        except Exception as e:
+            logger.error(f"❌ Error storing attachment context for ticket {ticket_id}: {e}")
+            return False
+
+    def get_ticket_attachments_context(self, ticket_id: str) -> List[Dict]:
+        """Retrieve all attachment contexts for a ticket."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT * FROM ticket_attachments_context 
+                        WHERE ticket_id = %s 
+                        ORDER BY created_at ASC
+                    """, (ticket_id,))
+                    return [dict(row) for row in cur.fetchall()]
+        except Exception as e:
+            logger.error(f"❌ Error fetching attachment context for ticket {ticket_id}: {e}")
+            return []
+
+    def mark_ticket_as_authority(self, ticket_id: str, is_authority: bool = True) -> bool:
+        """Mark a ticket as an authoritative reference for RAG (Gold Label)."""
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE tickets 
+                        SET is_authority = %s,
+                            last_updated = %s
+                        WHERE ticket_id = %s
+                    """, (is_authority, datetime.now(), ticket_id))
+                    
+                    if cur.rowcount > 0:
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"🏆 Ticket {display_id} marked as authority: {is_authority}")
+                        return True
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Error marking ticket {ticket_id} as authority: {e}")
+            return False
     
     def soft_delete_ticket(self, ticket_id: str) -> bool:
         """
@@ -894,7 +1032,8 @@ class SQLLogger:
                     """, (now, now, ticket_id))
                     
                     if cur.rowcount > 0:
-                        logger.info(f"✅ Soft-deleted ticket {ticket_id}")
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"✅ Soft-deleted ticket {display_id}")
                         self.log_audit_event(ticket_id, ActionType.TICKET_DELETED, "system", ActorType.SYSTEM, "Ticket soft-deleted.")
                         return True
                     else:
@@ -930,7 +1069,8 @@ class SQLLogger:
                     """, (now, ticket_id))
                     
                     if cur.rowcount > 0:
-                        logger.info(f"🔄 Re-opened ticket {ticket_id}")
+                        display_id = self.get_display_id(ticket_id)
+                        logger.info(f"🔄 Re-opened ticket {display_id}")
                         self.log_audit_event(ticket_id, ActionType.TICKET_RESTORED, "system", ActorType.SYSTEM, "Ticket re-opened.")
                         return True
                     else:

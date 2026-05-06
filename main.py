@@ -103,35 +103,75 @@ class SubjectMatcher:
         matcher = SequenceMatcher(None, norm1, norm2)
         return matcher.ratio()
     
+    def _extract_domain(self, email: str) -> str:
+        """Extract domain from email address"""
+        if not email or "@" not in email:
+            return ""
+        return email.lower().strip().split('@')[-1]
+
     def find_matching_ticket(self, subject: str, sender: str, 
                             active_tickets: list) -> dict:
-        """Find matching ticket using fuzzy subject matching"""
+        """
+        Find matching ticket using fuzzy subject matching with domain awareness.
+        
+        Logic:
+        1. Identifies the sender's domain.
+        2. If domain is a common public provider (Gmail, etc.), strictly matches by email.
+        3. Otherwise, allows matching against any active ticket from the same domain.
+        4. Prioritizes exact email matches over domain matches.
+        """
         if not active_tickets:
             return None
         
-        customer_tickets = [
-            t for t in active_tickets
-            if t.get('customer_email', '').lower() == sender.lower()
-        ]
+        sender_email = sender.lower()
+        sender_domain = self._extract_domain(sender_email)
         
-        if not customer_tickets:
+        # Generic public domains where grouping by domain is risky/incorrect
+        public_domains = {
+            'gmail.com', 'outlook.com', 'hotmail.com', 'yahoo.com', 
+            'icloud.com', 'me.com', 'live.com', 'msn.com', 'aol.com',
+            'rediffmail.com', 'protonmail.com', 'zoho.com', 'ymail.com'
+        }
+        
+        is_public = sender_domain in public_domains
+        
+        # Filter tickets by sender identity or domain
+        candidates = []
+        for t in active_tickets:
+            ticket_email = t.get('customer_email', '').lower()
+            ticket_domain = self._extract_domain(ticket_email)
+            
+            if ticket_email == sender_email:
+                # Same person: Highest priority
+                candidates.append((t, 1.0))
+            elif not is_public and ticket_domain == sender_domain and ticket_domain != "":
+                # Same organization: Allowed, but slightly lower weight than exact person
+                candidates.append((t, 0.95))
+        
+        if not candidates:
             return None
         
         best_match = None
         best_score = 0.0
         
-        for ticket in customer_tickets:
+        for ticket, weight in candidates:
             ticket_subject = ticket.get('subject', '')
-            score = self.calculate_similarity(subject, ticket_subject)
+            # Calculate similarity and apply weight
+            similarity = self.calculate_similarity(subject, ticket_subject)
+            score = similarity * weight
             
             if score > best_score:
                 best_score = score
                 best_match = ticket
         
-        if best_score >= self.similarity_threshold:
+        # Use raw similarity for final threshold check to maintain consistency
+        raw_similarity = self.calculate_similarity(subject, best_match.get('subject', ''))
+        
+        if raw_similarity >= self.similarity_threshold:
+            match_type = "user" if best_match.get('customer_email', '').lower() == sender_email else "domain"
             logger.info(
-                f"🔗 Fuzzy match: '{subject}' → '{best_match.get('subject')}' "
-                f"(score: {best_score:.2f})"
+                f"🔗 Fuzzy match ({match_type}): '{subject}' → '{best_match.get('subject')}' "
+                f"(score: {raw_similarity:.2f})"
             )
             return best_match
         
@@ -325,10 +365,11 @@ class SupportAgent:
                     break
                 
                 try:
+                    display_id = self.sql.get_display_id(ticket_id)
                     # Soft-delete in SQL only (keep in vector DB for knowledge)
                     if self.sql.soft_delete_ticket(ticket_id):
                         deleted_count += 1
-                        logger.info(f"🗑️  Soft-deleted ticket {ticket_id} in SQL (preserved in knowledge base)")
+                        logger.info(f"🗑️  Soft-deleted ticket {display_id} in SQL (preserved in knowledge base)")
                     
                 except Exception as e:
                     logger.error(f"❌ Failed to soft-delete ticket {ticket_id}: {e}")
@@ -449,8 +490,8 @@ class SupportAgent:
         # Determine if internal
         is_internal = self._is_internal_email(sender)
         
-        # Clean body
-        email['body'] = self._clean_html(email.get('body', ''))
+        # Clean body for internal use, but preserve original for database
+        # email['body'] = self._clean_html(email.get('body', '')) # REMOVED: Stripping here breaks dashboard rendering
 
         # SECURITY: Redact PII before RAG ingestion
         redacted_email = self.pii_redactor.redact_email_content(email)
@@ -458,11 +499,15 @@ class SupportAgent:
         if redacted_email.get('pii_redacted'):
             logger.warning(
                 f"🔐 PII redacted | Msg: {msg_id[:20]}... | "
-                f"Entities: {redacted_email.get('pii_entities_found', 0)}"
+            f"Entities: {redacted_email.get('pii_entities_found', 0)}"
             )
+        
+        # Create plain text version for RAG and AI (after redaction)
+        redacted_email['body_text'] = self._clean_html(redacted_email.get('body', ''))
         # Process attachments (images + docx/pdf + xlsx/csv)
         # NOTE: we store these as "attachment descriptions" in Vector DB so RAG can use them later.
         attachment_descs = []
+        processed_attachments = [] # NEW: Buffer to store context until ticket_id is known
         MAX_BYTES = getattr(Config, "MAX_ATTACHMENT_PROCESSING_BYTES", 10 * 1024 * 1024)
 
         for att in email.get('attachments', []):
@@ -516,9 +561,13 @@ class SupportAgent:
                     desc = self.img_processor.process_image(att_bytes, filename=name)
                     if desc:
                         attachment_descs.append(desc)
+                        # Store in buffer
+                        processed_attachments.append({
+                            'filename': name,
+                            'content_summary': desc,
+                            'metadata': {'type': 'image'}
+                        })
                     
-                    # NOTE: Live fetching is now handled by dashboard.js using /api/view_attachment.
-                    # We no longer "bake" base64 images into the DB to save memory and performance.
                     logger.info(f"🖼️  Processed image {name} for RAG context.")
                             
                 elif is_table:
@@ -526,11 +575,23 @@ class SupportAgent:
                     txt = (res or {}).get("combined_text", "")
                     if txt:
                         attachment_descs.append(txt)
+                        # Store in buffer
+                        processed_attachments.append({
+                            'filename': name,
+                            'content_summary': txt[:1000], # Keep summary size reasonable
+                            'metadata': {'type': 'table'}
+                        })
                 elif is_doc:
                     res = self.doc_processor.process_bytes(att_bytes, filename=name)
                     txt = (res or {}).get("combined_text", "")
                     if txt:
                         attachment_descs.append(txt)
+                        # Store in buffer
+                        processed_attachments.append({
+                            'filename': name,
+                            'content_summary': txt[:1000],
+                            'metadata': {'type': 'document'}
+                        })
 
             except Exception as e:
                 logger.error(
@@ -550,16 +611,18 @@ class SupportAgent:
             
             if existing:
                 ticket_id = existing['ticket_id']
+                # Resolve friendly ID for logging
+                display_id = self.sql.get_display_id(ticket_id)
                 
                 # RE-OPEN LOGIC: If ticket was soft-deleted or closed, re-open it
                 if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                    logger.info(f"🔄 Ticket {ticket_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
+                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
                     self.sql.reopen_ticket(ticket_id)
                     # Update vector DB status
-                    self.experience_db.update_ticket_status(ticket_id, False)
+                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
                 
                 logger.info(
-                    f"🔗 Linked to existing ticket {ticket_id} | "
+                    f"🔗 Linked to existing ticket {display_id} | "
                     f"ConvID match | Sender: {sender}"
                 )
             else:
@@ -571,8 +634,9 @@ class SupportAgent:
                 
                 if fuzzy_match:
                     ticket_id = fuzzy_match['ticket_id']
+                    display_id = self.sql.get_display_id(ticket_id)
                     logger.info(
-                        f"🔗 Linked to existing ticket {ticket_id} | "
+                        f"🔗 Linked to existing ticket {display_id} | "
                         f"Fuzzy match | Sender: {sender}"
                     )
                 else:
@@ -586,8 +650,9 @@ class SupportAgent:
                     )
                     
                     if success:
+                        display_id = self.sql.get_display_id(ticket_id)
                         logger.info(
-                            f"✨ Created new ticket {ticket_id} | "
+                            f"✨ Created new ticket {display_id} | "
                             f"Customer: {sender} | Subject: {subject[:50]}"
                         )
                     else:
@@ -599,19 +664,40 @@ class SupportAgent:
             
             # Log message
             self.sql.log_message(ticket_id, email, is_internal=False)
+
+            # Store attachment contexts now that ticket_id is confirmed
+            for att_ctx in processed_attachments:
+                self.sql.store_attachment_context(
+                    ticket_id=ticket_id,
+                    message_id=msg_id,
+                    filename=att_ctx['filename'],
+                    content_summary=att_ctx['content_summary'],
+                    metadata=att_ctx['metadata']
+                )
+
+            # Persist Issue State
+            try:
+                full_thread = self.sql.get_thread_messages(ticket_id)
+                current_state = self.sql.get_ticket_issue_state(ticket_id)
+                new_state = self.ai.update_issue_state(full_thread, current_state)
+                self.sql.update_ticket_issue_state(ticket_id, new_state)
+            except Exception as e:
+                # Use display_id for log if possible
+                logger.error(f"Failed to update persistent issue state for {display_id}: {e}")
             
             # Add to vector DB
             self.experience_db.add_email(
                 email_id=redacted_email['id'],
                 subject=redacted_email['subject'],
-                body=redacted_email['body'],
+                body=redacted_email.get('body_text', redacted_email['body']),
                 sender=redacted_email['sender'],
                 image_descriptions=attachment_descs,
                 metadata={
                     'ticket_id': ticket_id,
                     'pii_redacted': redacted_email.get('pii_redacted', False),
                     'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                }
+                },
+                display_id=display_id
             )
 
         
@@ -623,33 +709,56 @@ class SupportAgent:
             if existing:
                 ticket_id = existing['ticket_id']
                 
+                # Resolve friendly ID for logging
+                display_id = self.sql.get_display_id(ticket_id)
+                
                 # RE-OPEN LOGIC: Even for internal replies, we should clear soft-delete or closed status
                 if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                    logger.info(f"🔄 Ticket {ticket_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
+                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
                     self.sql.reopen_ticket(ticket_id)
                     # Update vector DB status
-                    self.experience_db.update_ticket_status(ticket_id, False)
+                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
 
                 logger.info(
-                    f"📨 Internal reply to ticket {ticket_id} | "
+                    f"📨 Internal reply to ticket {display_id} | "
                     f"Sender: {sender}"
                 )
                 
                 # Log message
                 self.sql.log_message(ticket_id, email, is_internal=True)
+
+                # Store attachment contexts now that ticket_id is confirmed
+                for att_ctx in processed_attachments:
+                    self.sql.store_attachment_context(
+                        ticket_id=ticket_id,
+                        message_id=msg_id,
+                        filename=att_ctx['filename'],
+                        content_summary=att_ctx['content_summary'],
+                        metadata=att_ctx['metadata']
+                    )
+
+                # Persist Issue State (Internal replies also update context)
+                try:
+                    full_thread = self.sql.get_thread_messages(ticket_id)
+                    current_state = self.sql.get_ticket_issue_state(ticket_id)
+                    new_state = self.ai.update_issue_state(full_thread, current_state)
+                    self.sql.update_ticket_issue_state(ticket_id, new_state)
+                except Exception as e:
+                    logger.error(f"Failed to update persistent issue state for {ticket_id}: {e}")
                 
                 # Add to vector DB (for RAG context)
                 self.experience_db.add_email(
                     email_id=redacted_email['id'],
                     subject=redacted_email['subject'],
-                    body=redacted_email['body'],
+                    body=redacted_email.get('body_text', redacted_email['body']),
                     sender=redacted_email['sender'],
                     image_descriptions=attachment_descs,
                     metadata={
                         'ticket_id': ticket_id,
                         'pii_redacted': redacted_email.get('pii_redacted', False),
                         'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                    }
+                    },
+                    display_id=display_id
                 )
 
             else:
@@ -666,26 +775,38 @@ class SupportAgent:
                     )
                     
                     if success:
+                        display_id = self.sql.get_display_id(ticket_id)
                         logger.info(
-                            f"✨ Created new ticket {ticket_id} from internal support request | "
+                            f"✨ Created new ticket {display_id} from internal support request | "
                             f"Staff: {sender} | Subject: {subject[:50]}"
                         )
                         
                         # Log message (as non-internal for the initial ticket entry so it shows up)
                         self.sql.log_message(ticket_id, email, is_internal=False)
                         
+                        # Store attachment contexts
+                        for att_ctx in processed_attachments:
+                            self.sql.store_attachment_context(
+                                ticket_id=ticket_id,
+                                message_id=msg_id,
+                                filename=att_ctx['filename'],
+                                content_summary=att_ctx['content_summary'],
+                                metadata=att_ctx['metadata']
+                            )
+                        
                         # Add to vector DB
                         self.experience_db.add_email(
                             email_id=redacted_email['id'],
                             subject=redacted_email['subject'],
-                            body=redacted_email['body'],
+                            body=redacted_email.get('body_text', redacted_email['body']),
                             sender=redacted_email['sender'],
                             image_descriptions=attachment_descs,
                             metadata={
                                 'ticket_id': ticket_id,
                                 'pii_redacted': redacted_email.get('pii_redacted', False),
                                 'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                            }
+                            },
+                            display_id=display_id
                         )
                     else:
                         logger.error(
@@ -711,24 +832,24 @@ class SupportAgent:
         - Passes contexts separately to AI agent
         - Tracks provenance from both sources
         """
-        if not self.ai:
-            return
-        
+        # Resolve friendly ID early for all function logs
+        display_id = self.sql.get_display_id(ticket_id)
+
         # 1. Fetch thread
         messages = self.sql.get_thread_messages(ticket_id)
         if not messages:
-            logger.warning(f"⚠️  No messages found for ticket {ticket_id}")
+            logger.warning(f"⚠️  No messages found for ticket {display_id}")
             return
         
         # 2. Check last speaker
         last_msg = messages[-1]
         if last_msg['is_internal'] == 1:
             logger.info(
-                f"🛑 Ticket {ticket_id}: Support replied last. No AI needed."
+                f"🛑 Ticket {display_id}: Support replied last. No AI needed."
             )
             return
         
-        logger.info(f"🧠 Stage 1: Interpreting ticket {ticket_id}...")
+        logger.info(f"🧠 Stage 1: Interpreting ticket {display_id}...")
         
         # 2b. INTERPRETATION LAYER
         interpretation = self.ai.interpret_message(
@@ -741,11 +862,30 @@ class SupportAgent:
         
         logger.info(f"🔍 Result: Intent={intent} | Urgency={urgency} | Summary={summary}")
 
-        logger.info(f"🧠 Stage 2: Generating AI Draft for ticket {ticket_id}...")
+        # 2c. PERSISTENT STATE RETRIEVAL
+        issue_state = self.sql.get_ticket_issue_state(ticket_id) or {}
+        problem_summary = issue_state.get('problem_summary', summary)
+        technical_signals = issue_state.get('technical_signals', '')
+        error_codes = ", ".join(issue_state.get('error_codes', []))
+
+        # 2d. ATTACHMENT CONTEXT RETRIEVAL
+        attach_contexts = self.sql.get_ticket_attachments_context(ticket_id)
+        attach_summary = ""
+        if attach_contexts:
+            attach_summary = "\nATTACHMENT CONTEXT FOUND:\n" + "\n".join([
+                f"- {a['filename']}: {a['content_summary']}" for a in attach_contexts
+            ])
+
+        logger.info(f"🧠 Stage 2: Generating AI Draft for ticket {display_id}...")
         
         # 3. DUAL RAG SEARCH
-        # Use interpreted summary if high confidence, else raw text
-        rag_query = summary if (summary and interpretation.get('confidence_score', 0) > 0.7) else last_msg['body_text']
+        # Consolidated query using Persistent State + Current Message
+        consolidated_query = f"{problem_summary} {technical_signals} {error_codes}".strip()
+        rag_query = consolidated_query if len(consolidated_query) > 10 else last_msg['body_text']
+        
+        # Add current message context if it's very different from the summary
+        if summary and problem_summary and self.subject_matcher.calculate_similarity(summary, problem_summary) < 0.5:
+             rag_query += f" CURRENT UPDATE: {summary}"
         
         # 3a. Search documentation (authoritative)
         docs = self.documentation_db.search_similar(
@@ -761,15 +901,18 @@ class SupportAgent:
         )
         logger.info(f"📧 Experience search: {len(experiences)} past cases found")
         
+        # Resolve friendly ID for logging and passing to AI
+        display_id = self.sql.get_display_id(ticket_id)
+
         # 4. Generate response with SEPARATE contexts and INTENT routing
         draft, provenance = self.ai.generate_response(
             messages=messages,
             documentation_context=docs,      
             experience_context=experiences,   
             customer_email=messages[0].get('sender'),
-            subject=messages[0].get('subject'),
             intent=intent,
-            summary=summary
+            summary=f"{summary}\n{attach_summary}", # Include attachment info in summary context
+            display_id=display_id
         )
         
         # 5. Save draft with combined provenance
@@ -782,7 +925,7 @@ class SupportAgent:
                 exp_prov = [p for p in provenance if p.get('source') == 'experience']
                 
                 logger.info(
-                    f"✅ SUCCESS: AI Response Generated successfully for ticket {ticket_id} | "
+                    f"✅ SUCCESS: AI Response Generated successfully for ticket {display_id} | "
                     f"Docs: {len(doc_prov)} | Exp: {len(exp_prov)}"
                 )
                 
@@ -796,9 +939,9 @@ class SupportAgent:
                         f"   📧 Top experience similarity: {exp_prov[0].get('similarity_score', 0):.2%}"
                     )
             else:
-                logger.info(f"✅ SUCCESS: AI Response Generated successfully for ticket {ticket_id} (no context)")
+                logger.info(f"✅ SUCCESS: AI Response Generated successfully for ticket {display_id} (no context)")
         else:
-            logger.error(f"❌ Failed to generate draft for {ticket_id}")
+            logger.error(f"❌ Failed to generate draft for {display_id}")
     
     def run_backlog(self, days: int = 7):
         """
@@ -869,7 +1012,9 @@ class SupportAgent:
                 ai_success += 1
             except Exception as e:
                 ai_errors += 1
-                logger.error(f"❌ Error generating AI for {ticket_id}: {e}")
+                # Resolve friendly ID for log
+                err_id = self.sql.get_display_id(ticket_id)
+                logger.error(f"❌ Error generating AI for {err_id}: {e}")
         
         logger.info("=" * 80)
         logger.info("Backlog processing complete")

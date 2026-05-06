@@ -38,11 +38,18 @@ class ImageProcessor:
         """
         self.ai = ai_agent
         
-        # Noise filtering keywords (keep local to skip low-quality images)
+        # Noise filtering keywords (Pure noise if no signal is found)
         self.NOISE_KEYWORDS = [
             "logo", "icon", "symbol", "trademark", "social media",
             "button", "banner", "copyright", "signature", 
             "a man in a white shirt and tie"
+        ]
+
+        # High-signal keywords: If these are present, the image is NEVER noise
+        self.SIGNAL_KEYWORDS = [
+            "error", "screenshot", "transaction", "financial", "table", 
+            "data", "chart", "graph", "invoice", "receipt", "statement",
+            "log", "code", "text", "message", "details", "user interface"
         ]
         
         logger.info("ImageProcessor initialized (Cloud Vision mode)")
@@ -56,63 +63,79 @@ class ImageProcessor:
         Process a single image using OpenAI Vision.
         
         Strategy:
-        1. Basic local normalization/filtering.
-        2. Reroute to OpenAI (gpt-4o for tables, gpt-4o-mini for others).
-        
-        Args:
-            image_bytes: Raw image data
-            filename: Original filename (for context hints)
-            is_complex_table: If True, uses gpt-4o for better table extraction
-            
-        Returns:
-            str: Analysis result or empty string
+        1. Basic local normalization.
+        2. Reroute to OpenAI.
+        3. Multi-tier filtering (Noise vs Signal).
         """
         if not self.ai:
             logger.warning("ImageProcessor: AI agent not attached. Skipping image.")
             return ""
             
         try:
-            # Step 0: Check filename for hints if is_complex_table is false
+            # Step 0: Check filename for noise (e.g. image001.png is usually signature noise)
             fn = filename.lower()
+            if any(x in fn for x in ["image001", "image002", "image003", "image004"]):
+                 # Only skip if it's also small
+                 if len(image_bytes) < 50000: # < 50KB
+                    logger.info(f"⏭️  Skipping suspected signature image (filename match + small size): {filename}")
+                    return ""
+
             if not is_complex_table:
                 if any(x in fn for x in ["table", "excel", "sheet", "csv", "data", "report", "stats"]):
                     is_complex_table = True
                     logger.info(f"Detected potential table hint in filename '{filename}'; using gpt-4o")
 
-            # Step 1: Load and validate image locally (CPU)
+            # Step 1: Pre-filter by byte size (Logos are usually < 20KB)
+            if len(image_bytes) < 20480: # 20KB
+                logger.info(f"⏭️  Skipping small image ({len(image_bytes)} bytes) - likely logo/icon noise.")
+                return ""
+
+            # Step 2: Load and validate image locally (CPU)
             image_bytes = self._normalize_image_bytes(image_bytes)
             image = self._load_pil_image(image_bytes)
             
             if image is None:
-                return ""
+                return "" # Already logged as too small/invalid in _load_pil_image
             
-            # Re-get bytes if changed (resized)
             img_byte_arr = io.BytesIO()
             image.save(img_byte_arr, format='JPEG')
             processed_bytes = img_byte_arr.getvalue()
             image.close()
 
-            # Step 2: Choose model
+            # Step 3: Choose model
             model = self.ai.ANALYSIS_MODEL if is_complex_table else self.ai.INTERPRETATION_MODEL
             
-            # Step 3: Call OpenAI Vision
+            # Step 4: Call OpenAI Vision
             logger.info(f"📤 Rerouting image to OpenAI ({model})...")
             analysis = self.ai.analyze_image(processed_bytes, model=model)
             
             if not analysis:
                 return ""
 
-            # Step 4: Simple local filtering
+            # Step 5: Refined local filtering (Signal-Aware)
+            import re
             analysis_lower = analysis.lower()
-            if any(keyword in analysis_lower for keyword in self.NOISE_KEYWORDS):
-                logger.info(f"Filtered image classified as noise by AI: '{analysis[:50]}...'")
+            
+            # Use regex for whole-word matching to avoid "log" matching "logo"
+            def has_word(text, word):
+                return re.search(r'\b' + re.escape(word) + r'\b', text) is not None
+
+            # Check for high-signal keywords first
+            has_signal = any(has_word(analysis_lower, kw) for kw in self.SIGNAL_KEYWORDS)
+            
+            # Check for noise keywords
+            contains_noise = any(has_word(analysis_lower, kw) for kw in self.NOISE_KEYWORDS)
+            
+            # DECISION: Only filter if it has noise AND lacks any signal
+            if contains_noise and not has_signal:
+                logger.info(f"Filtered image classified as PURE NOISE (no signal found): '{analysis[:50]}...'")
                 return ""
             
             result = f"[Attachment: {filename}] [Visual Analysis: {analysis.strip()}]"
             logger.info(f"Image processed successfully via {model}")
-            
+            logger.info(f"Result: {result}")
             return result
-        
+            
         except Exception as e:
             logger.error(f"Image processing error: {e}")
             return ""
@@ -134,7 +157,7 @@ class ImageProcessor:
             
             # Dimension validation
             width, height = img.size
-            if width < 50 or height < 50:
+            if width < 100 or height < 100:
                 logger.debug(f"Skipped image (too small: {width}x{height})")
                 return None
             

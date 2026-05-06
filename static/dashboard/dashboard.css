@@ -179,7 +179,7 @@ body.modal-open {
 }
 
 #previewModal .preview-header {
-    padding: 1rem 1.5rem;
+    padding: 0.75rem 1rem;
     background: var(--bg-card);
     border-bottom: 1px solid var(--border-color);
     display: flex;
@@ -1311,14 +1311,14 @@ body.dark-mode .email-iframe-container {
     position: absolute;
     top: 1rem;
     right: 1.5rem;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
     border-radius: 50%;
     width: 32px;
     height: 32px;
     font-size: 1.2rem;
     cursor: pointer;
-    color: white;
+    color: var(--text-primary);
     z-index: 1100;
     display: flex;
     align-items: center;
@@ -1333,6 +1333,12 @@ body.dark-mode .email-iframe-container {
     color: white;
     border-color: #ff5252;
     transform: rotate(90deg);
+}
+
+body.dark-mode .close-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 .modal-header-actions {
@@ -1733,6 +1739,7 @@ body.dark-mode .email-iframe-container {
     font-size: 0.9rem;
     opacity: 0;
     transition: opacity 0.3s;
+    z-index: 9999;
 }
 
 .refresh-indicator.show {

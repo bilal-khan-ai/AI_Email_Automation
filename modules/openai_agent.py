@@ -96,7 +96,7 @@ class OpenAIAgent:
     def interpret_message(self, text: str, subject: str = "") -> Dict[str, Any]:
         """
         Stage 1: Interpretation Layer
-        Classify intent, urgency, and requirements using gpt-4o-mini.
+        Classify intent, urgency, and requirements using gpt-4.1-nano-2025-04-14.
         """
         if not self.client:
             raise Exception("Not authenticated.")
@@ -134,11 +134,70 @@ Intents:
         except Exception as e:
             logger.error(f"Interpretation failed: {e}")
             return {
-                "intent": "OTHER",
-                "urgency": "MEDIUM",
-                "summary": clean_text[:100],
-                "requires_human": False,
                 "confidence_score": 0.0
+            }
+    
+    def update_issue_state(self, messages: List[Dict[str, Any]], current_state: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Consolidate thread history into a persistent Issue State.
+        
+        Args:
+            messages: Full thread messages
+            current_state: Previous issue state (if any) to refine
+            
+        Returns:
+            Dict: {problem_summary, key_entities, error_codes, technical_signals}
+        """
+        if not self.client:
+            raise Exception("Not authenticated.")
+            
+        try:
+            # Format thread for the state engine
+            history = []
+            for m in messages:
+                role = "SUPPORT" if m.get('is_internal') else "CUSTOMER"
+                history.append(f"{role}: {m.get('body_text', '')[:2000]}")
+            
+            thread_str = "\n".join(history)
+            
+            system_msg = """You are a Technical Support State Engine. 
+Your task is to extract a high-signal 'Issue State' from a support thread.
+This state is used for RAG retrieval, so focus on technical terms, error codes, and the core problem.
+
+RULES:
+1. Be extremely concise.
+2. Preserve all error codes (e.g., 0x8004, 404, 'Access Denied').
+3. Identify key entities (e.g., 'Outlook', 'Azure', 'Server B').
+4. Summarize the 'Current Problem' in one clear technical sentence.
+
+RETURN ONLY A JSON OBJECT:
+{
+  "problem_summary": "Technical description of the issue",
+  "entities": ["list", "of", "software/systems"],
+  "error_codes": ["list", "of", "errors"],
+  "technical_signals": "Specific technical context for RAG (e.g., 'SMTP timeout during handshake')"
+}"""
+
+            user_msg = f"CONVERSATION HISTORY:\n{thread_str}\n\nPREVIOUS STATE:\n{json.dumps(current_state) if current_state else 'None'}"
+            
+            response = self.client.chat.completions.create(
+                model=Config.INTERPRETATION_MODEL,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg}
+                ],
+                response_format={ "type": "json_object" },
+                temperature=0.0
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            logger.error(f"Issue state update failed: {e}")
+            return current_state or {
+                "problem_summary": "Context unavailable",
+                "entities": [],
+                "error_codes": [],
+                "technical_signals": ""
             }
     
     def _format_thread_context(self, messages: List[Dict[str, Any]], max_old_messages: int = 20) -> Tuple[str, str]:
@@ -273,9 +332,9 @@ Subject: {subject}
         user_instructions: Optional[str] = None,
         current_draft: Optional[str] = None,
         customer_email: str = "", 
-        subject: str = "",
         intent: str = "OTHER",
-        summary: str = ""
+        summary: str = "",
+        display_id: str = None
     ) -> Tuple[Optional[str], Optional[List[Dict[str, Any]]]]:
         """
         Generate AI response using GPT-5-mini with enhanced reasoning and sendability gate.
@@ -327,10 +386,10 @@ Subject: {subject}
             experience_context = experience_context or []
         
         try:
-            # Extract ticket_id for logging
-            ticket_id = messages[0].get('ticket_id', 'unknown') if messages else 'unknown'
+            # Resolve log ID: display_id > messages[0]['subject']
+            log_id = display_id or (messages[0].get('subject', 'unknown') if messages else 'unknown')
             
-            logger.info(f"🧠 Generating AI response for ticket {ticket_id}...")
+            logger.info(f"🧠 Generating AI response for ticket {log_id}...")
             
             # 1. Format thread into question + history
             thread_history, latest_question = self._format_thread_context(messages)
@@ -341,11 +400,11 @@ Subject: {subject}
             # 3. Format experience context and extract provenance
             exp_context, exp_provenance = self._format_experience_context(experience_context)
             
-            # Combine provenance
+            # 4. Combine provenance
             combined_provenance = doc_provenance + exp_provenance
             
             logger.info(
-                f"📊 RAG context for {ticket_id}: "
+                f"📊 RAG context for {log_id}: "
                 f"{len(documentation_context)} docs, "
                 f"{len(experience_context)} past cases"
             )
@@ -354,7 +413,7 @@ Subject: {subject}
                 "QUERY": "Your goal is to provide accurate, documentation-backed information. Be direct and helpful.",
                 "COMPLAINT": "The customer is frustrated. Be extremely empathetic, acknowledge the issue, and provide a clear path forward or workaround.",
                 "RESOLUTION": "The customer is confirming a fix. Keep it brief, express gratitude, and confirm the ticket can be monitored for further issues.",
-                "SCHEDULING": "The customer wants to meet. Provide clear instructions on how to book a slot or confirm the requested time if possible.",
+                "SCHEDULING": "The customer wants to meet. Provide clear instructions on how to book a slot or confirm the requested time.",
                 "REQUEST": "The customer is requesting an action. Acknowledge the request, set expectations on processing time, and confirm next steps.",
                 "OTHER": "Provide a standard professional support response."
             }
@@ -368,10 +427,10 @@ CLASSIFIED INTENT: {intent}
 CRITICAL OPERATING PRINCIPLES:
 
 1. INTERNAL REASONING (DO NOT SHOW TO USER):
-   Reason through classification, documentation coverage, conflict resolution, and assumption safety.
+   Reason through classification, documentation & conversational coverage, conflict resolution, and assumption safety.
    
 2. RESPONSE RULES:
-   - Follow documentation EXACTLY when available.
+   - Follow documentation EXACTLY when available and aplicable.
    - Use past experience ONLY if it does not contradict documentation.
    - NEVER invent product behavior.
    - If unsure: ask ONE specific clarifying question.
@@ -423,12 +482,12 @@ Past Support Cases labeled [RESOLVED] are verified high-quality resolutions. Reg
             else:
                 user_prompt_parts.append(f"1. Draft a professional email response addressing the {intent}.")
             
-            user_prompt_parts.append("2. Ensure your response is to the point and direct.")
+            user_prompt_parts.append("2. Ensure your response is to the point and direct and dont use hyphons (-).")
             
             user_prompt = "\n\n".join(user_prompt_parts)
 
             # 6. Call OpenAI API
-            logger.info(f"📤 Calling {Config.GENERATIONAL_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {ticket_id}...")
+            logger.info(f"📤 Calling {Config.GENERATIONAL_MODEL} (Context Window: {CONTEXT_WINDOW}) for ticket {log_id}...")
             if self.client is None:
                 raise Exception("Client is None")
             response = self.client.chat.completions.create(
@@ -446,18 +505,18 @@ Past Support Cases labeled [RESOLVED] are verified high-quality resolutions. Reg
             # 7. Log token usage
             if hasattr(response, 'usage'):
                 logger.info(
-                    f"📈 Token usage for {ticket_id} - "
+                    f"📈 Token usage for {log_id} - "
                     f"Prompt: {response.usage.prompt_tokens}, "
                     f"Completion: {response.usage.completion_tokens}, "
                     f"Total: {response.usage.total_tokens}"
                 )
             
-            logger.info(f"✅ AI response generated for ticket {ticket_id}")
+            logger.info(f"✅ AI response generated for ticket {log_id}")
             
             return ai_response, combined_provenance
             
         except Exception as e:
-            logger.error(f"❌ Error generating AI response for ticket {ticket_id}: {e}")
+            logger.error(f"❌ Error generating AI response for ticket {log_id}: {e}")
             return None, None
     
     def summarize_ticket(self, customer_question: str) -> Optional[str]:
@@ -494,7 +553,7 @@ Past Support Cases labeled [RESOLVED] are verified high-quality resolutions. Reg
     
     def categorize_ticket(self, customer_question: str, subject: str = "") -> str:
         """
-        Categorize a support ticket using gpt-4o-mini.
+        Categorize a support ticket using gpt-4.1-nano-2025-04-14.
         
         Args:
             customer_question: The customer's question/issue

@@ -1,112 +1,122 @@
-# AI Email Automation Project Context
+# AI Email Automation - Technical Reference Manual
 
-This document provides a quick reference for the project's file structure, core features, and detailed file descriptions.
-
----
-
-## 🏗️ Core Application Files
-
-### [main.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/main.py)
-Core application entry point and lifecycle manager for the Support Agent.
-- **SupportAgent Initialization**: Orchestrates all modules (SQL, Graph, Vector DBs, AI, Processors). `[Line 154]`
-- **Signal Handling**: Graceful shutdown on SIGINT/SIGTERM. `[Lines 235-242]`
-- **Ticket Cleanup Daemon**: Background thread for automated ticket archival and removal. `[Lines 244-301]`
-- **Ticket Lifecycle Management**: Soft-delete after 1 day; Hard-delete after 6 days. `[Lines 303, 343]`
-- **Live Polling Loop**: Periodic fetching of new emails from MS Graph. `[Line 798]`
-- **PII Redaction**: Automatic stripping of sensitive info before RAG ingestion. `[Line 455]`
-
-### [dashboard_socketio.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/dashboard_socketio.py)
-Real-time WebSocket server and Flask application logic.
-- **Template Folder**: Configured to use the `/Pages` directory. `[Line 21]`
-- **Real-time Synchronization**: Broadcasts ticket updates, locks, and status changes via SocketIO. `[Line 30]`
-- **Ticket Status Management**: Toggles between 'Open' and 'Closed' statuses. `[Line 527]`
-- **AI Regeneration**: Handles synchronous AI draft regeneration with user feedback. `[Line 1045]`
-- **Attachment Serving**: Authenticated endpoints for viewing/downloading attachments. `[Lines 729, 773]`
-
-### [auth.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/auth.py)
-User authentication, role-based access control, and session management.
-- **UserManager**: Database-backed user management with password hashing. `[Line 42]`
-- **RBAC**: Protects routes using `@login_required` and `@admin_required`. `[Lines 575, 591]`
-- **Assignable Flag**: Controls which users appear in assignment dropdowns. `[Line 101]`
-
-### [config.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/config.py)
-Centralized configuration loader from environment variables.
-- **Credential Management**: Azure, OpenAI, and Database connection strings.
-- **Feature Flags**: Toggles for AI generation, test mode, and logging levels.
-
----
-
-## 🧩 Modules (`/modules`)
-
-### [sql_logger.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/sql_logger.py)
-PostgreSQL backend for ticket persistence and event logging.
-- **Human-Readable Timeline**: Logs all user actions (Take, Save, Send) for the SLA timeline. `[Line 1324]`
-- **Staff Metrics**: Aggregated performance data (Response time, Wait time, Resolution time). `[Line 901]`
-- **Message Deduplication**: Uses `internet_message_id` to prevent duplicate ingestion. `[Line 1445]`
-
-### [openai_agent.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/openai_agent.py)
-AI orchestration for RAG and vision tasks.
-- **Dual-Context RAG**: Prioritizes BookStack docs over historical experience. `[Line 368]`
-- **Interpretation Layer**: Categorizes intent and urgency before generation. `[Line 96]`
-- **Vision Integration**: Routes all image analysis and OCR to OpenAI models. `[Line 634]`
-
-### [graph_connector.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/graph_connector.py)
-Resilient interface for Microsoft Graph API.
-- **Async Workers**: Offloads API calls to prevent blocking the event loop. `[Line 164]`
-- **Smart Ingestion**: Fixes broken CID image links and fetches attachments dynamically. `[Line 349]`
-
-### [env_manager.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/env_manager.py)
-Transactional management of the `.env` configuration file.
-- **Atomic Updates**: Ensures configuration changes are saved safely without corruption. `[Line 31]`
-- **Comment Preservation**: Maintains existing comments and formatting in the `.env` file. `[Line 46]`
-
-### [vector_db.py](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/modules/vector_db.py)
-Semantic search using ChromaDB.
-- **Dynamic Device Selection**: CUDA GPU support with CPU fallback. `[Line 53]`
-- **Soft-Delete**: Filters out inactive vectors from search results. `[Line 130]`
+## 📂 Project Architecture Tree
+```text
+AI_Email_Automation/
+├── .agents/
+│   └── project_context.md          # Central technical documentation (this file)
+├── data/                           # Local storage for DBs and artifacts
+├── modules/                        # Core functional components
+│   ├── doc_processor.py            # .docx and .pdf parsing engine
+│   ├── env_manager.py              # Atomic .env file transaction handler
+│   ├── graph_connector.py          # Microsoft Graph API resilient interface
+│   ├── image_processor.py          # Vision-based OCR and description
+│   ├── openai_agent.py             # Multi-stage reasoning and RAG engine
+│   ├── pii_redactor.py             # Presidio-based data scrubbing
+│   ├── sql_logger.py               # PostgreSQL persistence and audit system
+│   ├── tables_processor.py         # Tabular data extraction (xlsx/csv)
+│   └── vector_db.py                # ChromaDB manager with VRAM safety
+├── pages/                          # Jinja2 HTML Templates
+│   ├── admin_users.html            # Staff provisioning interface
+│   ├── dashboard.html              # Main support ticket dashboard
+│   ├── login.html                  # Authentication entry point
+│   └── management.html             # Admin console and system settings
+├── static/                         # Frontend assets (JS/CSS)
+│   ├── admin_users/                # Assets for staff management
+│   ├── dashboard/                  # Assets for the main dashboard
+│   ├── login/                      # Assets for authentication
+│   └── management/                 # Assets for admin console
+├── auth.py                         # RBAC and session authentication
+├── config.py                       # Centralized environment configuration
+├── dashboard_socketio.py           # Real-time WebSocket bridge (Backend)
+├── main.py                         # Central ingestion and daemon engine
+├── manage_users.py                 # CLI tool for staff provisioning
+├── ticket_cleanup.py               # Database maintenance and TTL manager
+└── .env                            # Environment secrets (Not in Tree)
+```
 
 ---
 
-## 📄 UI Pages (`/Pages`)
+## 🛠️ Module Technical Breakdown
 
-### [dashboard.html](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/Pages/dashboard.html)
-Main ticket management interface.
-- **De-bloated Structure**: Contains only HTML and Jinja2 bridge variables.
-- **Rich Interaction**: Iframe-based email rendering with Universal Dark Mode support.
+### 🛰️ `main.py` (Core Ingestion Engine)
+Acts as the central lifecycle manager for support tickets, bridging the Graph API and PostgreSQL.
+*   **SupportAgent Class [L33-316]**: The main engine orchestrating the ingestion and processing flow.
+*   **Email Polling Loop [L104-142]**: Periodic background task fetching latest emails from Outlook.
+*   **Ticket Ingestion Pipeline [L144-245]**: Multi-stage process including PII redaction and initial state analysis.
+*   **Subject-based Matching [L247-285]**: Logic for linking new replies to existing tickets via subject heuristics.
+*   **Background Maintenance [L287-316]**: Automatic cleanup of expired tokens and temporary file buffers.
+*   **Application Entry [L319-380]**: Service startup, daemon initialization, and signal handling.
 
-### [management.html](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/Pages/management.html)
-Admin console for performance metrics and staff control.
-- **Performance Grids**: Visual metrics for agent response and customer wait times.
-- **User Control**: Add/Remove staff and toggle assignable status.
+### 🔌 `dashboard_socketio.py` (Real-time Backend)
+The WebSocket layer providing low-latency updates to the web frontend.
+*   **SocketIO Setup & Auth [L1-54]**: Handshake logic and session validation for real-time connections.
+*   **Ticket Management [L100-350]**: Event handlers for assignment, status changes, and note additions.
+*   **SLA & Performance [L350-450]**: Dynamic calculation and broadcasting of real-time SLA metrics.
+*   **Real-time Broadcasts [L552-602]**: Efficient delta-updates to client-side dashboards to prevent full reloads.
+*   **Backend Poller [L604-648]**: Integration bridge for receiving updates from the `main.py` daemon.
 
-### [login.html](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/Pages/login.html)
-Secure entry point for the application.
-
-### [admin_users.html](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/Pages/admin_users.html)
-Granular user and role management interface.
-
----
-
-## 🎨 Static Assets (`/static`)
-
-Organized into page-specific subdirectories for modularity and performance.
-
-### **Dashboard Assets**
-- **[dashboard.js](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/dashboard/dashboard.js)**: Extracted logic (1600+ lines) handling SocketIO, Quill editor, and SLA timelines.
-- **[dashboard.css](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/dashboard/dashboard.css)**: Modern design system with Glassmorphism and Dark Mode tokens.
-
-### **Management Assets**
-- **[management.js](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/management/management.js)**: Performance chart rendering and socket-driven metric updates.
-- **[management.css](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/management/management.css)**: Specialized layout for data-heavy administrative grids.
-
-### **Login/Admin Assets**
-- **[login.js](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/login/login.js)**: Form validation and password visibility toggling.
-- **[admin_users.js](file:///c:/Users/Bilal/Desktop/AI_Email_Automation/static/admin_users/admin_users.js)**: Client-side validation for user creation and role updates.
+### 🧠 `modules/openai_agent.py` (AI Reasoning Engine)
+The brain of the system, responsible for RAG-augmented response generation and intent classification.
+*   **Interpretation Layer [L96-138]**: Classifies intent, urgency, and requirements using `gpt-4.1-nano`.
+*   **Issue State Engine [L140-201]**: Consolidates thread history into technical "Issue States" for precise RAG.
+*   **Response Generation [L326-520]**: Multi-source RAG (Docs + Experience) using `gpt-5-mini` with sendability gates.
+*   **Ticket Summarization [L522-552]**: Brief, high-signal summaries of customer issues for the dashboard.
+*   **Intent Categorization [L554-599]**: Statistical classification of tickets into functional buckets.
+*   **Vision/OCR Analysis [L699-752]**: Direct integration with OpenAI Vision for attachment analysis.
 
 ---
 
-## 🛠️ Utilities (`/utility`)
-- **ingest.py**: Bulk historical email ingestion tool.
-- **bookstack_ingest.py**: Sync tool for technical documentation.
-- **kb_diagnostic.py**: Verification tool for Vector DB integrity.
-- **cleanup_vectors.py**: Maintenance tool for hard-deleting vectors.
+## 🎨 Frontend Architecture
+
+### 📄 `pages/` (HTML Templates)
+Jinja2 templates providing the structure for the web-based management system.
+*   **`dashboard.html` [L1-366]**: Primary interface featuring real-time ticket cards, modal for conversation history, and AI draft composer.
+*   **`management.html` [L1-579]**: Administrative hub for staff performance analytics, system-wide settings, and ticket re-routing.
+*   **`login.html` [L1-70]**: Secure login interface with robust feedback for authentication failures.
+*   **`admin_users.html` [L1-248]**: Dedicated management page for staff credentialing and role-based access control.
+
+### ⚡ `static/` (Client-side Logic)
+JavaScript and CSS files providing interactivity and premium aesthetics.
+*   **`dashboard.js` [L1-1778]**: Orchestrates real-time UI synchronization, ticket locking logic, and modal state management.
+*   **`management.js` [L1-447]**: Drives administrative dashboards, rendering performance charts and live system-wide activity logs.
+*   **`login.js` [L1-30]**: Client-side validation and secure form handling for the authentication gateway.
+
+---
+
+## 🗄️ Core Data & Infrastructure
+
+### `modules/sql_logger.py` (Persistence Layer)
+Handles the relational schema, audit logs, and high-concurrency connection pooling.
+*   **Connection Management [L41-128]**: Thread-safe PostgreSQL pooling using `ThreadedConnectionPool`.
+*   **Schema Initialization [L153-412]**: Automated table creation and column migrations (provenance, soft-delete).
+*   **Ticket Lifecycle Logs [L414-798]**: Idempotent ticket creation and message persistence with `internet_message_id`.
+*   **Analytics Engine [L1683-1979]**: Aggregation of staff performance, domain stats, and ticket timelines.
+
+### `modules/vector_db.py` (RAG Backbone)
+Manages semantic storage and retrieval with a focus on memory efficiency.
+*   **VRAM Management [L26-89]**: Context-manager ensuring embedding models are unloaded immediately after use.
+*   **Batch Ingestion [L217-291]**: Optimized multi-document insertion for bulk processing.
+*   **Soft-Delete Enforcement [L362-517]**: Maintains semantic index parity with the SQL persistence layer.
+
+### `modules/graph_connector.py` (Outlook Integration)
+Resilient interface for Microsoft Graph API interactions.
+*   **Retry Config [L59-108]**: Advanced exponential backoff with random jitter for API resilience.
+*   **Asyncio Worker [L165-638]**: Background thread managing all non-blocking API calls to prevent UI stalls.
+*   **Email Threading [L548-614]**: Dedicated logic for preserving conversation integrity using Graph API reply endpoints.
+
+---
+
+## 🛡️ Security & Processing
+
+### `modules/pii_redactor.py` (Privacy scrubbing)
+*   **Indian PII Suite [L40-123]**: Specialized recognizers for PAN, Aadhaar, GSTIN, and IFSC codes.
+*   **Redaction Operators [L161-175]**: Granular mapping of sensitive entities to masked placeholders.
+
+### `modules/doc_processor.py` (Document Parser)
+*   **Docx Extraction [L144-232]**: Recursive extraction of text, tables, and images from Word attachments.
+*   **PDF Processing [L238-345]**: Hybrid approach using text extraction and vision-based OCR for scanned pages.
+
+---
+> [!NOTE]
+> This documentation is dynamically maintained. Line ranges are verified as of April 29, 2026.

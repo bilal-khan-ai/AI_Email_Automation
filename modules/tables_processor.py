@@ -235,24 +235,24 @@ def _detect_semantic_columns(columns: List[str]) -> Dict[str, List[str]]:
 @dataclass
 class TablesProcessorConfig:
     # display / size bounds
-    max_preview_rows: int = 25
-    max_preview_cols: int = 12
-    max_markdown_chars: int = 9000
-    max_combined_chars: int = 18000
+    max_preview_rows: int = 35
+    max_preview_cols: int = 15
+    max_markdown_chars: int = 12000
+    max_combined_chars: int = 25000
 
     # xlsx specifics
-    max_sheets: int = 10
+    max_sheets: int = 15
 
     # summarization limits
-    max_numeric_cols: int = 10
-    max_categorical_cols: int = 8
-    top_values_per_col: int = 5
-    max_outlier_rows: int = 8
+    max_numeric_cols: int = 15
+    max_categorical_cols: int = 12
+    top_values_per_col: int = 8
+    max_outlier_rows: int = 12
 
     # performance guards
-    max_rows_full_scan: int = 50000   # above this, we sample for stats
-    sample_rows_for_stats: int = 5000
-    header_scan_rows: int = 25
+    max_rows_full_scan: int = 100000   # above this, we sample for stats
+    sample_rows_for_stats: int = 8000
+    header_scan_rows: int = 35
     
     # output format controls
     include_preview: bool = False

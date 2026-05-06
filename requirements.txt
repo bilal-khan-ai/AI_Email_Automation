@@ -105,6 +105,7 @@ anyio==4.12.1
 python-dotenv==1.2.1
 beautifulsoup4==4.12.3
 regex==2026.1.15
+langdetect==1.0.9
 packaging==26.0
 rich==14.3.2
 PyYAML==6.0.3

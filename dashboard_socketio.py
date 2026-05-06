@@ -41,8 +41,8 @@ socketio = SocketIO(
     cors_allowed_origins="*",
     async_mode='threading',
     json=app.json,
-    logger=False,
-    engineio_logger=False
+    logger=True,
+    engineio_logger=True
 )
 
 # Ensure data directory exists
@@ -66,10 +66,10 @@ graph_connector = GraphConnector(
 )
 
 if not graph_connector.authenticate():
-    print("⚠️  WARNING: Failed to authenticate with Microsoft Graph at startup")
+    print("WARNING: Failed to authenticate with Microsoft Graph at startup")
     print("    Attachment downloads and email sending may fail")
 else:
-    print("✅ Global Graph connector authenticated successfully")
+    print("SUCCESS: Global Graph connector authenticated successfully")
 
 # Create uploads directory for temporary file storage
 UPLOAD_FOLDER = 'uploads'
@@ -565,9 +565,16 @@ def toggle_ticket_status():
     success = sql_logger.update_ticket_fields(ticket_db_id, update_data)
 
     if success:
+        # Resolve friendly ID for logging
+        display_id = sql_logger.get_display_id(ticket_id)
+        
         # Update vector DB with resolution status for RAG quality
         is_resolved = (new_status == 'Closed')
-        experience_db.update_ticket_status(ticket_id, is_resolved)
+        experience_db.update_ticket_status(ticket_id, is_resolved, display_id=display_id)
+        
+        # New: Resolution Gold Labeling (Gold Labeling ensures high-quality RAG retrieval for repeat issues)
+        experience_db.update_authority_status(ticket_id, is_resolved, display_id=display_id)
+        sql_logger.mark_ticket_as_authority(ticket_id, is_resolved)
 
         # Release lock if closing
         if new_status == 'Closed' and ticket_id in user_locks:
@@ -962,7 +969,7 @@ def handle_connect():
         'count': len(connected_users)
     })
     
-    print(f"User {username} ({user_id}) connected. Total users: {len(connected_users)}")
+    logger.info(f"✅ User {username} ({user_id}) connected. Total users: {len(connected_users)}")
 
 
 @socketio.on('disconnect')
@@ -992,6 +999,7 @@ def handle_disconnect():
     })
     
     print(f"User {username} ({user_id}) disconnected. Total users: {len(connected_users)}")
+    logger.info(f"❌ User {username} ({user_id}) disconnected. Total users: {len(connected_users)}")
 
 
 @socketio.on('lock_ticket')
@@ -1001,6 +1009,8 @@ def handle_lock_ticket(data):
     ticket_id = data.get('ticket_id')
     user_id = session.get('user_id', 'anonymous')
     username = session.get('user', {}).get('username', 'unknown')
+    
+    logger.info(f"🔒 User {username} is attempting to lock ticket {ticket_id}")
     
     if not ticket_id:
         emit('lock_failed', {'error': 'No ticket ID provided'})
@@ -1037,6 +1047,9 @@ def handle_unlock_ticket(data):
     """Unlock a ticket"""
     ticket_id = data.get('ticket_id')
     user_id = session.get('user_id', 'anonymous')
+    username = session.get('user', {}).get('username', 'unknown')
+    
+    logger.info(f"🔓 User {username} is unlocking ticket {ticket_id}")
     
     if not ticket_id:
         return
@@ -1057,6 +1070,8 @@ def handle_unlock_ticket(data):
 @socketio_login_required
 def handle_refresh_tickets():
     """Handle manual refresh request from client"""
+    username = session.get('user', {}).get('username', 'unknown')
+    logger.info(f"🔄 Ticket refresh requested by {username}")
     tickets = sql_logger.get_active_tickets()
     
     # Normalize statuses and add lock information

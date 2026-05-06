@@ -88,15 +88,15 @@ def _df_like_to_markdown(rows: List[List[str]], headers: List[str], max_rows: in
 
 @dataclass
 class DocProcessorConfig:
-    max_text_chars: int = 12000
-    max_combined_chars: int = 18000
-    max_images: int = 12
-    max_tables: int = 8
-    max_table_rows: int = 15
-    max_table_cols: int = 10
+    max_text_chars: int = 15000
+    max_combined_chars: int = 25000
+    max_images: int = 15
+    max_tables: int = 12
+    max_table_rows: int = 25
+    max_table_cols: int = 15
     # PDF-specific settings
-    max_pdf_pages: int = 10
-    max_pdf_ocr_pages: int = 6
+    max_pdf_pages: int = 20
+    max_pdf_ocr_pages: int = 12
     pdf_render_dpi: int = 200
 
 
