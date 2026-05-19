@@ -702,9 +702,30 @@ class SupportAgent:
 
         
         else:
-            # INTERNAL MESSAGE - must have parent ticket
+            # INTERNAL MESSAGE (Staff Sender)
             
             existing = self.sql.find_ticket_by_conversation_id(conv_id)
+            
+            if not existing:
+                # NEW: Check if support was looped in (To/CC) on a thread involving a customer
+                to_str = email.get('to', '').lower()
+                cc_str = email.get('cc', '').lower()
+                
+                if self.user_email.lower() in to_str or self.user_email.lower() in cc_str:
+                    customer_email = self.find_customer_email(email)
+                    
+                    # Only create if we found an actual external customer
+                    if not self._is_internal_email(customer_email):
+                        logger.info(f"✨ Creating ticket from internal chain | Customer: {customer_email} | Looped in: {self.user_email}")
+                        
+                        ticket_id = f"TKT-{msg_id}"
+                        success = self.sql.create_ticket(
+                            ticket_id, conv_id, subject, customer_email, actor=sender,
+                            source_received_at=email.get('received')
+                        )
+                        if success:
+                            # Re-fetch the newly created ticket info
+                            existing = self.sql.find_ticket_by_conversation_id(conv_id)
             
             if existing:
                 ticket_id = existing['ticket_id']

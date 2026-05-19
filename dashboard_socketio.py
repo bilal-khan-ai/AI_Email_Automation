@@ -639,9 +639,14 @@ def send_to_customer():
                 })
 
         # Send email - Try to reply to the last message for threading
-        final_recipient = Config.TEST_EMAIL if Config.TEST_MODE else send_to
-        final_cc = cc
-        final_bcc = bcc
+        if Config.TEST_MODE:
+            final_recipient = Config.TEST_EMAIL
+            final_cc = Config.TEST_CC if Config.TEST_CC else ''
+            final_bcc = '' # Always clear BCC in test mode
+        else:
+            final_recipient = send_to
+            final_cc = cc
+            final_bcc = bcc
         
         # Get thread messages to find the last message ID
         messages = sql_logger.get_thread_messages(ticket_id)

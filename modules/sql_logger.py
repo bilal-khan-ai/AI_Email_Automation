@@ -1501,24 +1501,18 @@ class SQLLogger:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                     query = """
-                        SELECT
-                            t.*,
-                            MAX(m.timestamp) AS last_message_at
-                        FROM tickets t
-                        LEFT JOIN ticket_messages m
-                            ON m.ticket_id = t.ticket_id
-                            AND m.deleted_at IS NULL
-                        WHERE t.deleted_at IS NULL
+                        SELECT *
+                        FROM tickets
+                        WHERE deleted_at IS NULL
                     """
                     params = []
                     
                     if assigned_to:
-                        query += " AND t.assigned_to = %s"
+                        query += " AND assigned_to = %s"
                         params.append(assigned_to)
                         
                     query += """
-                        GROUP BY t.id
-                        ORDER BY last_message_at DESC NULLS LAST;
+                        ORDER BY last_updated DESC NULLS LAST;
                     """
                     
                     cur.execute(query, params)

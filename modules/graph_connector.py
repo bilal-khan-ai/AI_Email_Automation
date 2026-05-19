@@ -523,10 +523,14 @@ class AsyncioWorker:
         message.to_recipients = [make_recipient(to_email)]
 
         if cc:
-            message.cc_recipients = [make_recipient(e.strip()) for e in cc.split(',') if e.strip()]
-
+            # Support both comma and semicolon separators
+            cc_list = cc.replace(';', ',').split(',')
+            message.cc_recipients = [make_recipient(e.strip()) for e in cc_list if e.strip()]
+        
         if bcc:
-            message.bcc_recipients = [make_recipient(e.strip()) for e in bcc.split(',') if e.strip()]
+            # Support both comma and semicolon separators
+            bcc_list = bcc.replace(';', ',').split(',')
+            message.bcc_recipients = [make_recipient(e.strip()) for e in bcc_list if e.strip()]
 
         if attachments:
             files = []
@@ -584,10 +588,14 @@ class AsyncioWorker:
             reply_message.to_recipients = [make_recipient(to_email)]
 
         if cc:
-            reply_message.cc_recipients = [make_recipient(e.strip()) for e in cc.split(',') if e.strip()]
+            # Support both comma and semicolon separators
+            cc_list = cc.replace(';', ',').split(',')
+            reply_message.cc_recipients = [make_recipient(e.strip()) for e in cc_list if e.strip()]
 
         if bcc:
-            reply_message.bcc_recipients = [make_recipient(e.strip()) for e in bcc.split(',') if e.strip()]
+            # Support both comma and semicolon separators
+            bcc_list = bcc.replace(';', ',').split(',')
+            reply_message.bcc_recipients = [make_recipient(e.strip()) for e in bcc_list if e.strip()]
 
         # 3. Add attachments if provided
         if attachments:

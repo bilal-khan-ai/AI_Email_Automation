@@ -11,6 +11,8 @@ let currentCustomerFilter = null;
 let isTicketLocked = false;
 let isRightPanelCollapsed = true;
 let currentTicketStatus = null; // Added this as it was used but not declared globally in the snippet (or was it?)
+let renderLimit = 50;
+let lastDisplayState = "";
 let globalConfig = {};
 async function fetchConfig() {
     try {
@@ -429,6 +431,12 @@ function displayTickets() {
     const searchInput = document.getElementById('search');
     const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
 
+    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}`;
+    if (lastDisplayState !== currentState) {
+        renderLimit = 50;
+        lastDisplayState = currentState;
+    }
+
     let processedTickets = currentTickets.map(ticket => {
         let latestMessageTime = ticket.last_updated || ticket.last_message_at || ticket.created_at;
         if (ticket.messages && ticket.messages.length > 0) {
@@ -487,7 +495,7 @@ function displayTickets() {
     if (typeof populateAssignmentFilter === 'function') populateAssignmentFilter();
     if (typeof populateCustomerFilter === 'function') populateCustomerFilter();
 
-    filteredTickets.sort((a, b) => b.last_message_at - a.last_message_at);
+    filteredTickets.sort((a, b) => b.latestActivity - a.latestActivity);
 
     if (filteredTickets.length === 0) {
         container.innerHTML = `
@@ -500,7 +508,9 @@ function displayTickets() {
         return;
     }
 
-    const ticketCards = filteredTickets.map(ticket => {
+    const ticketsToRender = filteredTickets.slice(0, renderLimit);
+
+    const ticketCards = ticketsToRender.map(ticket => {
         const ticketId = escapeHtml(ticket.ticket_id || 'NO-ID');
         const displayId = escapeHtml(ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID'));
         const rowId = ticket.id;
@@ -556,7 +566,45 @@ function displayTickets() {
         `;
     }).join('');
 
-    container.innerHTML = ticketCards;
+    let loadMoreHtml = '';
+    if (filteredTickets.length > renderLimit) {
+        const remaining = filteredTickets.length - renderLimit;
+        loadMoreHtml = `
+            <div style="text-align: center; padding: 20px; width: 100%;">
+                <button class="btn btn-secondary" onclick="renderLimit += 50; displayTickets();" style="padding: 8px 16px; border-radius: 6px; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
+                    Load More (${remaining} remaining)
+                </button>
+            </div>
+        `;
+    }
+
+    container.innerHTML = ticketCards + loadMoreHtml;
+}
+
+function renderTicketSkeleton() {
+    // Skeleton for individual info items
+    const fields = ['modal-ticket-id', 'modal-email', 'modal-date', 'modal-subject'];
+    fields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="skeleton skeleton-text" style="width: 150px; display: inline-block; vertical-align: middle;"></div>';
+    });
+
+    // Skeleton for message thread
+    const threadContainer = document.getElementById('emailChainContainer');
+    if (threadContainer) {
+        threadContainer.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 1rem; width: 100%;">
+                <div class="skeleton skeleton-bubble customer"></div>
+                <div class="skeleton skeleton-bubble staff" style="align-self: flex-end;"></div>
+                <div class="skeleton skeleton-bubble customer"></div>
+            </div>
+        `;
+    }
+
+    // Skeleton for draft editor (optional, but good for UX)
+    if (quillEditor) {
+        quillEditor.root.innerHTML = '<div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text" style="width: 60%;"></div>';
+    }
 }
 
 async function openTicket(ticketId, rowNumber) {
@@ -565,6 +613,10 @@ async function openTicket(ticketId, rowNumber) {
 
     const ticket = currentTickets.find(t => t.id === rowNumber || t.ticket_id === ticketId);
     if (!ticket) return;
+
+    // Show modal and skeleton immediately
+    document.getElementById('ticketModal').classList.add('active');
+    renderTicketSkeleton();
 
     currentTicketStatus = normalizeStatus(ticket.status);
 
@@ -642,9 +694,6 @@ async function openTicket(ticketId, rowNumber) {
     }
 
     const emailChainContainer = document.getElementById('emailChainContainer');
-    emailChainContainer.innerHTML = '';
-    document.getElementById('threadLoading').style.display = 'block';
-    document.getElementById('ticketModal').classList.add('active');
 
     try {
         const res = await fetch(`/api/ticket_messages/${ticketId}`);
@@ -652,7 +701,6 @@ async function openTicket(ticketId, rowNumber) {
         const data = await res.json();
         const messages = data.messages || [];
 
-        document.getElementById('threadLoading').style.display = 'none';
         renderThread(messages);
 
         const emailCC = document.getElementById('emailCC');
@@ -687,7 +735,6 @@ async function openTicket(ticketId, rowNumber) {
     } catch (err) {
         console.error("Error fetching messages:", err);
         emailChainContainer.innerHTML = '<p style="color:red; padding:10px;">Error loading thread.</p>';
-        document.getElementById('threadLoading').style.display = 'none';
     }
 }
 
@@ -1555,9 +1602,9 @@ function renderAuditLogs() {
     const gridContainer = document.getElementById('auditGrid');
     const emptyState = document.getElementById('auditEmptyState');
     if (!gridContainer) return;
-    
+
     const internalOnly = document.getElementById('showInternalOnly').checked;
-    
+
     // Deduplicate logs (noise reduction)
     const uniqueLogs = [];
     const seenEvents = new Set();
@@ -1599,7 +1646,7 @@ function renderAuditLogs() {
     const columns = [
         { name: 'Date', width: '120px', sort: true },
         { name: 'Time', width: '100px', sort: true },
-        { 
+        {
             name: 'Action',
             width: '120px',
             formatter: (cell) => {
@@ -1610,11 +1657,11 @@ function renderAuditLogs() {
                 else if (cell === 'STATUS_CHANGED') { badgeClass = 'badge-status'; label = 'Status'; }
                 else if (cell === 'ASSIGNMENT_CHANGED') { badgeClass = 'badge-assign'; label = 'Assign'; }
                 else if (cell === 'NOTE_ADDED') { badgeClass = 'badge-assign'; label = 'Note'; }
-                
+
                 return gridjs.html(`<span class="badge-audit ${badgeClass}">${label}</span>`);
             }
         },
-        { 
+        {
             name: 'Actor',
             width: '150px',
             formatter: (cell) => gridjs.html(`<div class="fw-bold text-truncate" title="${cell}">${cell}</div>`)
@@ -1653,11 +1700,11 @@ function calculateAndDisplaySLA(logs) {
     logs.forEach(ev => {
         const ts = new Date(ev.timestamp);
         if (ev.action_type === 'TICKET_CREATED') createdTime = ts;
-        
+
         // Handle response tracking
         const isOfficialResponse = ev.action_type === 'MESSAGE_SENT';
         const isNoteAsResponse = internalNoteAsResponse && ev.action_type === 'NOTE_ADDED';
-        
+
         if ((isOfficialResponse || isNoteAsResponse) && (!firstResponseTime || ts < firstResponseTime)) {
             firstResponseTime = ts;
         }
@@ -1665,7 +1712,7 @@ function calculateAndDisplaySLA(logs) {
         if (ev.action_type === 'STATUS_CHANGED' && (ev.metadata?.to === 'Closed' || ev.metadata?.to === 'Resolved')) {
             resolvedTime = ts;
         }
-        
+
         if (ev.action_type === 'MESSAGE_RECEIVED') waitStart = ts;
         if (isOfficialResponse && waitStart) {
             totalWait += (ts - waitStart);
@@ -1673,8 +1720,8 @@ function calculateAndDisplaySLA(logs) {
         }
     });
 
-    const update = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val; };
-    
+    const update = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+
     if (createdTime) {
         if (firstResponseTime) {
             const diff = Math.round((firstResponseTime - createdTime) / 60000);
@@ -1696,7 +1743,7 @@ function calculateAndDisplaySLA(logs) {
 
 function exportTimeline() {
     const internalOnly = document.getElementById('showInternalOnly').checked;
-    
+
     const toExport = cachedAuditLogs.filter(ev => {
         if (!internalOnly) {
             return !['AI_DRAFT_GENERATED', 'NOTE_ADDED', 'AI_DRAFT_UPDATED'].includes(ev.action_type);
@@ -1724,7 +1771,7 @@ function exportTimeline() {
         return row;
     });
 
-    let csvContent = "data:text/csv;charset=utf-8," 
+    let csvContent = "data:text/csv;charset=utf-8,"
         + headers.map(h => `"${h}"`).join(",") + "\n"
         + rows.map(row => row.map(cell => `"${(cell || "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
 
