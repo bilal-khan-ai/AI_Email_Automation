@@ -1156,6 +1156,7 @@ def handle_get_settings():
     # Filter for relevant settings to display
     display_vars = {
         'ENABLE_TICKET_CLEANUP_DAEMON': env_vars.get('ENABLE_TICKET_CLEANUP_DAEMON', 'True'),
+        'INTERNAL_NOTE_AS_RESPONSE': env_vars.get('INTERNAL_NOTE_AS_RESPONSE', 'False'),
         'SOFT_DELETE_CLOSED_AFTER_DAYS': env_vars.get('SOFT_DELETE_CLOSED_AFTER_DAYS', '14'),
         'HARD_DELETE_AFTER_DAYS': env_vars.get('HARD_DELETE_AFTER_DAYS', '16'),
         'POLLING_INTERVAL': env_vars.get('POLLING_INTERVAL', '300'),
@@ -1184,7 +1185,7 @@ def handle_update_settings(data):
     try:
         # Filter data to only include valid settings keys to avoid polluting .env
         valid_keys = [
-            'ENABLE_TICKET_CLEANUP_DAEMON', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
+            'ENABLE_TICKET_CLEANUP_DAEMON', 'INTERNAL_NOTE_AS_RESPONSE', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
             'HARD_DELETE_AFTER_DAYS', 'POLLING_INTERVAL', 'TEST_MODE',
             'TEST_EMAIL', 'TEST_CC', 'TEST_SUBJECT_TAG',
             'USER_EMAIL', 'PROCESSING_DAYS_BACK',
