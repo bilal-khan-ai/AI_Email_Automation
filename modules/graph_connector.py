@@ -539,6 +539,9 @@ class AsyncioWorker:
                 fa.name = att['name']
                 fa.content_type = att['contentType']
                 fa.content_bytes = base64.b64decode(att['content'])
+                if att.get('is_inline') or att.get('isInline'):
+                    fa.is_inline = True
+                    fa.content_id = att.get('content_id') or att.get('contentId')
                 files.append(fa)
             message.attachments = files
 
@@ -605,6 +608,9 @@ class AsyncioWorker:
                 fa.name = att['name']
                 fa.content_type = att['contentType']
                 fa.content_bytes = base64.b64decode(att['content'])
+                if att.get('is_inline') or att.get('isInline'):
+                    fa.is_inline = True
+                    fa.content_id = att.get('content_id') or att.get('contentId')
                 files.append(fa)
             reply_message.attachments = files
 

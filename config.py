@@ -19,10 +19,10 @@ class Config:
     ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL', 'gpt-4.1-mini-2025-04-14')
     
     # Chroma Database settings
-    CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', './chroma_db')
-    COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'support_emails')
-    BOOKSTACK_DB_PATH = os.getenv('BOOKSTACK_DB_PATH','./chromaDB')
-    BOOKSTACK_COLLECTION = os.getenv('BOOKSTACK_COLLECTION','bookstack_db')
+    CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', './data/chroma_db')
+    COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'new_support_emails')
+    BOOKSTACK_DB_PATH = os.getenv('BOOKSTACK_DB_PATH', './data/chroma_db')
+    BOOKSTACK_COLLECTION = os.getenv('BOOKSTACK_COLLECTION', 'bookstack_db')
 
     # PSQL
     POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')

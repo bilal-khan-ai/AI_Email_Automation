@@ -140,6 +140,14 @@ function formatDate(isoString) {
     }
 }
 
+function getLocalDateString(dateObj) {
+    if (!dateObj || isNaN(dateObj.getTime())) return '';
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 function truncateTicketId(id) {
     if (!id) return 'NO-ID';
     if (id.length < 20) return id;
@@ -430,8 +438,10 @@ function displayTickets() {
     const container = document.getElementById('tickets');
     const searchInput = document.getElementById('search');
     const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
+    const dateFilterInput = document.getElementById('dateFilter');
+    const selectedDate = dateFilterInput ? dateFilterInput.value : '';
 
-    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}`;
+    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}|${selectedDate}`;
     if (lastDisplayState !== currentState) {
         renderLimit = 50;
         lastDisplayState = currentState;
@@ -478,6 +488,14 @@ function displayTickets() {
             (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
             (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery))
         );
+    }
+
+    if (selectedDate) {
+        filteredTickets = filteredTickets.filter(t => {
+            const createdStr = getLocalDateString(new Date(t.created_at));
+            const activeStr = getLocalDateString(t.latestActivity);
+            return createdStr === selectedDate || activeStr === selectedDate;
+        });
     }
 
     let statsBase = processedTickets;
@@ -532,11 +550,19 @@ function displayTickets() {
             slaCardClass += ' reopened-tint';
         }
 
+        const hasUnreadResponse = (ticket.has_unread_response === true || ticket.has_unread_response === 1) && status === 'Open';
+        if (hasUnreadResponse) {
+            slaCardClass += ' unread-tint';
+        }
+
         const unansweredBadgeHtml = showUnansweredBadge ?
             '<span class="sla-badge-unanswered">⏰ Unanswered 24h+</span>' : '';
 
         const importantBadgeHtml = isReopened ?
             '<span class="important-badge">🚩 Reopened</span>' : '';
+
+        const unreadBadgeHtml = hasUnreadResponse ?
+            '<span class="unread-badge" title="New customer response unread">⭐ New</span>' : '';
 
         const isLocked = ticket.locked_by && ticket.locked_by !== null;
         const lockClass = isLocked ? 'locked-by-other' : '';
@@ -551,6 +577,7 @@ function displayTickets() {
                     ${lockBadge}
                     ${unansweredBadgeHtml}
                     ${importantBadgeHtml}
+                    ${unreadBadgeHtml}
                 </div>
                 <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
                     <span class="ticket-status status-${statusClass}">${status}</span>
@@ -1433,6 +1460,30 @@ async function regenerateAI() {
     }
 }
 
+function showSendingOverlay() {
+    let overlay = document.getElementById('sending-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'sending-overlay';
+        overlay.innerHTML = `
+            <div class="sending-overlay-content">
+                <div class="sending-spinner"></div>
+                <h3>Transmitting Message</h3>
+                <p>Uploading inline assets and sending reply via Microsoft Graph...</p>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+    }
+    overlay.classList.add('active');
+}
+
+function hideSendingOverlay() {
+    const overlay = document.getElementById('sending-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
 async function sendToCustomer() {
     if (isTicketLocked) return;
 
@@ -1463,6 +1514,8 @@ async function sendToCustomer() {
     });
     formData.append('attachment_count', attachedFiles.length);
 
+    showSendingOverlay();
+
     try {
         const response = await fetch('/api/send_to_customer', {
             method: 'POST',
@@ -1481,6 +1534,8 @@ async function sendToCustomer() {
     } catch (error) {
         console.error('Error sending:', error);
         alert('Error sending email.');
+    } finally {
+        hideSendingOverlay();
     }
 }
 
@@ -1584,6 +1639,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchInput = document.getElementById('search');
     if (searchInput) {
         searchInput.addEventListener('input', displayTickets);
+    }
+
+    const dateFilterInput = document.getElementById('dateFilter');
+    if (dateFilterInput) {
+        dateFilterInput.addEventListener('change', (e) => {
+            const selectedVal = e.target.value;
+            const clearBtn = document.getElementById('clearDateBtn');
+            if (clearBtn) {
+                clearBtn.style.display = selectedVal ? 'inline-block' : 'none';
+            }
+            displayTickets();
+        });
+    }
+
+    const clearDateBtn = document.getElementById('clearDateBtn');
+    if (clearDateBtn) {
+        clearDateBtn.addEventListener('click', () => {
+            if (dateFilterInput) {
+                dateFilterInput.value = '';
+            }
+            clearDateBtn.style.display = 'none';
+            displayTickets();
+        });
     }
 });
 

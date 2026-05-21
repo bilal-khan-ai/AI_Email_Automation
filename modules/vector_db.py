@@ -1,11 +1,7 @@
 """
-Vector Database with Soft-Delete Support and VRAM Management
-
-Improvements:
-1. Soft-delete mechanism to prevent orphaned vectors
-2. Batch cleanup operations for deleted tickets/messages
-3. Enhanced logging with structured context
-4. Maintains strict VRAM management from original
+Vector Database utilizing lightweight OpenAI API-based text-embedding-3-small.
+Permanently eliminates all local CPU/GPU/VRAM memory overhead.
+Soft-Delete Support and unified path structure.
 """
 
 import chromadb
@@ -14,7 +10,6 @@ from chromadb.utils import embedding_functions
 from typing import List, Dict, Optional
 import logging
 import gc
-from contextlib import contextmanager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,121 +18,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-@contextmanager
-def embedding_model_context(force_cpu: bool = False):
-    """
-    Context manager for embedding model with guaranteed cleanup.
-    
-    Usage:
-        with embedding_model_context() as (model, device):
-            if model is None:
-                # Failed to load
-                return
-            # Use model...
-        # Automatic cleanup here
-    
-    Guarantees:
-    - Model is unloaded when context exits
-    - VRAM is freed (if on GPU)
-    - No dangling references
-    """
-    model = None
-    device = None
-    
-    try:
-        from sentence_transformers import SentenceTransformer
-        import torch
-        
-        # Determine device
-        if force_cpu:
-            device = "cpu"
-        else:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        logger.info(f"⚙️  Loading embedding model (all-MiniLM-L6-v2) on {device}...")
-        model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
-        logger.info(f"✅ Embedding model loaded on {device}")
-        
-        yield model, device
-    
-    except Exception as e:
-        logger.error(f"❌ Embedding model context error: {e}")
-        yield None, None
-    
-    finally:
-        logger.info("🧹 Cleaning up embedding model...")
-        
-        if model is not None and device == "cuda":
-            try:
-                import torch
-                model.to("cpu")
-            except Exception:
-                pass
-        
-        if model is not None:
-            del model
-        
-        gc.collect()
-        if device == "cuda":
-            try:
-                import torch
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
-            except Exception:
-                pass
-        
-        logger.debug("✅ Embedding model cleanup complete")
-
-
 class VectorDatabase:
     """
-    Vector database with strict VRAM management and soft-delete support.
-    
-    Processing strategy:
-    1. Load embedding model only when needed
-    2. Process batch of operations
-    3. Unload immediately
-    4. Never keep model loaded between operations
-    
-    New features:
-    - Soft-delete mechanism to mark vectors as deleted
-    - Batch cleanup to remove deleted vectors
-    - Better logging with operation context
+    Vector database utilizing lightweight OpenAI API-based text-embedding-3-small.
+    Eliminates all local CPU/GPU/VRAM memory overhead.
     """
-    
     def __init__(self, db_path: str, collection_name: str, force_cpu: bool = True):
-        """
-        Initialize ChromaDB client.
-        
-        Args:
-            db_path: Path to ChromaDB storage
-            collection_name: Collection name
-            force_cpu: Force CPU for embeddings (default: True per system policy)
-        """
         self.db_path = db_path
         self.collection_name = collection_name
-        self.force_cpu = force_cpu
         
-        # Initialize ChromaDB (lightweight, no GPU)
+        # Load API key dynamically from Config to avoid import cycles
+        from config import Config
+        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=Config.OPENAI_API_KEY,
+            model_name="text-embedding-3-small"
+        )
+        
         self.client = chromadb.PersistentClient(
             path=db_path,
-            settings=Settings(anonymized_telemetry=False)
+            settings=Settings(anonymized_telemetry=False, allow_reset=True)
         )
         
-        # Get or create collection
+        # Initialize collection with OpenAI Embedder
         self.collection = self.client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=self.openai_ef
         )
         
-        # Create soft-delete collection (stores deleted IDs)
         self.deleted_collection = self.client.get_or_create_collection(
             name=f"{collection_name}_deleted",
             metadata={"description": "Tracks soft-deleted documents"}
         )
         
         logger.info(
-            f"✅ Vector database initialized | "
+            f"✅ OpenAI Vector DB initialized | "
             f"Active count: {self.collection.count()} | "
             f"Deleted count: {self.deleted_collection.count()}"
         )
@@ -146,43 +61,14 @@ class VectorDatabase:
                   image_descriptions: Optional[List[str]] = None, 
                   metadata: Optional[Dict] = None,
                   display_id: str = None) -> bool:
-        """
-        Add email to vector database.
-        
-        VRAM safety:
-        - Embedding model is loaded, used, and unloaded within this method
-        - No model remains in VRAM after return
-        
-        Args:
-            email_id: Unique email identifier
-            subject: Email subject
-            body: Email body
-            sender: Sender email
-            image_descriptions: Optional image descriptions
-            metadata: Optional metadata dict
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
         try:
-            # Check if already soft-deleted
             if self._is_deleted(email_id):
-                logger.warning(f"⚠️  Skipping add for already deleted email (ID: {email_id[0:20]})")
+                logger.warning(f"⚠️ Skipping add for already deleted email (ID: {email_id[0:20]})")
                 return False
             
-            # Prepare text content
             img_text = "\n".join(image_descriptions) if image_descriptions else ""
             text_content = f"Subject: {subject}\n\nBody: {body}\n\nAttachment Descriptions: {img_text}"
             
-            # Load embedding model, generate embedding, unload
-            with embedding_model_context(self.force_cpu) as (model, device):
-                if model is None:
-                    logger.error("❌ Embedding model not available")
-                    return False
-                
-                embedding = model.encode(text_content).tolist()
-            
-            # Prepare metadata
             meta = {
                 "subject": subject,
                 "sender": sender,
@@ -190,68 +76,33 @@ class VectorDatabase:
                 "is_authority": metadata.get('is_authority', False) if metadata else False,
                 **(metadata or {})
             }
-            
-            # ChromaDB MetadataValue cannot be None
             meta = {k: v for k, v in meta.items() if v is not None}
             
-            # Add to ChromaDB
+            # Embeddings generated automatically by registered OpenAI ef
             self.collection.add(
                 ids=[email_id],
-                embeddings=[embedding],
                 documents=[text_content],
                 metadatas=[meta]
             )
             
             log_ticket = display_id or meta.get('ticket_id', 'N/A')
-            logger.info(
-                f"✅ Added email to vector DB: {email_id[0:20]} | "
-                f"Ticket: {log_ticket} | "
-                f"Resolved: {meta.get('is_resolved', False)}"
-            )
+            logger.info(f"✅ Added email to vector DB: {email_id[0:20]} | Ticket: {log_ticket}")
             return True
-        
         except Exception as e:
             logger.error(f"❌ Error adding email (ID: {email_id[0:20]}): {e}")
             return False
-    
-    def add_emails_batch(self, emails: List[Dict]) -> int:
-        """
-        Add multiple emails in a single batch (more efficient).
-        
-        VRAM safety:
-        - Embedding model loaded once for entire batch
-        - Unloaded immediately after batch processing
-        
-        Args:
-            emails: List of dicts with keys: id, subject, body, sender, image_descriptions, metadata
             
-        Returns:
-            int: Number of successfully added emails
-        """
-        if not emails:
-            return 0
-        
+    def add_emails_batch(self, emails: List[Dict]) -> int:
+        if not emails: return 0
         try:
-            # Filter out soft-deleted emails
             deleted_ids = self._get_deleted_ids([email['id'] for email in emails])
             emails = [e for e in emails if e['id'] not in deleted_ids]
+            if not emails: return 0
             
-            if not emails:
-                logger.info("ℹ️  All emails in batch were soft-deleted, skipping")
-                return 0
-            
-            # Prepare all text content
-            texts = []
-            ids = []
-            metadatas = []
-            
+            texts, ids, metadatas = [], [], []
             for email in emails:
                 img_text = "\n".join(email.get('image_descriptions', []))
-                text_content = (
-                    f"Subject: {email['subject']}\n\n"
-                    f"Body: {email['body']}\n\n"
-                    f"Attachment Descriptions: {img_text}"
-                )
+                text_content = f"Subject: {email['subject']}\n\nBody: {email['body']}\n\nAttachment Descriptions: {img_text}"
                 
                 texts.append(text_content)
                 ids.append(email['id'])
@@ -263,63 +114,23 @@ class VectorDatabase:
                     **(email.get('metadata', {}))
                 })
             
-            # Clean metadatas (ChromaDB does not allow None values)
             metadatas = [{k: v for k, v in m.items() if v is not None} for m in metadatas]
             
-            # Load embedding model, generate all embeddings, unload
-            with embedding_model_context(self.force_cpu) as (model, device):
-                if model is None:
-                    logger.error("❌ Embedding model not available")
-                    return 0
-                
-                embeddings = model.encode(texts)
-                embeddings_list = [emb.tolist() for emb in embeddings]
-            
-            # Add batch to ChromaDB
-            self.collection.add(
-                ids=ids,
-                embeddings=embeddings_list,
-                documents=texts,
-                metadatas=metadatas
-            )
-            
+            self.collection.add(ids=ids, documents=texts, metadatas=metadatas)
             logger.info(f"✅ Added {len(emails)} emails to vector DB in batch")
             return len(emails)
-        
         except Exception as e:
             logger.error(f"❌ Error adding email batch: {e}")
             return 0
-    
+            
     def search_similar(self, query: str, top_k: int = 5) -> List[Dict]:
-        """
-        Search for similar documents (excludes soft-deleted).
-        
-        VRAM safety:
-        - Embedding model loaded, used for query encoding, unloaded
-        
-        Args:
-            query: Search query
-            top_k: Number of results to return
-            
-        Returns:
-            List of dicts with keys: content, metadata, distance
-        """
         try:
-            # Load embedding model, encode query, unload
-            with embedding_model_context(self.force_cpu) as (model, device):
-                if model is None:
-                    logger.error("❌ Embedding model not available")
-                    return []
-                
-                query_embedding = model.encode(query).tolist()
-            
-            # Search in ChromaDB (fetch extra to handle ranking and deleted docs)
+            # Automatic encoding by OpenAIef on query_texts
             results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=top_k * 4  # Fetch 4x to handle trust-based re-ranking and deletions
+                query_texts=[query],
+                n_results=top_k * 4
             )
             
-            # Filter out soft-deleted documents
             candidates = []
             if results['documents'] and results['documents'][0]:
                 result_ids = results['ids'][0]
@@ -327,8 +138,7 @@ class VectorDatabase:
                 
                 for i, doc in enumerate(results['documents'][0]):
                     doc_id = result_ids[i]
-                    if doc_id in deleted_ids:
-                        continue
+                    if doc_id in deleted_ids: continue
                     
                     candidates.append({
                         'id': doc_id,
@@ -337,284 +147,139 @@ class VectorDatabase:
                         'distance': results['distances'][0][i] if results['distances'] else 0
                     })
             
-            # Trust Hierarchy Re-ranking:
-            # 1. is_authority (Gold Label) - Highest priority
-            # 2. is_resolved (Known solution) - Medium priority
-            # 3. Distance (Semantic similarity) - Raw matching
             candidates.sort(key=lambda x: (
                 x['metadata'].get('is_authority', False),
                 x['metadata'].get('is_resolved', False),
-                -x['distance']  # Smaller distance is better, so negate for reverse sort
+                -x['distance']
             ), reverse=True)
             
-            formatted_results = candidates[:top_k]
-            
-            logger.info(
-                f"🔍 Search returned {len(formatted_results)} ranked results "
-                f"(candidates: {len(candidates)}, top authority: {formatted_results[0]['metadata'].get('is_authority', False) if formatted_results else 'N/A'})"
-            )
-            return formatted_results
-        
+            return candidates[:top_k]
         except Exception as e:
             logger.error(f"❌ Error searching: {e}")
             return []
-    
+
     def soft_delete(self, doc_ids: List[str]) -> int:
-        """
-        Soft-delete documents (mark as deleted without removing).
-        
-        This allows safe cleanup later while preventing immediate data loss.
-        
-        Args:
-            doc_ids: List of document IDs to soft-delete
-            
-        Returns:
-            int: Number of documents marked as deleted
-        """
-        if not doc_ids:
-            return 0
-        
+        if not doc_ids: return 0
         try:
-            # Check which IDs actually exist
             existing_ids = []
             for doc_id in doc_ids:
                 try:
                     result = self.collection.get(ids=[doc_id])
-                    if result and result['ids']:
-                        existing_ids.append(doc_id)
-                except Exception:
-                    pass
+                    if result and result['ids']: existing_ids.append(doc_id)
+                except Exception: pass
             
-            if not existing_ids:
-                logger.info("ℹ️  No documents found to soft-delete")
-                return 0
-            
-            # Add to deleted collection
+            if not existing_ids: return 0
             self.deleted_collection.upsert(
                 ids=existing_ids,
                 documents=[f"deleted:{doc_id}" for doc_id in existing_ids],
                 metadatas=[{"deleted": True} for _ in existing_ids]
             )
-            
-            logger.info(f"🗑️  Soft-deleted {len(existing_ids)} documents from vector DB")
+            logger.info(f"🗑️ Soft-deleted {len(existing_ids)} documents")
             return len(existing_ids)
-        
         except Exception as e:
-            logger.error(f"❌ Error soft-deleting documents: {e}")
+            logger.error(f"❌ Error soft-deleting: {e}")
             return 0
-    
+
     def hard_delete(self, doc_ids: List[str]) -> int:
-        """
-        Hard-delete documents (permanently remove from vector DB).
-        
-        WARNING: This cannot be undone. Use soft_delete for safety.
-        
-        Args:
-            doc_ids: List of document IDs to hard-delete
-            
-        Returns:
-            int: Number of documents permanently deleted
-        """
-        if not doc_ids:
-            return 0
-        
+        if not doc_ids: return 0
         try:
-            # Delete from main collection
             self.collection.delete(ids=doc_ids)
-            
-            # Also remove from deleted collection if present
-            try:
-                self.deleted_collection.delete(ids=doc_ids)
-            except Exception:
-                pass
-            
-            logger.info(f"🗑️  Hard-deleted {len(doc_ids)} documents from vector DB (permanent)")
+            try: self.deleted_collection.delete(ids=doc_ids)
+            except Exception: pass
             return len(doc_ids)
-        
         except Exception as e:
-            logger.error(f"❌ Error hard-deleting documents: {e}")
+            logger.error(f"❌ Error hard-deleting: {e}")
             return 0
-    
+
     def cleanup_deleted(self, batch_size: int = 100) -> int:
-        """
-        Permanently remove soft-deleted documents from vector DB.
-        
-        This should be run periodically (e.g., daily) to clean up disk space.
-        
-        Args:
-            batch_size: Number of documents to delete per batch
-            
-        Returns:
-            int: Total number of documents permanently deleted
-        """
         try:
-            # Get all soft-deleted IDs
             deleted_docs = self.deleted_collection.get()
-            
-            if not deleted_docs or not deleted_docs['ids']:
-                logger.info("ℹ️  No soft-deleted documents to clean up")
-                return 0
-            
+            if not deleted_docs or not deleted_docs['ids']: return 0
             deleted_ids = deleted_docs['ids']
             total_deleted = 0
-            
-            # Delete in batches
             for i in range(0, len(deleted_ids), batch_size):
                 batch = deleted_ids[i:i + batch_size]
-                
-                try:
-                    self.collection.delete(ids=batch)
-                    total_deleted += len(batch)
-                    
-                    logger.info(f"🧹 Cleaned up batch {i // batch_size + 1}: {len(batch)} documents")
-                except Exception as e:
-                    logger.error(f"❌ Error cleaning up batch: {e}")
-            
-            # Clear the deleted collection
-            if total_deleted > 0:
-                try:
-                    self.deleted_collection.delete(ids=deleted_ids)
-                    logger.info(f"✅ Cleanup complete: removed {total_deleted} soft-deleted documents")
-                except Exception as e:
-                    logger.error(f"❌ Error clearing deleted collection: {e}")
-            
+                self.collection.delete(ids=batch)
+                total_deleted += len(batch)
+            try: self.deleted_collection.delete(ids=deleted_ids)
+            except Exception: pass
             return total_deleted
-        
         except Exception as e:
-            logger.error(f"❌ Error during cleanup: {e}")
+            logger.error(f"❌ Error cleaning up: {e}")
             return 0
-    
+
     def _is_deleted(self, doc_id: str) -> bool:
-        """Check if a document is soft-deleted"""
         try:
             result = self.deleted_collection.get(ids=[doc_id])
             return bool(result and result['ids'])
-        except Exception:
-            return False
-    
+        except Exception: return False
+
     def _get_deleted_ids(self, doc_ids: List[str]) -> set:
-        """Get set of IDs that are soft-deleted from a list"""
         try:
             result = self.deleted_collection.get(ids=doc_ids)
-            if result and result['ids']:
-                return set(result['ids'])
+            if result and result['ids']: return set(result['ids'])
             return set()
-        except Exception:
-            return set()
-    
-    def get_count(self) -> int:
-        """Get total number of documents in collection (includes soft-deleted)"""
-        return self.collection.count()
-    
-    def get_active_count(self) -> int:
-        """Get number of active (non-deleted) documents"""
-        total = self.collection.count()
-        deleted = self.deleted_collection.count()
-        return total - deleted
-    
-    def get_deleted_count(self) -> int:
-        """Get number of soft-deleted documents"""
-        return self.deleted_collection.count()
+        except Exception: return set()
+
+    def get_count(self) -> int: return self.collection.count()
+    def get_active_count(self) -> int: return self.collection.count() - self.deleted_collection.count()
+    def get_deleted_count(self) -> int: return self.deleted_collection.count()
     
     def update_ticket_status(self, ticket_id: str, is_resolved: bool, display_id: str = None) -> int:
-        """
-        Update is_resolved metadata for all emails belonging to a ticket.
-        
-        Args:
-            ticket_id: Ticket ID to update
-            is_resolved: New resolved status
-            
-        Returns:
-            int: Number of vectors updated
-        """
         try:
-            # Find all vectors for this ticket
-            results = self.collection.get(
-                where={"ticket_id": ticket_id}
-            )
-            
-            log_id = display_id or ticket_id
-            if not results or not results['ids']:
-                logger.info(f"ℹ️  No vectors found for ticket {log_id} to update status")
-                return 0
-            
+            results = self.collection.get(where={"ticket_id": ticket_id})
+            if not results or not results['ids']: return 0
             ids = results['ids']
             metadatas = results['metadatas']
-            
-            # Update metadata for each
-            for meta in metadatas:
-                meta['is_resolved'] = is_resolved
-            
-            # Update in ChromaDB
-            self.collection.update(
-                ids=ids,
-                metadatas=metadatas
-            )
-            
-            logger.info(f"✨ Updated resolution status to {is_resolved} for {len(ids)} vectors in ticket {log_id}")
+            for meta in metadatas: meta['is_resolved'] = is_resolved
+            self.collection.update(ids=ids, metadatas=metadatas)
             return len(ids)
-            
         except Exception as e:
-            logger.error(f"❌ Error updating ticket status in vector DB: {e}")
+            logger.error(f"❌ Error updating status: {e}")
             return 0
 
     def update_authority_status(self, ticket_id: str, is_authority: bool, display_id: str = None) -> int:
-        """
-        Mark all emails in a ticket as authoritative (Gold Label).
-        
-        Args:
-            ticket_id: Ticket ID to update
-            is_authority: New authority status
-            
-        Returns:
-            int: Number of vectors updated
-        """
         try:
             results = self.collection.get(where={"ticket_id": ticket_id})
-            if not results or not results['ids']:
-                return 0
-            
+            if not results or not results['ids']: return 0
             ids = results['ids']
             metadatas = results['metadatas']
-            for meta in metadatas:
-                meta['is_authority'] = is_authority
-                
-            log_id = display_id or ticket_id
+            for meta in metadatas: meta['is_authority'] = is_authority
             self.collection.update(ids=ids, metadatas=metadatas)
-            logger.info(f"🏆 Marked {len(ids)} vectors as authority={is_authority} for ticket {log_id}")
             return len(ids)
         except Exception as e:
-            logger.error(f"❌ Error updating authority status: {e}")
+            logger.error(f"❌ Error updating authority: {e}")
             return 0
 
-    def cleanup(self):
-        """
-        Force cleanup of all resources.
-        
-        Call this during shutdown.
-        """
-        logger.info("🧹 VectorDatabase cleanup")
-        gc.collect()
+    def cleanup(self): gc.collect()
+
 
 class BookVectorDB:
-    def __init__(self, persist_directory: str = "./chromaDB"):
+    """
+    Documentation database wrapper utilizing OpenAI embedding functions.
+    Replaces original local HuggingFace query/add procedures.
+    """
+    def __init__(self, persist_directory: Optional[str] = None):
+        from config import Config
+        path = persist_directory or Config.BOOKSTACK_DB_PATH
+        
+        self.openai_ef = embedding_functions.OpenAIEmbeddingFunction(
+            api_key=Config.OPENAI_API_KEY,
+            model_name="text-embedding-3-small"
+        )
         self.client = chromadb.PersistentClient(
-            path=persist_directory,
+            path=path,
             settings=Settings(anonymized_telemetry=False, allow_reset=True)
         )
-        
-        import torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        logger.info(f"📚 BookVectorDB: Initialized with {self.device} (Manual Embedding)")
-    
+        logger.info(f"📚 BookVectorDB: Initialized under OpenAI space at {path}")
+
     def get_bookstack_collection(self):
-        """Get or create the bookstack_db collection."""
         return self.client.get_or_create_collection(
             name="bookstack_db",
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=self.openai_ef
         )
-    
+
     def query_bookstack(
         self,
         query_text: str,
@@ -624,30 +289,7 @@ class BookVectorDB:
         has_visual: Optional[bool] = None,
         failure_related: Optional[bool] = None
     ) -> Dict:
-        """
-        Query the Bookstack documentation database.
-        
-        Args:
-            query_text: Search query
-            n_results: Number of results to return
-            product: Filter by product name
-            intent: Filter by intent (how_to, troubleshooting, configuration)
-            has_visual: Filter for chunks with images
-            failure_related: Filter for failure-related content
-            
-        Returns:
-            Query results with documents and metadata
-        """
         collection = self.get_bookstack_collection()
-        
-        # Manually encode query using the VRAM-safe context manager
-        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
-            if model is None:
-                logger.error("❌ Embedding model not available for BookStack query")
-                return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
-            
-            query_embedding = model.encode(query_text).tolist()
-        
         where = {}
         if product:
             where["product"] = product
@@ -657,89 +299,50 @@ class BookVectorDB:
             where["has_visual"] = str(has_visual)
         if failure_related is not None:
             where["failure_related"] = str(failure_related)
-        
-        results = collection.query(
-            query_embeddings=[query_embedding],
+            
+        return collection.query(
+            query_texts=[query_text],
             n_results=n_results,
             where=where if where else None
         )
-        
-        return results
-    
-    def add_to_bookstack(
-        self,
-        documents: List[str],
-        metadatas: List[Dict],
-        ids: Optional[List[str]] = None
-    ) -> None:
-        """
-        Add documents to bookstack_db collection.
-        
-        Args:
-            documents: List of document texts
-            metadatas: List of metadata dictionaries
-            ids: Optional list of IDs (auto-generated if not provided)
-        """
+
+    def add_to_bookstack(self, documents: List[str], metadatas: List[Dict], ids: Optional[List[str]] = None) -> None:
         collection = self.get_bookstack_collection()
-        
-        # Manually encode documents using the VRAM-safe context manager
-        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
-            if model is None:
-                logger.error("❌ Embedding model not available for BookStack add")
-                return
-            
-            embeddings = model.encode(documents).tolist()
-        
         if ids is None:
             start_idx = collection.count()
             ids = [f"chunk_{i}" for i in range(start_idx, start_idx + len(documents))]
         
-        collection.add(
-            ids=ids,
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas
-        )
-    
-    def delete_from_bookstack(
-        self,
-        ids: Optional[List[str]] = None,
-        where: Optional[Dict] = None
-    ) -> None:
-        """
-        Delete documents from bookstack_db collection.
-        
-        Args:
-            ids: List of specific document IDs to delete
-            where: Metadata filter for deletion (e.g., {"product": "Gateway Pro"})
-        """
+        collection.add(ids=ids, documents=documents, metadatas=metadatas)
+
+    def search_similar(self, query: str, top_k: int = 5) -> List[Dict]:
+        """Aligns interface with search_similar used in main.py"""
+        raw = self.query_bookstack(query, n_results=top_k)
+        formatted = []
+        if raw and 'documents' in raw and raw['documents']:
+            for i, doc in enumerate(raw['documents'][0]):
+                formatted.append({
+                    'id': raw['ids'][0][i],
+                    'content': doc,
+                    'metadata': raw['metadatas'][0][i] if raw['metadatas'] else {},
+                    'distance': raw['distances'][0][i] if raw['distances'] else 0.5
+                })
+        return formatted
+
+    def delete_from_bookstack(self, ids: Optional[List[str]] = None, where: Optional[Dict] = None) -> None:
         collection = self.get_bookstack_collection()
-        
-        if ids:
-            collection.delete(ids=ids)
-        elif where:
-            collection.delete(where=where)
-        else:
-            raise ValueError("Must provide either ids or where filter")
-    
+        if ids: collection.delete(ids=ids)
+        elif where: collection.delete(where=where)
+        else: raise ValueError("Provide ids or where filter")
+
     def get_bookstack_stats(self) -> Dict:
-        """Get statistics about the Bookstack database."""
         collection = self.get_bookstack_collection()
-        return {
-            "total_chunks": collection.count(),
-            "name": collection.name,
-            "metadata": collection.metadata
-        }
-    
+        return {"total_chunks": collection.count(), "name": collection.name}
+
     def reset_bookstack_db(self) -> None:
-        """Delete and recreate the bookstack_db collection."""
-        try:
-            self.client.delete_collection(name="bookstack_db")
-        except:
-            pass
-        
+        try: self.client.delete_collection(name="bookstack_db")
+        except Exception: pass
         self.get_bookstack_collection()
-    
+
     def query_troubleshooting(
         self,
         query_text: str,
@@ -747,18 +350,12 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query troubleshooting content specifically."""
-        # Manually encode query
-        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
-            if model is None: return {"ids": [[]]}
-            query_embedding = model.encode(query_text).tolist()
-
+        collection = self.get_bookstack_collection()
         where = {"intent": "troubleshooting"}
         if product:
             where["product"] = product
-        
-        collection = self.get_bookstack_collection()
         return collection.query(
-            query_embeddings=[query_embedding],
+            query_texts=[query_text],
             n_results=n_results,
             where=where
         )
@@ -769,14 +366,9 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query for content that includes UI screenshots and VLM descriptions."""
-        # Manually encode query
-        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
-            if model is None: return {"ids": [[]]}
-            query_embedding = model.encode(query_text).tolist()
-
         collection = self.get_bookstack_collection()
         return collection.query(
-            query_embeddings=[query_embedding],
+            query_texts=[query_text],
             n_results=n_results,
             where={"has_visual": "True"}
         )
@@ -788,18 +380,12 @@ class BookVectorDB:
         n_results: int = 5
     ) -> Dict:
         """Query for failure-related content."""
-        # Manually encode query
-        with embedding_model_context(force_cpu=(self.device == "cpu")) as (model, device):
-            if model is None: return {"ids": [[]]}
-            query_embedding = model.encode(query_text).tolist()
-
+        collection = self.get_bookstack_collection()
         where = {"failure_related": "True"}
         if product:
             where["product"] = product
-        
-        collection = self.get_bookstack_collection()
         return collection.query(
-            query_embeddings=[query_embedding],
+            query_texts=[query_text],
             n_results=n_results,
             where=where
         )

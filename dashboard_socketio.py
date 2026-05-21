@@ -218,7 +218,7 @@ def management():
     """Admin management page"""
     users = auth.user_manager.list_users()
     # Filter only users who are marked as assignable (Staff or Admin)
-    staff_members = [u for u in users if u.get('is_assignable', True) and u['role'] in ['staff', 'admin']]
+    staff_members = [u for u in users if u['role'] in ['staff', 'admin']]
     staff_usernames = [u['username'] for u in staff_members]
     
     # Get stats for all tickets for admin overview
@@ -428,6 +428,16 @@ def get_ticket_details(ticket_id):
 def get_ticket_messages(ticket_id):
     """Get all messages for a specific ticket thread"""
     messages = sql_logger.get_thread_messages(ticket_id)
+    
+    # Mark ticket as read when thread is viewed
+    was_unread = sql_logger.mark_ticket_as_read(ticket_id)
+    if was_unread:
+        # Broadcast real-time update to all active dashboards to clear the badge
+        socketio.emit('ticket_updated', {
+            'ticket_id': ticket_id,
+            'updated_by': session.get('user_id')
+        })
+        
     return jsonify({'messages': messages})
 
 
@@ -638,6 +648,48 @@ def send_to_customer():
                     'contentType': file.content_type or 'application/octet-stream'
                 })
 
+        # Parse and extract copy-pasted inline images
+        from bs4 import BeautifulSoup
+        import re
+        import uuid
+
+        def extract_inline_images(html_content):
+            if not html_content:
+                return html_content, []
+            
+            soup = BeautifulSoup(html_content, 'html.parser')
+            inline_attachments = []
+            img_tags = soup.find_all('img')
+            
+            for idx, img in enumerate(img_tags):
+                src = img.get('src', '')
+                match = re.match(r'^data:(image/[a-zA-Z0-9\-\+\.]+);base64,(.+)$', src)
+                if match:
+                    content_type = match.group(1)
+                    base64_data = match.group(2).strip()
+                    
+                    # Extract file extension
+                    ext = content_type.split('/')[-1]
+                    if ext == 'jpeg':
+                        ext = 'jpg'
+                    
+                    cid = f"inline_img_{uuid.uuid4().hex[:12]}"
+                    filename = f"inline_image_{idx}.{ext}"
+                    
+                    img['src'] = f"cid:{cid}"
+                    
+                    inline_attachments.append({
+                        'name': filename,
+                        'content': base64_data,
+                        'contentType': content_type,
+                        'is_inline': True,
+                        'content_id': cid
+                    })
+            return str(soup), inline_attachments
+
+        ai_response, inline_imgs = extract_inline_images(ai_response)
+        attachments.extend(inline_imgs)
+
         # Send email - Try to reply to the last message for threading
         if Config.TEST_MODE:
             final_recipient = Config.TEST_EMAIL
@@ -706,6 +758,35 @@ def send_to_customer():
 
         sql_logger.update_ticket_fields(ticket['id'], update_payload, actor=actor_username)
         sql_logger.log_response_sent(ticket_id, actor_username, final_recipient)
+
+        # Compile and log sent message immediately into database for real-time thread rendering
+        sent_email_id = f"sent_{uuid.uuid4().hex}"
+        soup_text = BeautifulSoup(ai_response, 'html.parser').get_text()
+        
+        formatted_attachments = []
+        for idx, att in enumerate(attachments):
+            formatted_attachments.append({
+                'id': f"att_sent_{uuid.uuid4().hex[:12]}",
+                'name': att.get('name'),
+                'size': len(att.get('content', '')) * 3 // 4,  # Estimate size from base64 string length
+                'content_type': att.get('contentType'),
+                'content_id': att.get('content_id')
+            })
+
+        sent_msg = {
+            'id': sent_email_id,
+            'internet_message_id': None,
+            'sender': Config.USER_EMAIL,
+            'to': final_recipient,
+            'body_text': soup_text,
+            'body_html': ai_response,
+            'received': datetime.now(),
+            'attachments': formatted_attachments,
+            'cc': final_cc,
+            'bcc': final_bcc
+        }
+        
+        sql_logger.log_message(ticket_id, sent_msg, is_internal=True)
 
         socketio.emit('email_sent', {
             'ticket_id': ticket_id
@@ -1141,7 +1222,7 @@ def handle_get_staff_metrics(data):
     time_range = data.get('time_range', 'all')
     
     users = auth.user_manager.list_users()
-    staff_usernames = [u['username'] for u in users if u['role'] == 'staff' or (u['role'] == 'admin' and u.get('is_assignable'))]
+    staff_usernames = [u['username'] for u in users if u['role'] in ['staff', 'admin']]
     
     metrics = sql_logger.get_all_staff_metrics(staff_usernames, time_range)
     emit('staff_metrics_update', {'metrics': metrics, 'time_range': time_range})

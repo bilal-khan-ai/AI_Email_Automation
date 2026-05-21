@@ -833,6 +833,41 @@ body.dark-mode .ticket-card.reopened-tint {
     background-color: rgba(255, 87, 87, 0.15) !important;
 }
 
+.ticket-card.unread-tint {
+    border-left: 5px solid #f39c12 !important;
+}
+
+.unread-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3rem 0.6rem;
+    background: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+    color: #1a1a1a;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 4px rgba(243, 156, 18, 0.3);
+    animation: unread-pulse 2s infinite ease-in-out;
+}
+
+@keyframes unread-pulse {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 2px 4px rgba(243, 156, 18, 0.3);
+    }
+    50% {
+        transform: scale(1.03);
+        box-shadow: 0 4px 10px rgba(243, 156, 18, 0.6);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 2px 4px rgba(243, 156, 18, 0.3);
+    }
+}
+
 .important-badge {
     display: inline-flex;
     align-items: center;
@@ -1998,7 +2033,6 @@ body.dark-mode .message-header {
 .msg-header-col {
     flex: 0 0 auto;
     min-width: 220px;
-    max-width: 320px;
     display: flex;
     flex-direction: column;
 }
@@ -2018,8 +2052,6 @@ body.dark-mode .message-header {
     font-weight: 600;
     color: var(--text-primary);
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Custom Scrollbar for horizontal columns overflowing */
@@ -2038,4 +2070,116 @@ body.dark-mode .message-header {
 
 .msg-header-cols::-webkit-scrollbar-thumb:hover {
     background: var(--accent);
+}
+
+/* Premium Glassmorphism Sending Overlay */
+#sending-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 99999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#sending-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.sending-overlay-content {
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+    border-radius: 20px;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 420px;
+    text-align: center;
+    transform: scale(0.9);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+body.dark-mode .sending-overlay-content {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
+#sending-overlay.active .sending-overlay-content {
+    transform: scale(1);
+}
+
+.sending-spinner {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 30%, var(--primary-color, #4f46e5));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 7px), black 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 7px), black 0);
+    animation: premium-spin 1s linear infinite;
+    margin-bottom: 2rem;
+}
+
+.sending-overlay-content h3 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+    background: linear-gradient(135deg, var(--text-primary) 30%, var(--primary-color, #4f46e5));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.sending-overlay-content p {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+@keyframes premium-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* premium date-filter styling */
+.clear-date-btn {
+    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+.clear-date-btn:hover {
+    border-color: #e74c3c;
+    color: #e74c3c;
+    transform: translateY(-1px);
+}
+#dateFilter {
+    cursor: pointer;
+}
+#dateFilter::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    filter: var(--calendar-icon-filter, none);
+}
+body.dark-mode {
+    --calendar-icon-filter: invert(1);
 }

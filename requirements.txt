@@ -46,12 +46,12 @@ microsoft-kiota-serialization-text==1.9.8
 # ============================================================
 openai==1.97.0
 
-# Embeddings (lightweight model)
-sentence-transformers==5.2.2
+# Embeddings (lightweight model - deactivated in favor of OpenAI)
+# sentence-transformers==5.2.2
 
-# CPU-only torch (CRITICAL)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
+# CPU-only torch (CRITICAL - deactivated in favor of OpenAI)
+# --extra-index-url https://download.pytorch.org/whl/cpu
+# torch
 
 # PII Redaction
 presidio_analyzer==2.2.355

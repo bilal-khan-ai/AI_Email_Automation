@@ -178,7 +178,8 @@ class SQLLogger:
                             last_updated TIMESTAMPTZ NOT NULL,
                             deleted_at TIMESTAMPTZ,
                             reopened BOOLEAN DEFAULT FALSE,
-                            needs_ai_generation BOOLEAN DEFAULT FALSE
+                            needs_ai_generation BOOLEAN DEFAULT FALSE,
+                            has_unread_response BOOLEAN DEFAULT FALSE
                         )
                     """)
                     
@@ -214,6 +215,11 @@ class SQLLogger:
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='tickets' AND column_name='is_authority') THEN 
                                 ALTER TABLE tickets ADD COLUMN is_authority BOOLEAN DEFAULT FALSE;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='has_unread_response') THEN 
+                                ALTER TABLE tickets ADD COLUMN has_unread_response BOOLEAN DEFAULT FALSE;
                             END IF;
                         END $$;
                     """)
@@ -731,6 +737,27 @@ class SQLLogger:
             
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
+                    # Deduplication Strategy: Reconcile placeholder versions of instantly logged sent replies
+                    if message_id and not message_id.startswith('sent_'):
+                        body_content = email.get('body_html') or email.get('body_text') or email.get('body') or ''
+                        cur.execute("""
+                            SELECT message_id FROM ticket_messages 
+                            WHERE ticket_id = %s 
+                            AND message_id LIKE 'sent_%%'
+                            AND (body_html = %s OR body_text = %s)
+                            LIMIT 1
+                        """, (ticket_id, body_content, body_content))
+                        placeholder = cur.fetchone()
+                        if placeholder:
+                            placeholder_id = placeholder[0]
+                            logger.info(f"🔄 Reconciling placeholder {placeholder_id} with real Graph ID {message_id}")
+                            cur.execute("""
+                                UPDATE ticket_messages 
+                                SET message_id = %s, internet_message_id = %s, timestamp = %s
+                                WHERE message_id = %s
+                            """, (message_id, email.get('internet_message_id'), email.get('received'), placeholder_id))
+                            return True
+
                     cur.execute("""
                         INSERT INTO ticket_messages (
                             ticket_id, message_id, internet_message_id, sender, to_email, body_text,
@@ -757,11 +784,19 @@ class SQLLogger:
                     received_time = email.get('received')
                     
                     # Update ticket's last_updated timestamp (System metadata uses NOW)
-                    cur.execute("""
-                        UPDATE tickets 
-                        SET last_updated = %s 
-                        WHERE ticket_id = %s
-                    """, (datetime.now(), ticket_id))
+                    if logged:
+                        cur.execute("""
+                            UPDATE tickets 
+                            SET last_updated = %s,
+                                has_unread_response = %s
+                            WHERE ticket_id = %s
+                        """, (datetime.now(), not is_internal, ticket_id))
+                    else:
+                        cur.execute("""
+                            UPDATE tickets 
+                            SET last_updated = %s 
+                            WHERE ticket_id = %s
+                        """, (datetime.now(), ticket_id))
                     
                     if logged:
                         speaker = "INTERNAL" if is_internal else "CUSTOMER"
@@ -893,6 +928,26 @@ class SQLLogger:
                     return False
         except Exception as e:
             logger.error(f"❌ Error flagging ticket {ticket_id} for regeneration: {e}")
+            return False
+
+    def mark_ticket_as_read(self, ticket_id: str) -> bool:
+        """
+        Mark a ticket's unread response flag as read (FALSE).
+        
+        Returns True if the flag was previously TRUE and is now set to FALSE.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    # Only return True if we actually changed the value from TRUE to FALSE
+                    cur.execute("""
+                        UPDATE tickets 
+                        SET has_unread_response = FALSE 
+                        WHERE ticket_id = %s AND has_unread_response = TRUE
+                    """, (ticket_id,))
+                    return cur.rowcount > 0
+        except Exception as e:
+            logger.error(f"❌ Error marking ticket {ticket_id} as read: {e}")
             return False
 
     def get_tickets_needing_regeneration(self) -> List[str]:
@@ -1699,8 +1754,8 @@ class SQLLogger:
                     query = """
                         SELECT 
                             COUNT(t.id) as assigned,
-                            COUNT(t.id) FILTER (WHERE t.status = 'Open') as open,
-                            COUNT(t.id) FILTER (WHERE t.status = 'Closed') as closed,
+                            COUNT(t.id) FILTER (WHERE t.status IN ('Open', 'Pending Review', 'Pending', 'In Progress')) as open,
+                            COUNT(t.id) FILTER (WHERE t.status IN ('Closed', 'Resolved', 'Completed')) as closed,
                             AVG(m.first_response_duration) / 60 as avg_frt,
                             AVG(m.total_resolution_duration) / 3600 as avg_res,
                             COALESCE(SUM(m.reopen_count), 0) as reopens

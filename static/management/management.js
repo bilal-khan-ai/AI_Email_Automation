@@ -30,6 +30,20 @@ socket.on('staff_metrics_update', (data) => {
         if (elRes) elRes.textContent = m.avg_res + 'h';
         if (elReopens) elReopens.textContent = m.reopens;
     });
+
+    // Sort staff cards dynamically by total assigned tickets (maximum tickets on top)
+    const grid = document.getElementById('staffMetricsGrid');
+    if (grid) {
+        const cards = Array.from(grid.querySelectorAll('.staff-metric-card'));
+        cards.sort((a, b) => {
+            const usernameA = a.id.replace('metric-', '');
+            const usernameB = b.id.replace('metric-', '');
+            const countA = (currentMetrics.staff[usernameA] && currentMetrics.staff[usernameA].assigned) || 0;
+            const countB = (currentMetrics.staff[usernameB] && currentMetrics.staff[usernameB].assigned) || 0;
+            return countB - countA; // Descending
+        });
+        cards.forEach(card => grid.appendChild(card));
+    }
 });
 
 // Handle reassignment refresh
@@ -46,7 +60,9 @@ socket.on('client_stats_update', (data) => {
         container.innerHTML = '<div class="col-12 text-center py-5 text-secondary" style="grid-column: 1 / -1;">No client data found for this range.</div>';
         return;
     }
-    data.stats.forEach(s => {
+    // Sort client stats by total tickets in descending order
+    const sortedStats = [...data.stats].sort((a, b) => b.total_tickets - a.total_tickets);
+    sortedStats.forEach(s => {
         currentMetrics.clients[s.domain] = s;
         const card = document.createElement('div');
         card.className = 'staff-metric-card client-card';
