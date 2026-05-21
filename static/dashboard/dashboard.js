@@ -536,7 +536,7 @@ function displayTickets() {
             '<span class="sla-badge-unanswered">⏰ Unanswered 24h+</span>' : '';
 
         const importantBadgeHtml = isReopened ?
-            '<span class="important-badge">🚩 Important</span>' : '';
+            '<span class="important-badge">🚩 Reopened</span>' : '';
 
         const isLocked = ticket.locked_by && ticket.locked_by !== null;
         const lockClass = isLocked ? 'locked-by-other' : '';
@@ -560,7 +560,7 @@ function displayTickets() {
             <div class="ticket-subject">${subject}</div>
             <div class="ticket-meta">
                 <span>📧 ${customerEmail}</span>
-                <span>📅 ${timestamp}</span>
+                <span>📅 Last Replied: ${timestamp}</span>
             </div>
         </div>
         `;
@@ -965,14 +965,38 @@ function renderThread(messages) {
         const ccList = msg.cc ? escapeHtml(msg.cc) : '';
         const bccList = msg.bcc ? escapeHtml(msg.bcc) : '';
 
+        let toEmail = msg.to_email ? escapeHtml(msg.to_email) : '';
+        if (!toEmail) {
+            const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+            if (msg.is_internal) {
+                toEmail = activeTicket ? escapeHtml(activeTicket.customer_email || 'Customer') : 'Customer';
+            } else {
+                toEmail = escapeHtml(globalConfig.USER_EMAIL || 'Support Mailbox');
+            }
+        }
+
         messageCard.innerHTML = `
-            <div class="message-header" style="flex-direction: column; align-items: flex-start; padding: 8px 12px;">
-                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                    <span class="message-sender">${sender} <span style="font-weight:normal; opacity:0.8; font-size:0.8rem;">(${msg.is_internal ? 'Internal Note' : 'Customer'})</span></span>
+            <div class="message-header">
+                <div class="msg-header-top">
+                    <span class="badge ${msg.is_internal ? 'bg-primary' : 'bg-warning text-dark'}">
+                        ${msg.is_internal ? 'Staff Note / Reply' : 'Customer Message'}
+                    </span>
                     <span class="message-time">${timestamp}</span>
                 </div>
-                ${ccList ? `<div class="message-cc" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap;"><strong>CC:</strong> <span style="opacity: 0.85;">${ccList}</span></div>` : ''}
-                ${bccList ? `<div class="message-bcc" style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; display: flex; gap: 4px; flex-wrap: wrap;"><strong>BCC:</strong> <span style="opacity: 0.85;">${bccList}</span></div>` : ''}
+                <div class="msg-header-cols">
+                    <div class="msg-header-col">
+                        <span class="msg-header-label">From</span>
+                        <span class="msg-header-val" title="${sender}">${sender}</span>
+                    </div>
+                    <div class="msg-header-col">
+                        <span class="msg-header-label">To</span>
+                        <span class="msg-header-val" title="${toEmail}">${toEmail}</span>
+                    </div>
+                    <div class="msg-header-col">
+                        <span class="msg-header-label">CC ${bccList ? '(+BCC)' : ''}</span>
+                        <span class="msg-header-val" title="${ccList || 'None'}${bccList ? ' | BCC: ' + bccList : ''}">${ccList || '<span style="opacity:0.4; font-weight:normal;">—</span>'}</span>
+                    </div>
+                </div>
             </div>
             <div class="message-body ${index === 0 ? 'visible' : ''}">
                 <div class="email-iframe-container">

@@ -20,7 +20,7 @@ services:
   web:
     build: .
     restart: always
-    command: gunicorn -w 2 --threads 8 dashboard_socketio:app --bind 0.0.0.0:5000 --log-level info --timeout 120 --capture-output --enable-stdio-inheritance --access-logfile -
+    command: gunicorn -w 2 --threads 50 dashboard_socketio:app --bind 0.0.0.0:5000 --log-level info --timeout 120 --capture-output --enable-stdio-inheritance --access-logfile -
     ports:
       - "5000:5000"
     env_file:

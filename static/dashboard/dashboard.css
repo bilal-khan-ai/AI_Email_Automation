@@ -1963,3 +1963,79 @@ body.dark-mode .skeleton::after {
 .skeleton-bubble.customer {
     align-self: flex-start;
 }
+
+/* Premium Message Headers 3-Column Layout */
+.message-header {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    background: rgba(0, 0, 0, 0.02);
+    gap: 8px;
+}
+
+body.dark-mode .message-header {
+    background: rgba(255, 255, 255, 0.01);
+}
+
+.msg-header-top {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    align-items: center;
+}
+
+.msg-header-cols {
+    display: flex;
+    gap: 1.5rem;
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    scrollbar-width: thin;
+    -ms-overflow-style: auto;
+}
+
+.msg-header-col {
+    flex: 0 0 auto;
+    min-width: 220px;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+}
+
+.msg-header-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    opacity: 0.6;
+    font-weight: 700;
+    margin-bottom: 2px;
+    color: var(--text-secondary);
+}
+
+.msg-header-val {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Custom Scrollbar for horizontal columns overflowing */
+.msg-header-cols::-webkit-scrollbar {
+    height: 4px;
+}
+
+.msg-header-cols::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.msg-header-cols::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 2px;
+}
+
+.msg-header-cols::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}

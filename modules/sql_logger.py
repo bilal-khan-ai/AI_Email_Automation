@@ -231,6 +231,7 @@ class SQLLogger:
                             ticket_id TEXT NOT NULL,
                             message_id TEXT UNIQUE NOT NULL,
                             sender TEXT,
+                            to_email TEXT DEFAULT '',
                             body_text TEXT,
                             timestamp TIMESTAMPTZ,
                             attachments TEXT,
@@ -263,6 +264,11 @@ class SQLLogger:
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='ticket_messages' AND column_name='internet_message_id') THEN 
                                 ALTER TABLE ticket_messages ADD COLUMN internet_message_id TEXT;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='ticket_messages' AND column_name='to_email') THEN 
+                                ALTER TABLE ticket_messages ADD COLUMN to_email TEXT DEFAULT '';
                             END IF;
                         END $$;
                     """)
@@ -727,15 +733,16 @@ class SQLLogger:
                 with conn.cursor() as cur:
                     cur.execute("""
                         INSERT INTO ticket_messages (
-                            ticket_id, message_id, internet_message_id, sender, body_text,
+                            ticket_id, message_id, internet_message_id, sender, to_email, body_text,
                             body_html, timestamp, attachments, cc, bcc, is_internal
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO NOTHING
                     """, (
                         ticket_id,
                         message_id,
                         email.get('internet_message_id'),
                         email.get('sender'),
+                        email.get('to') or email.get('to_email') or '',
                         email.get('body_text') or email.get('body'),
                         email.get('body_html') or email.get('body'),
                         email.get('received'),
@@ -1408,9 +1415,11 @@ class SQLLogger:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                     cur.execute("""
-                        SELECT * FROM tickets 
-                        WHERE ticket_id = %s
-                        AND deleted_at IS NULL
+                        SELECT t.*, 
+                               (SELECT MAX(timestamp) FROM ticket_messages WHERE ticket_id = t.ticket_id) as last_message_at
+                        FROM tickets t 
+                        WHERE t.ticket_id = %s
+                        AND t.deleted_at IS NULL
                     """, (ticket_id,))
                     
                     row = cur.fetchone()
@@ -1501,9 +1510,10 @@ class SQLLogger:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                     query = """
-                        SELECT *
-                        FROM tickets
-                        WHERE deleted_at IS NULL
+                        SELECT t.*, 
+                               (SELECT MAX(timestamp) FROM ticket_messages WHERE ticket_id = t.ticket_id) as last_message_at
+                        FROM tickets t
+                        WHERE t.deleted_at IS NULL
                     """
                     params = []
                     
@@ -1547,15 +1557,17 @@ class SQLLogger:
                     search_pattern = f"%{query}%"
                     
                     cur.execute("""
-                        SELECT * FROM tickets 
-                        WHERE deleted_at IS NULL
+                        SELECT t.*, 
+                               (SELECT MAX(timestamp) FROM ticket_messages WHERE ticket_id = t.ticket_id) as last_message_at
+                        FROM tickets t 
+                        WHERE t.deleted_at IS NULL
                         AND (
-                            ticket_id ILIKE %s 
-                            OR display_id ILIKE %s
-                            OR subject ILIKE %s 
-                            OR customer_email ILIKE %s
+                            t.ticket_id ILIKE %s 
+                            OR t.display_id ILIKE %s
+                            OR t.subject ILIKE %s 
+                            OR t.customer_email ILIKE %s
                         )
-                        ORDER BY last_updated DESC
+                        ORDER BY t.last_updated DESC
                     """, (search_pattern, search_pattern, search_pattern, search_pattern))
                     
                     rows = cur.fetchall()

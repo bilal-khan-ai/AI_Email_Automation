@@ -803,6 +803,24 @@ def view_attachment():
         return jsonify({'error': f'Failed to view attachment: {str(e)}'}), 500
 
 
+
+@app.route('/api/config', methods=['GET'])
+@login_required
+def get_config():
+    """
+    Expose dynamic client-side configuration parameters to the frontend dashboard.
+    """
+    try:
+        return jsonify({
+            'INTERNAL_NOTE_AS_RESPONSE': Config.INTERNAL_NOTE_AS_RESPONSE,
+            'USER_EMAIL': Config.USER_EMAIL,
+            'TEST_MODE': Config.TEST_MODE
+        })
+    except Exception as e:
+        logger.error(f"Error serving config: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/download_attachment', methods=['GET'])
 @login_required
 def download_attachment():
