@@ -282,40 +282,52 @@ class AsyncioWorker:
         try:
             if request.request_type == RequestType.FETCH_EMAILS:
                 result = self.loop.run_until_complete(
-                    retry_with_backoff(
-                        lambda: self._fetch_emails_async(**request.params),
-                        self.retry_config,
-                        f"fetch_emails({request.params.get('user_email', 'unknown')})"
+                    asyncio.wait_for(
+                        retry_with_backoff(
+                            lambda: self._fetch_emails_async(**request.params),
+                            self.retry_config,
+                            f"fetch_emails({request.params.get('user_email', 'unknown')})"
+                        ),
+                        timeout=45.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
             
             elif request.request_type == RequestType.GET_ATTACHMENT:
                 result = self.loop.run_until_complete(
-                    retry_with_backoff(
-                        lambda: self._get_attachment_async(**request.params),
-                        self.retry_config,
-                        f"get_attachment({request.params.get('attachment_id', 'unknown')[:20]}...)"
+                    asyncio.wait_for(
+                        retry_with_backoff(
+                            lambda: self._get_attachment_async(**request.params),
+                            self.retry_config,
+                            f"get_attachment({request.params.get('attachment_id', 'unknown')[:20]}...)"
+                        ),
+                        timeout=30.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
 
             elif request.request_type == RequestType.SEND_EMAIL:
                 result = self.loop.run_until_complete(
-                    retry_with_backoff(
-                        lambda: self._send_email_async(**request.params),
-                        self.retry_config,
-                        "send_email"
+                    asyncio.wait_for(
+                        retry_with_backoff(
+                            lambda: self._send_email_async(**request.params),
+                            self.retry_config,
+                            "send_email"
+                        ),
+                        timeout=45.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
             
             elif request.request_type == RequestType.REPLY_TO_EMAIL:
                 result = self.loop.run_until_complete(
-                    retry_with_backoff(
-                        lambda: self._reply_to_email_async(**request.params),
-                        self.retry_config,
-                        "reply_to_email"
+                    asyncio.wait_for(
+                        retry_with_backoff(
+                            lambda: self._reply_to_email_async(**request.params),
+                            self.retry_config,
+                            "reply_to_email"
+                        ),
+                        timeout=45.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -733,6 +745,12 @@ class GraphConnector:
             response = response_queue.get(timeout=timeout)
             return response
         except queue.Empty:
+            logger.warning(f"⚠️ Graph request timed out after {timeout}s. Resetting worker thread...")
+            try:
+                self.shutdown()
+            except Exception as e:
+                logger.error(f"❌ Error during timeout shutdown: {e}")
+            self.authenticate()
             raise RuntimeError(f"Request timed out after {timeout} seconds")
     
     def fetch_latest_emails(self, user_email: str, minutes: int = 10, top: int = 100) -> List[Dict]:

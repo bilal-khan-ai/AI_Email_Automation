@@ -1127,6 +1127,14 @@ class SupportAgent:
                     except Exception as e:
                         logger.error(f"❌ Error generating AI for {ticket_id}: {e}")
                 
+                # Touch heartbeat file for Docker container health check
+                try:
+                    os.makedirs("data", exist_ok=True)
+                    with open(os.path.join("data", "worker_heartbeat.txt"), "w") as f:
+                        f.write(str(time.time()))
+                except Exception as hb_err:
+                    logger.debug(f"Failed to touch heartbeat file: {hb_err}")
+
                 # Sleep until next poll
                 if not self._shutdown_requested:
                     time.sleep(Config.POLLING_INTERVAL)

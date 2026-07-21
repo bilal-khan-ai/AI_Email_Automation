@@ -91,8 +91,9 @@ class PostgreSQLConnectionManager:
     def get_connection(self):
         """Context manager for getting a connection from the pool"""
         conn = None
+        is_broken = False
         try:
-            if self.pool:
+            if self.pool and not self.pool.closed:
                 conn = self.pool.getconn()
             else:
                 conn = psycopg2.connect(
@@ -109,16 +110,24 @@ class PostgreSQLConnectionManager:
             conn.commit()
             
         except Exception as e:
+            is_broken = True
             if conn:
-                conn.rollback()
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             logger.error(f"❌ Database error: {e}")
             raise
         finally:
             if conn:
-                if self.pool:
-                    self.pool.putconn(conn)
+                if self.pool and not self.pool.closed:
+                    should_close = is_broken or getattr(conn, 'closed', False)
+                    self.pool.putconn(conn, close=should_close)
                 else:
-                    conn.close()
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
     
     def close_all(self):
         """Close all connections in the pool"""
