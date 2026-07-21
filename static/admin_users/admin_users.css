@@ -16,7 +16,7 @@ body {
     margin-bottom: 30px;
 }
 .card-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #2ecc71 0%, #1b4332 100%);
     color: white;
     border-radius: 15px 15px 0 0 !important;
     padding: 20px;
@@ -67,7 +67,7 @@ body {
 .stat-number {
     font-size: 32px;
     font-weight: 700;
-    color: #667eea;
+    color: #2d6a4f;
 }
 .stat-label {
     color: #666;

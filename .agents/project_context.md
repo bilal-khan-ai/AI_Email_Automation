@@ -78,7 +78,7 @@ Jinja2 templates providing the structure for the web-based management system.
 
 ### ⚡ `static/` (Client-side Logic)
 JavaScript and CSS files providing interactivity and premium aesthetics.
-*   **`dashboard.js` [L1-1778]**: Orchestrates real-time UI synchronization, ticket locking logic, and modal state management.
+*   **`dashboard.js` [L1-1800+]**: Orchestrates real-time UI synchronization, ticket locking logic, modal state management, and interactive reporting charts with date filtering.
 *   **`management.js` [L1-447]**: Drives administrative dashboards, rendering performance charts and live system-wide activity logs.
 *   **`login.js` [L1-30]**: Client-side validation and secure form handling for the authentication gateway.
 
@@ -86,11 +86,16 @@ JavaScript and CSS files providing interactivity and premium aesthetics.
 
 ## 🗄️ Core Data & Infrastructure
 
+### `ticket_cleanup.py` (Database Maintenance)
+Standalone daemon/script for TTL and archival management.
+*   **Soft-Delete Archival**: Preserves ticket metadata for reporting integrity while purging heavy payload data (messages and attachments).
+
 ### `modules/sql_logger.py` (Persistence Layer)
 Handles the relational schema, audit logs, and high-concurrency connection pooling.
 *   **Connection Management [L41-128]**: Thread-safe PostgreSQL pooling using `ThreadedConnectionPool`.
-*   **Schema Initialization [L153-412]**: Automated table creation and column migrations (provenance, soft-delete).
+*   **Schema Initialization [L153-412]**: Automated table creation (including the `holidays` table) and migrations.
 *   **Ticket Lifecycle Logs [L414-798]**: Idempotent ticket creation and message persistence with `internet_message_id`.
+*   **SLA Business Seconds [L614-650]**: Custom Python business hours/seconds calculation excluding weekends and public holidays (`get_business_seconds`).
 *   **Analytics Engine [L1683-1979]**: Aggregation of staff performance, domain stats, and ticket timelines.
 
 ### `modules/vector_db.py` (RAG Backbone)

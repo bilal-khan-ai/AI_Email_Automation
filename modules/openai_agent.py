@@ -15,6 +15,7 @@ import json
 from openai import OpenAI
 from typing import List, Dict, Optional, Tuple, Any, cast
 from config import Config
+from datetime import datetime
 
 # Model Configuration - Dynamically linked to Config for hot-reloading
 CONTEXT_WINDOW = 400000
@@ -750,3 +751,59 @@ Subject: {subject}
         except Exception as e:
             logger.error(f"❌ Error analyzing image with {target_model}: {e}")
             return None
+
+    def parse_pasted_holidays(self, text: str) -> List[Dict[str, str]]:
+        """
+        Parse manually pasted holidays list into structured JSON.
+        """
+        if not self.client:
+            raise Exception("Not authenticated. Call authenticate() first.")
+        
+        system_msg = """You are a parser assistant.
+Your task is to parse a manually pasted text listing public/trading holidays into a structured JSON array.
+Each holiday object in the array must contain:
+- holiday: The name of the holiday (e.g. "Republic Day")
+- date: The date formatted as "YYYY-MM-DD"
+- day: The day of the week (e.g. "Monday")
+
+Verify and convert the dates carefully. E.g., short year date format "15-Jan-26" should be resolved to "2026-01-15".
+Always output a valid JSON array of objects, containing ONLY the JSON array. Do not include markdown blocks, backticks (like ```json), or any surrounding text.
+"""
+        try:
+            response = self.client.chat.completions.create(
+                model=Config.INTERPRETATION_MODEL,
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.0
+            )
+            content = response.choices[0].message.content.strip()
+            if content.startswith("```"):
+                content = re.sub(r"^```(?:json)?\n", "", content)
+                content = re.sub(r"\n```$", "", content)
+            
+            holidays_list = json.loads(content.strip())
+            if not isinstance(holidays_list, list):
+                raise ValueError("Expected a list of holidays")
+            
+            validated_list = []
+            for item in holidays_list:
+                holiday_name = str(item.get('holiday', '')).strip()
+                date_str = str(item.get('date', '')).strip()
+                day_str = str(item.get('day', '')).strip()
+                if not holiday_name or not date_str or not day_str:
+                    continue
+                try:
+                    datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    continue
+                validated_list.append({
+                    'holiday': holiday_name,
+                    'date': date_str,
+                    'day': day_str
+                })
+            return validated_list
+        except Exception as e:
+            logger.error(f"❌ Error parsing pasted holidays: {e}")
+            raise

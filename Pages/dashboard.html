@@ -5,15 +5,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Support Ticket Dashboard</title>
-    <link rel="icon"
-        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎫</text></svg>">
+    <link rel="icon" href="{{ url_for('static', filename='management/gws_logo.png') }}" type="image/png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://unpkg.com/gridjs/dist/theme/mermaid.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.css" rel="stylesheet">
+    <!-- <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.css" rel="stylesheet"> -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
 </head>
@@ -22,13 +22,17 @@
     <!-- Theme toggle moved to header -->
 
     <div class="header">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; width: 100%;">
-            <div>
-                <h1>🎫 Support Ticket Dashboard</h1>
-                <p>Real-time ticket monitoring and management</p>
-                <div style="margin-top: 1rem; font-weight: 500; font-size: 0.9rem; opacity: 0.9;">
-                    👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{
-                    'Administrator' if user.role == 'admin' else 'Support Staff' }})
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div style="display: flex; align-items: center; gap: 1.25rem;">
+                <img src="{{ url_for('static', filename='management/logo_banner.png') }}" alt="GWS Banner Logo"
+                    style="height: 60px; width: auto; object-fit: contain;">
+                <div>
+                    <h1 style="margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; color: white;">
+                        Support Ticket Dashboard</h1>
+                    <div style="margin-top: 0.25rem; font-weight: 500; font-size: 0.9rem; opacity: 0.85;">
+                        👤 Signed in as <strong style="text-decoration: underline;">{{ user.username }}</strong> ({{
+                        'Administrator' if user.role == 'admin' else 'Support Staff' }})
+                    </div>
                 </div>
             </div>
             <div style="display: flex; gap: 0.75rem; align-items: center;">
@@ -53,7 +57,7 @@
         </div>
     </div>
 
-    <div class="stats-grid">
+    <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
         <div class="stat-card">
             <div class="stat-value" id="stat-total">0</div>
             <div class="stat-label">Total Tickets</div>
@@ -79,7 +83,8 @@
                 <div class="pill-option active" data-visibility="all">All Tickets</div>
                 <div class="pill-slider"></div>
             </div>
-            <span style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
+            <span class="filter-separator"
+                style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
 
             <button class="filter-btn active" data-filter="all">All</button>
             <button class="filter-btn" data-filter="Open">Open</button>
@@ -102,11 +107,23 @@
                 <div class="filter-dropdown-content" id="customerFilterContent"></div>
             </div>
 
-            <span style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
+            <span class="filter-separator"
+                style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
 
-            <div class="date-filter-container" style="display: flex; align-items: center; gap: 0.5rem;">
-                <input type="date" id="dateFilter" class="filter-dropdown-btn" style="min-width: 160px; padding: 0.65rem 1rem;" title="Filter by Created or Reply Date">
-                <button class="clear-date-btn" id="clearDateBtn" style="display: none;" title="Clear date filter">✕</button>
+            <div class="date-filter-container">
+                <select id="timeRangeSelect" class="filter-dropdown-btn" style="appearance: auto;" onchange="onTimeRangeChange()">
+                    <option value="all" selected>All Time</option>
+                    <option value="today">Today</option>
+                    <option value="week">This Week</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+                <div id="customDateInputs" class="d-none">
+                    <input type="text" id="fromDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
+                    <span style="color: var(--text-secondary); font-size: 0.85rem;">to</span>
+                    <input type="text" id="toDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="applyCustomDates()"
+                        style="border-radius: 8px; font-weight: 600; background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%); border: none;">Apply</button>
+                </div>
             </div>
         </div>
     </div>
@@ -134,9 +151,14 @@
                         Take Ticket
                     </button>
 
-                    <button class="btn btn-danger btn-sm" id="btnToggleStatus" onclick="toggleTicketStatus()">
-                        <span id="toggleStatusIcon">✓</span> <span id="toggleStatusText">Close Ticket</span>
-                    </button>
+                    <div class="status-select-container d-inline-block" style="margin-right: 0.5rem;">
+                        <select id="modal-status" class="form-select form-select-sm" onchange="changeTicketStatus()" style="width: auto; font-weight: 600; border-radius: 20px; padding: 0.25rem 1.5rem 0.25rem 1rem;">
+                            <option value="Open">🟢 Open</option>
+                            <option value="Review">🔵 Review</option>
+                            <option value="Ignore">⚫ Ignore</option>
+                            <option value="Closed">🔴 Closed</option>
+                        </select>
+                    </div>
 
                     <div class="assignment-dropdown">
                         <select id="modal-assignment" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;"
@@ -180,6 +202,7 @@
                     <div id="emailChainContainer" class="message-thread"></div>
                 </div>
 
+                <!-- 
                 <div class="modal-right-panel collapsed" id="rightPanel">
                     <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Expand Draft Panel">◀</button>
 
@@ -240,6 +263,7 @@
                         </div>
                     </div>
                 </div>
+                -->
             </div>
         </div>
     </div>
@@ -271,7 +295,7 @@
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script> -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <!-- Timeline / Analytics Modal -->
     <div id="timelineModal" class="modal">
@@ -284,10 +308,11 @@
                     <button class="btn btn-outline-light btn-sm" onclick="exportTimeline()" id="btnExportLogs">
                         📥 Export Logs
                     </button>
-                    <button type="button" class="close-btn" onclick="closeTimeline()" title="Close" style="color: white; position: static;">&times;</button>
+                    <button type="button" class="close-btn" onclick="closeTimeline()" title="Close"
+                        style="color: white; position: static;">&times;</button>
                 </div>
             </div>
-            
+
             <div class="modal-body" style="overflow-y: auto; flex-grow: 1; padding: 0;">
                 <!-- SLA Metrics Section -->
                 <div class="sla-dashboard-container p-4 border-bottom">
@@ -323,7 +348,8 @@
                 <div class="audit-controls d-flex gap-3 p-3 border-bottom align-items-center">
                     <div id="grid-search-container" class="flex-grow-1"></div>
                     <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="showInternalOnly" onchange="renderAuditLogs()">
+                        <input class="form-check-input" type="checkbox" id="showInternalOnly"
+                            onchange="renderAuditLogs()">
                         <label class="form-check-label small" for="showInternalOnly">Show Internal</label>
                     </div>
                 </div>
@@ -332,9 +358,9 @@
                 <div class="p-3">
                     <div id="auditGrid"></div>
                 </div>
-                
 
-                
+
+
                 <div id="auditEmptyState" class="text-center p-5 d-none">
                     <div class="display-1 text-muted mb-3">🔍</div>
                     <h5 class="text-secondary">No audit activity found for this ticket</h5>
@@ -363,10 +389,12 @@
 
     <script>
         const currentUsername = '{{ user.username }}';
-        const testMode = {{ 'true' if test_mode else 'false' }};
+        const userRole = '{{ user.role }}';
+        const testMode = "{{ 'true' if test_mode else 'false' }}" === "true";
         const testEmail = "{{ test_email }}";
         const testCC = "{{ test_cc }}";
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}"></script>
 </body>
 

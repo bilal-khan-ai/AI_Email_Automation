@@ -1,7 +1,10 @@
 
 let currentTickets = [];
-let currentFilter = 'all';
-let currentVisibility = 'all';
+let currentFilter = typeof userRole !== 'undefined' && userRole === 'admin' ? 'Open' : 'all';
+let currentVisibility = typeof userRole !== 'undefined' && userRole === 'admin' ? 'all' : 'mine';
+let currentTimeRange = 'all';
+let customFromDate = null;
+let customToDate = null;
 let currentTicketRow = null;
 let currentTicketIdStr = null;
 let quillEditor = null;
@@ -11,7 +14,8 @@ let currentCustomerFilter = null;
 let isTicketLocked = false;
 let isRightPanelCollapsed = true;
 let currentTicketStatus = null; // Added this as it was used but not declared globally in the snippet (or was it?)
-let renderLimit = 50;
+let currentPage = 1;
+const pageSize = 50;
 let lastDisplayState = "";
 let globalConfig = {};
 async function fetchConfig() {
@@ -38,6 +42,8 @@ async function fetchContacts() {
 function setupAutocomplete(inputId, suggestionsId) {
     const input = document.getElementById(inputId);
     const suggestions = document.getElementById(suggestionsId);
+    if (!input || !suggestions) return;
+    
     let activeIndex = -1;
 
     input.addEventListener('input', () => {
@@ -176,6 +182,7 @@ function updateThemeButton(isDark) {
     }
 }
 
+/*
 function initializeEditor() {
     if (!quillEditor) {
         quillEditor = new Quill('#editor', {
@@ -194,6 +201,10 @@ function initializeEditor() {
             placeholder: 'Compose your email response here...'
         });
     }
+}
+*/
+function initializeEditor() {
+    // Quill initialization is disabled
 }
 
 function toggleField(fieldId) {
@@ -233,6 +244,8 @@ function toggleRightPanel() {
 function updateAttachedFilesList() {
     const container = document.getElementById('attachedFiles');
     const fileCount = document.getElementById('fileCount');
+
+    if (!container || !fileCount) return;
 
     if (attachedFiles.length === 0) {
         container.innerHTML = '';
@@ -370,7 +383,11 @@ function normalizeStatus(status) {
 
     if (statusLower === 'resolved' || statusLower === 'completed' || statusLower === 'closed') {
         return 'Closed';
-    } else if (statusLower === 'pending review' || statusLower === 'pending' || statusLower === 'open' || statusLower === 'in progress') {
+    } else if (statusLower === 'review' || statusLower === 'pending review') {
+        return 'Review';
+    } else if (statusLower === 'ignore') {
+        return 'Ignore';
+    } else if (statusLower === 'pending' || statusLower === 'open' || statusLower === 'in progress') {
         return 'Open';
     }
     return 'Open'; // Default
@@ -438,12 +455,10 @@ function displayTickets() {
     const container = document.getElementById('tickets');
     const searchInput = document.getElementById('search');
     const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
-    const dateFilterInput = document.getElementById('dateFilter');
-    const selectedDate = dateFilterInput ? dateFilterInput.value : '';
 
-    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}|${selectedDate}`;
+    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}|${currentTimeRange}|${customFromDate}|${customToDate}`;
     if (lastDisplayState !== currentState) {
-        renderLimit = 50;
+        currentPage = 1;
         lastDisplayState = currentState;
     }
 
@@ -460,6 +475,38 @@ function displayTickets() {
         };
     });
 
+    let startDate = null;
+    let endDate = null;
+    const now = new Date();
+
+    if (currentTimeRange === 'today') {
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    } else if (currentTimeRange === 'week') {
+        const day = now.getDay();
+        const diff = now.getDate() - day + (day === 0 ? -6 : 1); // start of week (Monday)
+        startDate = new Date(now.getFullYear(), now.getMonth(), diff, 0, 0, 0, 0);
+        endDate = new Date(now.getFullYear(), now.getMonth(), diff + 6, 23, 59, 59, 999);
+    } else if (currentTimeRange === 'custom' && customFromDate && customToDate) {
+        const parseDMY = (str) => {
+            if (!str) return null;
+            const parts = str.split('-');
+            if (parts.length !== 3) return null;
+            return new Date(parts[2], parts[1] - 1, parts[0]);
+        };
+        startDate = parseDMY(customFromDate);
+        if (startDate) startDate.setHours(0,0,0,0);
+        endDate = parseDMY(customToDate);
+        if (endDate) endDate.setHours(23,59,59,999);
+    }
+
+    const filterByDateRange = (t) => {
+        if (!startDate || !endDate) return true;
+        const created = new Date(t.created_at);
+        const active = t.latestActivity;
+        return (created >= startDate && created <= endDate) || (active >= startDate && active <= endDate);
+    };
+
     let filteredTickets = processedTickets;
 
     if (currentVisibility === 'mine') {
@@ -467,7 +514,12 @@ function displayTickets() {
     }
 
     if (typeof currentFilter !== 'undefined' && currentFilter !== 'all') {
-        filteredTickets = filteredTickets.filter(t => normalizeStatus(t.status) === currentFilter);
+        filteredTickets = filteredTickets.filter(t => {
+            const status = normalizeStatus(t.status);
+            if (currentFilter === 'Open') return status === 'Open' || status === 'Review';
+            if (currentFilter === 'Closed') return status === 'Closed' || status === 'Ignore';
+            return status === currentFilter;
+        });
     }
 
     if (typeof currentAssignmentFilter !== 'undefined' && currentAssignmentFilter !== null) {
@@ -490,23 +542,40 @@ function displayTickets() {
         );
     }
 
-    if (selectedDate) {
-        filteredTickets = filteredTickets.filter(t => {
-            const createdStr = getLocalDateString(new Date(t.created_at));
-            const activeStr = getLocalDateString(t.latestActivity);
-            return createdStr === selectedDate || activeStr === selectedDate;
-        });
-    }
+    filteredTickets = filteredTickets.filter(filterByDateRange);
 
     let statsBase = processedTickets;
     if (currentVisibility === 'mine') {
         statsBase = statsBase.filter(t => t.assigned_to === currentUsername);
     }
+    if (typeof currentAssignmentFilter !== 'undefined' && currentAssignmentFilter !== null) {
+        statsBase = statsBase.filter(t => (t.assigned_to || 'Unassigned') === currentAssignmentFilter);
+    }
+    if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
+        statsBase = statsBase.filter(t => {
+            if (!t.customer_email) return false;
+            return t.customer_email.trim().split('@').pop() === currentCustomerFilter;
+        });
+    }
+    if (searchQuery) {
+        statsBase = statsBase.filter(t =>
+            (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
+            (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
+            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery))
+        );
+    }
+    statsBase = statsBase.filter(filterByDateRange);
 
     const dynamicStats = {
-        total: statsBase.length,
-        open: statsBase.filter(t => normalizeStatus(t.status) === 'Open').length,
-        closed: statsBase.filter(t => normalizeStatus(t.status) === 'Closed').length
+        total: statsBase.filter(t => normalizeStatus(t.status) !== 'Ignore').length,
+        open: statsBase.filter(t => {
+            const s = normalizeStatus(t.status);
+            return s === 'Open' || s === 'Review';
+        }).length,
+        closed: statsBase.filter(t => {
+            const s = normalizeStatus(t.status);
+            return s === 'Closed' || s === 'Ignore';
+        }).length
     };
     updateStats(dynamicStats);
 
@@ -526,7 +595,16 @@ function displayTickets() {
         return;
     }
 
-    const ticketsToRender = filteredTickets.slice(0, renderLimit);
+    const totalRecords = filteredTickets.length;
+    const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+    
+    if (currentPage > totalPages) {
+        currentPage = totalPages;
+    }
+    
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const ticketsToRender = filteredTickets.slice(startIndex, endIndex);
 
     const ticketCards = ticketsToRender.map(ticket => {
         const ticketId = escapeHtml(ticket.ticket_id || 'NO-ID');
@@ -593,19 +671,29 @@ function displayTickets() {
         `;
     }).join('');
 
-    let loadMoreHtml = '';
-    if (filteredTickets.length > renderLimit) {
-        const remaining = filteredTickets.length - renderLimit;
-        loadMoreHtml = `
-            <div style="text-align: center; padding: 20px; width: 100%;">
-                <button class="btn btn-secondary" onclick="renderLimit += 50; displayTickets();" style="padding: 8px 16px; border-radius: 6px; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary);">
-                    Load More (${remaining} remaining)
-                </button>
+    let paginationHtml = '';
+    if (totalPages > 1) {
+        paginationHtml = `
+            <div class="pagination-controls" style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px 20px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; margin-top: 20px;">
+                <div style="color: var(--text-secondary); font-size: 0.9rem;">
+                    Showing <strong>${startIndex + 1}-${Math.min(endIndex, totalRecords)}</strong> of <strong>${totalRecords}</strong> tickets
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="currentPage--; displayTickets();" ${currentPage === 1 ? 'disabled' : ''} style="color: var(--text-primary); border-color: var(--border-color);">Previous</button>
+                    <span style="font-weight: 500; font-size: 0.95rem; color: var(--text-primary);">Page ${currentPage} of ${totalPages}</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="currentPage++; displayTickets();" ${currentPage === totalPages ? 'disabled' : ''} style="color: var(--text-primary); border-color: var(--border-color);">Next</button>
+                </div>
+            </div>
+        `;
+    } else if (totalRecords > 0) {
+        paginationHtml = `
+            <div style="text-align: center; padding: 10px; color: var(--text-secondary); font-size: 0.85rem;">
+                Showing all <strong>${totalRecords}</strong> tickets
             </div>
         `;
     }
 
-    container.innerHTML = ticketCards + loadMoreHtml;
+    container.innerHTML = ticketCards + paginationHtml;
 }
 
 function renderTicketSkeleton() {
@@ -629,21 +717,37 @@ function renderTicketSkeleton() {
     }
 
     // Skeleton for draft editor (optional, but good for UX)
-    if (quillEditor) {
-        quillEditor.root.innerHTML = '<div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text" style="width: 60%;"></div>';
-    }
+    // if (quillEditor) {
+    //     quillEditor.root.innerHTML = '<div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text" style="width: 60%;"></div>';
+    // }
 }
 
 async function openTicket(ticketId, rowNumber) {
     currentTicketRow = rowNumber;
     currentTicketIdStr = ticketId;
 
-    const ticket = currentTickets.find(t => t.id === rowNumber || t.ticket_id === ticketId);
-    if (!ticket) return;
-
     // Show modal and skeleton immediately
     document.getElementById('ticketModal').classList.add('active');
     renderTicketSkeleton();
+
+    let ticket = null;
+    try {
+        const res = await fetch(`/api/get_ticket/${encodeURIComponent(ticketId)}`);
+        if (res.ok) {
+            ticket = await res.json();
+        }
+    } catch (err) {
+        console.error("Error fetching ticket details:", err);
+    }
+
+    if (!ticket) {
+        ticket = currentTickets.find(t => t.id === rowNumber || t.ticket_id === ticketId);
+    }
+
+    if (!ticket) {
+        closeModal();
+        return;
+    }
 
     currentTicketStatus = normalizeStatus(ticket.status);
 
@@ -652,21 +756,26 @@ async function openTicket(ticketId, rowNumber) {
     updateAttachedFilesList();
 
     const rightPanel = document.getElementById('rightPanel');
-    isRightPanelCollapsed = true;
-    rightPanel.classList.add('collapsed');
+    if (rightPanel) {
+        isRightPanelCollapsed = true;
+        rightPanel.classList.add('collapsed');
+    }
 
-    if (testMode) {
-        document.getElementById('emailTo').value = testEmail;
-        document.getElementById('emailTo').readOnly = true;
-        document.getElementById('emailTo').classList.add('test-mode-input');
-        document.getElementById('emailTo').title = "Email redirected to test receiver in Test Mode";
-    } else {
-        document.getElementById('emailTo').value = ticket.customer_email || '';
-        document.getElementById('emailTo').readOnly = false;
-        document.getElementById('emailTo').classList.remove('test-mode-input');
-        document.getElementById('emailTo').style.backgroundColor = "";
-        document.getElementById('emailTo').style.cursor = "";
-        document.getElementById('emailTo').title = "";
+    const emailToEl = document.getElementById('emailTo');
+    if (emailToEl) {
+        if (testMode) {
+            emailToEl.value = testEmail;
+            emailToEl.readOnly = true;
+            emailToEl.classList.add('test-mode-input');
+            emailToEl.title = "Email redirected to test receiver in Test Mode";
+        } else {
+            emailToEl.value = ticket.customer_email || '';
+            emailToEl.readOnly = false;
+            emailToEl.classList.remove('test-mode-input');
+            emailToEl.style.backgroundColor = "";
+            emailToEl.style.cursor = "";
+            emailToEl.title = "";
+        }
     }
     document.getElementById('modal-subject').textContent = ticket.subject || 'No Subject';
     document.getElementById('modal-ticket-id').textContent = ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID');
@@ -676,6 +785,7 @@ async function openTicket(ticketId, rowNumber) {
     document.getElementById('modal-assignment').value = ticket.assigned_to || '';
     document.body.classList.add('modal-open');
 
+    /*
     if (ticket.ai_draft) {
         const sanitizedDraft = DOMPurify.sanitize(ticket.ai_draft, {
             ALLOWED_TAGS: [
@@ -691,29 +801,36 @@ async function openTicket(ticketId, rowNumber) {
     } else {
         quillEditor.root.innerHTML = '';
     }
+    */
 
-    updateToggleButton(currentTicketStatus);
+    const statusSelect = document.getElementById('modal-status');
+    if (statusSelect) {
+        statusSelect.value = currentTicketStatus;
+    }
 
     const lockStatus = document.getElementById('lockStatus');
     const btnSave = document.getElementById('btnSave');
     const btnSend = document.getElementById('btnSend');
-    const btnToggle = document.getElementById('btnToggleStatus');
 
     if (ticket.locked_by) {
         isTicketLocked = true;
-        lockStatus.textContent = `🔒 Locked by ${ticket.locked_by}`;
-        lockStatus.classList.add('active');
-        quillEditor.disable();
-        btnSave.disabled = true;
-        btnSend.disabled = true;
-        btnToggle.disabled = true;
+        if (lockStatus) {
+            lockStatus.textContent = `🔒 Locked by ${ticket.locked_by}`;
+            lockStatus.classList.add('active');
+        }
+        // quillEditor.disable();
+        if (btnSave) btnSave.disabled = true;
+        if (btnSend) btnSend.disabled = true;
+        if (statusSelect) statusSelect.disabled = true;
     } else {
         isTicketLocked = false;
-        lockStatus.classList.remove('active');
-        quillEditor.enable();
-        btnSave.disabled = false;
-        btnSend.disabled = false;
-        btnToggle.disabled = false;
+        if (lockStatus) {
+            lockStatus.classList.remove('active');
+        }
+        // quillEditor.enable();
+        if (btnSave) btnSave.disabled = false;
+        if (btnSend) btnSend.disabled = false;
+        if (statusSelect) statusSelect.disabled = false;
 
         if (socket && socket.connected) {
             socket.emit('lock_ticket', { ticket_id: ticketId });
@@ -735,28 +852,30 @@ async function openTicket(ticketId, rowNumber) {
         const ccField = document.getElementById('ccField');
         const bccField = document.getElementById('bccField');
 
-        if (testMode) {
-            emailCC.value = testCC || '';
-            emailBCC.value = '';
-            if (testCC) ccField.classList.remove('hidden');
-            else ccField.classList.add('hidden');
-            bccField.classList.add('hidden');
-        } else if (messages.length > 0) {
-            const sorted = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            const latest = sorted[0];
-            emailCC.value = latest.cc || '';
-            emailBCC.value = latest.bcc || '';
+        if (emailCC && emailBCC && ccField && bccField) {
+            if (testMode) {
+                emailCC.value = testCC || '';
+                emailBCC.value = '';
+                if (testCC) ccField.classList.remove('hidden');
+                else ccField.classList.add('hidden');
+                bccField.classList.add('hidden');
+            } else if (messages.length > 0) {
+                const sorted = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                const latest = sorted[0];
+                emailCC.value = latest.cc || '';
+                emailBCC.value = latest.bcc || '';
 
-            if (emailCC.value) ccField.classList.remove('hidden');
-            else ccField.classList.add('hidden');
+                if (emailCC.value) ccField.classList.remove('hidden');
+                else ccField.classList.add('hidden');
 
-            if (emailBCC.value) bccField.classList.remove('hidden');
-            else bccField.classList.add('hidden');
-        } else {
-            emailCC.value = '';
-            emailBCC.value = '';
-            ccField.classList.add('hidden');
-            bccField.classList.add('hidden');
+                if (emailBCC.value) bccField.classList.remove('hidden');
+                else bccField.classList.add('hidden');
+            } else {
+                emailCC.value = '';
+                emailBCC.value = '';
+                ccField.classList.add('hidden');
+                bccField.classList.add('hidden');
+            }
         }
 
     } catch (err) {
@@ -765,26 +884,16 @@ async function openTicket(ticketId, rowNumber) {
     }
 }
 
-function updateToggleButton(status) {
-    const toggleIcon = document.getElementById('toggleStatusIcon');
-    const toggleText = document.getElementById('toggleStatusText');
-
-    if (toggleIcon && toggleText) {
-        if (status === 'Open') {
-            toggleIcon.textContent = '✓';
-            toggleText.textContent = 'Close Ticket';
-        } else {
-            toggleIcon.textContent = '↻';
-            toggleText.textContent = 'Reopen Ticket';
-        }
-    }
-}
-
-async function toggleTicketStatus() {
+async function changeTicketStatus() {
     if (isTicketLocked) return;
-
-    const action = currentTicketStatus === 'Open' ? 'close' : 'reopen';
-    if (!confirm(`Are you sure you want to ${action} this ticket?`)) return;
+    const statusSelect = document.getElementById('modal-status');
+    if (!statusSelect) return;
+    const newStatus = statusSelect.value;
+    
+    if (!confirm(`Are you sure you want to change ticket status to ${newStatus}?`)) {
+        statusSelect.value = currentTicketStatus;
+        return;
+    }
 
     try {
         const response = await fetch('/api/toggle_ticket_status', {
@@ -792,14 +901,15 @@ async function toggleTicketStatus() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 row_number: currentTicketRow,
-                ticket_id: currentTicketIdStr
+                ticket_id: currentTicketIdStr,
+                status: newStatus
             })
         });
 
         if (response.ok) {
             const data = await response.json();
             currentTicketStatus = data.new_status;
-            updateToggleButton(currentTicketStatus);
+            statusSelect.value = currentTicketStatus;
 
             if (currentTicketStatus === 'Closed') {
                 closeModal();
@@ -808,10 +918,12 @@ async function toggleTicketStatus() {
             loadTickets();
         } else {
             alert('Failed to update ticket status.');
+            statusSelect.value = currentTicketStatus;
         }
     } catch (error) {
-        console.error('Error toggling status:', error);
+        console.error('Error changing status:', error);
         alert('Error updating ticket status.');
+        statusSelect.value = currentTicketStatus;
     }
 }
 
@@ -1089,7 +1201,7 @@ function renderThread(messages) {
                             cursor: pointer;
                         }
                         * { max-width: 100%; box-sizing: border-box; }
-                        table { border-collapse: collapse; width: 100% !important; height: auto !important; }
+                        table { display: block; overflow-x: auto; border-collapse: collapse; width: 100% !important; height: auto !important; }
                         blockquote { border-left: 4px solid #cbd5e1; padding-left: 1rem; margin: 1rem 0; color: ${isDarkMode ? '#94a3b8' : '#64748b'}; font-style: italic; }
                     </style>
                 </head>
@@ -1300,7 +1412,7 @@ function closeModal() {
         document.body.classList.remove('modal-open');
         currentTicketRow = null;
         currentTicketIdStr = null;
-        if (quillEditor) quillEditor.setText('');
+        // if (quillEditor) quillEditor.setText('');
     } catch (error) {
         console.error('Error in closeModal:', error);
         const modal = document.getElementById('ticketModal');
@@ -1382,6 +1494,7 @@ async function takeTicket() {
     }
 }
 
+/*
 async function saveTicket() {
     if (isTicketLocked) return;
 
@@ -1538,6 +1651,7 @@ async function sendToCustomer() {
         hideSendingOverlay();
     }
 }
+*/
 
 async function closeTicketDialog() {
     if (!currentTicketRow) return;
@@ -1583,6 +1697,26 @@ function openModal(modalId) {
     if (modal) modal.classList.add('active');
 }
 
+window.onTimeRangeChange = function() {
+    const range = document.getElementById('timeRangeSelect').value;
+    currentTimeRange = range;
+    const customInputs = document.getElementById('customDateInputs');
+    if (range === 'custom') {
+        customInputs.classList.remove('d-none');
+        customInputs.classList.add('d-flex');
+    } else {
+        customInputs.classList.remove('d-flex');
+        customInputs.classList.add('d-none');
+        displayTickets();
+    }
+};
+
+window.applyCustomDates = function() {
+    customFromDate = document.getElementById('fromDateInput').value;
+    customToDate = document.getElementById('toDateInput').value;
+    displayTickets();
+};
+
 // Initial setup
 document.addEventListener('DOMContentLoaded', async () => {
     const savedTheme = localStorage.getItem('darkMode') === 'true';
@@ -1600,12 +1734,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Initialize Flatpickr date pickers
+    if (typeof flatpickr !== 'undefined') {
+        flatpickr("#fromDateInput", {
+            dateFormat: "d-m-Y",
+            allowInput: true
+        });
+        flatpickr("#toDateInput", {
+            dateFormat: "d-m-Y",
+            allowInput: true
+        });
+    }
+
     await fetchContacts();
     setupAutocomplete('emailTo', 'suggestionsTo');
     setupAutocomplete('emailCC', 'suggestionsCC');
     setupAutocomplete('emailBCC', 'suggestionsBCC');
 
     await loadTickets();
+
+    // Parse filters from URL query parameters (Management Console redirect)
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('status')) {
+        const status = urlParams.get('status');
+        currentFilter = normalizeStatus(status);
+    }
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.filter === currentFilter);
+    });
+    if (urlParams.has('assignee')) {
+        setAssignmentFilter(urlParams.get('assignee'));
+    }
+    if (urlParams.has('domain')) {
+        setCustomerFilter(urlParams.get('domain'));
+    }
+    if (urlParams.has('search')) {
+        const searchInput = document.getElementById('search');
+        if (searchInput) {
+            searchInput.value = urlParams.get('search');
+        }
+    }
+    if (urlParams.has('time_range')) {
+        const timeRange = urlParams.get('time_range');
+        const select = document.getElementById('timeRangeSelect');
+        if (select) {
+            select.value = timeRange;
+            currentTimeRange = timeRange;
+            onTimeRangeChange();
+        }
+    }
+    if (urlParams.has('from') && urlParams.has('to')) {
+        const select = document.getElementById('timeRangeSelect');
+        if (select) {
+            select.value = 'custom';
+            currentTimeRange = 'custom';
+            onTimeRangeChange();
+        }
+        const fromInput = document.getElementById('fromDateInput');
+        const toInput = document.getElementById('toDateInput');
+        if (fromInput && toInput) {
+            fromInput.value = urlParams.get('from');
+            toInput.value = urlParams.get('to');
+            customFromDate = urlParams.get('from');
+            customToDate = urlParams.get('to');
+        }
+    }
 
     const pillContainer = document.getElementById('visibilityPill');
     if (pillContainer) {
@@ -1614,6 +1807,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             o.classList.toggle('active', o.dataset.visibility === currentVisibility);
         });
     }
+    displayTickets();
 
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.addEventListener('click', function () {
@@ -1639,29 +1833,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchInput = document.getElementById('search');
     if (searchInput) {
         searchInput.addEventListener('input', displayTickets);
-    }
-
-    const dateFilterInput = document.getElementById('dateFilter');
-    if (dateFilterInput) {
-        dateFilterInput.addEventListener('change', (e) => {
-            const selectedVal = e.target.value;
-            const clearBtn = document.getElementById('clearDateBtn');
-            if (clearBtn) {
-                clearBtn.style.display = selectedVal ? 'inline-block' : 'none';
-            }
-            displayTickets();
-        });
-    }
-
-    const clearDateBtn = document.getElementById('clearDateBtn');
-    if (clearDateBtn) {
-        clearDateBtn.addEventListener('click', () => {
-            if (dateFilterInput) {
-                dateFilterInput.value = '';
-            }
-            clearDateBtn.style.display = 'none';
-            displayTickets();
-        });
     }
 });
 
@@ -1899,10 +2070,10 @@ socket.on('ticket_locked', (data) => {
         if (quillEditor) quillEditor.disable();
         const btnSave = document.getElementById('btnSave');
         const btnSend = document.getElementById('btnSend');
-        const btnToggle = document.getElementById('btnToggleStatus');
+        const statusSelect = document.getElementById('modal-status');
         if (btnSave) btnSave.disabled = true;
         if (btnSend) btnSend.disabled = true;
-        if (btnToggle) btnToggle.disabled = true;
+        if (statusSelect) statusSelect.disabled = true;
         isTicketLocked = true;
     }
 });
@@ -1917,10 +2088,10 @@ socket.on('ticket_unlocked', (data) => {
         if (quillEditor) quillEditor.enable();
         const btnSave = document.getElementById('btnSave');
         const btnSend = document.getElementById('btnSend');
-        const btnToggle = document.getElementById('btnToggleStatus');
+        const statusSelect = document.getElementById('modal-status');
         if (btnSave) btnSave.disabled = false;
         if (btnSend) btnSend.disabled = false;
-        if (btnToggle) btnToggle.disabled = false;
+        if (statusSelect) statusSelect.disabled = false;
         isTicketLocked = false;
         socket.emit('lock_ticket', { ticket_id: currentTicketIdStr });
     }

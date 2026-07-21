@@ -48,7 +48,7 @@ def run_cleanup(mode, date_arg=None):
         # (This cleans out old junk regardless of status)
         criteria_sql = "created_at < %s"
         date_param = cutoff_date
-        logger.warning(f"⚠️  HARD CLEAN: Deleting ALL tickets created before {cutoff_date.date()}")
+        logger.warning(f"⚠️  HARD CLEAN: Purging heavy data for ALL tickets created before {cutoff_date.date()}")
     
     # --- 2. EXECUTE DELETION ---
     try:
@@ -63,10 +63,32 @@ def run_cleanup(mode, date_arg=None):
                     logger.info("✅ No tickets found matching criteria.")
                     return
 
-                logger.info(f"🗑️  Found {count} tickets to clean. Starting deletion...")
+                logger.info(f"🗑️  Found {count} tickets to clean. Starting purge...")
 
-                # Step B: Explicitly DELETE MESSAGES first
-                # We use a subquery to find message IDs belonging to the target tickets
+                # Step B: Mark tickets as soft-deleted (status = 'Deleted') if they aren't already
+                now = datetime.now()
+                cur.execute(f"""
+                    UPDATE tickets 
+                    SET deleted_at = COALESCE(deleted_at, %s),
+                        status = 'Deleted',
+                        last_updated = %s
+                    WHERE {criteria_sql}
+                """, (now, now, date_param))
+                tickets_updated = cur.rowcount
+                logger.info(f"   ↳ Marked {tickets_updated} tickets as 'Deleted'.")
+
+                # Step C: Delete ATTACHMENTS
+                delete_attachments_query = f"""
+                    DELETE FROM ticket_attachments_context 
+                    WHERE ticket_id IN (
+                        SELECT ticket_id FROM tickets WHERE {criteria_sql}
+                    )
+                """
+                cur.execute(delete_attachments_query, (date_param,))
+                attachments_deleted = cur.rowcount
+                logger.info(f"   ↳ Deleted {attachments_deleted} associated attachments.")
+
+                # Step D: Delete MESSAGES
                 delete_msgs_query = f"""
                     DELETE FROM ticket_messages 
                     WHERE ticket_id IN (
@@ -76,14 +98,8 @@ def run_cleanup(mode, date_arg=None):
                 cur.execute(delete_msgs_query, (date_param,))
                 msgs_deleted = cur.rowcount
                 logger.info(f"   ↳ Deleted {msgs_deleted} associated messages.")
-
-                # Step C: DELETE TICKETS
-                delete_tickets_query = f"DELETE FROM tickets WHERE {criteria_sql}"
-                cur.execute(delete_tickets_query, (date_param,))
-                tickets_deleted = cur.rowcount
-                logger.info(f"   ↳ Deleted {tickets_deleted} tickets.")
                 
-                logger.info("✅ Cleanup operation completed successfully.")
+                logger.info("✅ Cleanup/Purge operation completed successfully (reporting metadata preserved).")
 
     except Exception as e:
         logger.error(f"❌ Database error: {e}")

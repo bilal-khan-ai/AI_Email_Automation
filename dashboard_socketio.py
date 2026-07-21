@@ -79,9 +79,26 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ai_agent = OpenAIAgent(Config.OPENAI_API_KEY)
 ai_agent.authenticate()
 
-# Using force_cpu=True for vector DBs in the dashboard process to avoid VRAM contention with the main daemon
-experience_db = VectorDatabase(Config.CHROMA_DB_PATH, Config.COLLECTION_NAME, force_cpu=True)
-documentation_db = BookVectorDB(Config.BOOKSTACK_DB_PATH)
+# Lazy initialization helper functions to prevent Gunicorn process forks from deadlocking on SQLite database files
+_experience_db = None
+_documentation_db = None
+
+def get_experience_db():
+    global _experience_db
+    if _experience_db is None:
+        print("Initializing lazy experience vector DB...")
+        from modules.vector_db import VectorDatabase
+        _experience_db = VectorDatabase(Config.CHROMA_DB_PATH, Config.COLLECTION_NAME, force_cpu=True)
+    return _experience_db
+
+def get_documentation_db():
+    global _documentation_db
+    if _documentation_db is None:
+        print("Initializing lazy documentation vector DB...")
+        from modules.vector_db import BookVectorDB
+        _documentation_db = BookVectorDB(Config.BOOKSTACK_DB_PATH)
+    return _documentation_db
+
 
 # Track connected users and their rooms
 connected_users = {}
@@ -90,13 +107,13 @@ user_locks = {}  # Track which tickets are being edited by which users
 
 def normalize_legacy_status(status: str) -> str:
     """
-    Map legacy status values to Open/Closed semantics.
+    Map legacy status values to Open/Review/Ignore/Closed semantics.
     
     Args:
         status: Legacy status value
         
     Returns:
-        Normalized status ('Open' or 'Closed')
+        Normalized status ('Open', 'Review', 'Ignore', or 'Closed')
     """
     if not status:
         return 'Open'
@@ -106,7 +123,11 @@ def normalize_legacy_status(status: str) -> str:
     # Map legacy statuses
     if status_lower in ['resolved', 'completed', 'closed']:
         return 'Closed'
-    elif status_lower in ['pending review', 'pending', 'open', 'in progress']:
+    elif status_lower in ['review', 'pending review']:
+        return 'Review'
+    elif status_lower in ['ignore']:
+        return 'Ignore'
+    elif status_lower in ['pending', 'open', 'in progress']:
         return 'Open'
     else:
         # Default unknown statuses to Open
@@ -115,16 +136,20 @@ def normalize_legacy_status(status: str) -> str:
 
 def calculate_stats(tickets, user=None):
     """
-    Calculate ticket statistics with Open/Closed semantics.
+    Calculate ticket statistics with Open/Review/Ignore/Closed semantics.
     If user is staff, stats will naturally be filtered by the tickets passed in.
     """
-    total = len(tickets)
     open_count = sum(1 for t in tickets if normalize_legacy_status(t.get('status')) == 'Open')
+    review_count = sum(1 for t in tickets if normalize_legacy_status(t.get('status')) == 'Review')
+    ignore_count = sum(1 for t in tickets if normalize_legacy_status(t.get('status')) == 'Ignore')
     closed_count = sum(1 for t in tickets if normalize_legacy_status(t.get('status')) == 'Closed')
-    
+    total = open_count + review_count + closed_count # Ignore tickets are excluded from total
+
     return {
         'total': total,
         'open': open_count,
+        'review': review_count,
+        'ignore': ignore_count,
         'closed': closed_count,
         'last_updated': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
@@ -192,8 +217,6 @@ def login():
             if next_page:
                 return redirect(next_page)
             
-            if user['role'] == 'admin':
-                return redirect(url_for('management'))
             return redirect(url_for('index'))
         else:
             flash('Invalid username or password', 'danger')
@@ -355,8 +378,8 @@ def index():
     user = get_current_user()
     
     # Redirect admins to management by default, unless they explicitly want the dashboard view
-    if user['role'] == 'admin' and request.args.get('view') != 'staff':
-        return redirect(url_for('management'))
+    # if user['role'] == 'admin' and request.args.get('view') != 'staff':
+    #     return redirect(url_for('management'))
     
     # Get only active assignable staff/admins for assignment dropdown
     users = auth.user_manager.list_users()
@@ -541,13 +564,14 @@ def take_ticket():
 @login_required
 def toggle_ticket_status():
     """
-    Toggle ticket status between Open and Closed.
+    Toggle or explicitly set ticket status.
     
     This is the ONLY endpoint that changes ticket status.
     """
     data = request.json
     ticket_db_id = data.get('row_number')  # This is the database primary key (id)
     ticket_id = data.get('ticket_id')
+    new_status = data.get('status') # NEW: allow passing custom status
     user_id = session.get('user_id')
     
     if not ticket_db_id:
@@ -558,9 +582,14 @@ def toggle_ticket_status():
     if not ticket:
         return jsonify({'error': 'Ticket not found'}), 404
 
-    # Normalize and toggle status
-    current_status = normalize_legacy_status(ticket.get('status'))
-    new_status = 'Closed' if current_status == 'Open' else 'Open'
+    # If no status passed, fallback to binary toggle for legacy behavior
+    if not new_status:
+        current_status = normalize_legacy_status(ticket.get('status'))
+        new_status = 'Closed' if current_status == 'Open' else 'Open'
+
+    # Validate status
+    if new_status not in ['Open', 'Review', 'Ignore', 'Closed']:
+        return jsonify({'error': f'Invalid status: {new_status}'}), 400
 
     # Update status
     update_data = {
@@ -580,10 +609,10 @@ def toggle_ticket_status():
         
         # Update vector DB with resolution status for RAG quality
         is_resolved = (new_status == 'Closed')
-        experience_db.update_ticket_status(ticket_id, is_resolved, display_id=display_id)
+        get_experience_db().update_ticket_status(ticket_id, is_resolved, display_id=display_id)
         
         # New: Resolution Gold Labeling (Gold Labeling ensures high-quality RAG retrieval for repeat issues)
-        experience_db.update_authority_status(ticket_id, is_resolved, display_id=display_id)
+        get_experience_db().update_authority_status(ticket_id, is_resolved, display_id=display_id)
         sql_logger.mark_ticket_as_authority(ticket_id, is_resolved)
 
         # Release lock if closing
@@ -942,6 +971,164 @@ def download_attachment():
         print(f"Error downloading attachment: {e}")
         return jsonify({'error': f'Failed to download attachment: {str(e)}'}), 500
 
+@app.route('/api/holidays', methods=['GET'])
+@login_required
+def get_holidays_api():
+    try:
+        holidays = sql_logger.get_holidays()
+        return jsonify({'holidays': holidays})
+    except Exception as e:
+        logger.error(f"Error fetching holidays: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/holidays', methods=['POST'])
+@login_required
+def add_holiday_api():
+    data = request.json or {}
+    date_str = data.get('date')
+    holiday_name = data.get('holiday')
+    if not date_str or not holiday_name:
+        return jsonify({'error': 'Missing date or holiday name'}), 400
+    try:
+        res = sql_logger.add_holiday(date_str, holiday_name)
+        return jsonify({'success': True, 'result': res})
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+    except Exception as e:
+        logger.error(f"Error adding holiday: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/holidays', methods=['PUT'])
+@login_required
+def update_holiday_api():
+    data = request.json or {}
+    old_date = data.get('old_date')
+    new_date = data.get('date')
+    holiday_name = data.get('holiday')
+    if not old_date or not new_date or not holiday_name:
+        return jsonify({'error': 'Missing required fields (old_date, date, holiday)'}), 400
+    try:
+        res = sql_logger.update_holiday(old_date, new_date, holiday_name)
+        return jsonify({'success': True, 'result': res})
+    except ValueError as ve:
+        return jsonify({'error': str(ve)}), 400
+    except Exception as e:
+        logger.error(f"Error updating holiday: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/holidays', methods=['DELETE'])
+@login_required
+def delete_holidays_api():
+    data = request.json or {}
+    dates = data.get('dates', [])
+    if not dates:
+        return jsonify({'error': 'No dates provided for deletion'}), 400
+    try:
+        success = sql_logger.delete_holidays(dates)
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to delete holidays'}), 500
+    except Exception as e:
+        logger.error(f"Error deleting holidays: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client_groups', methods=['GET'])
+@login_required
+def get_client_groups_api():
+    try:
+        groups = sql_logger.get_all_client_entities()
+        return jsonify({'groups': groups})
+    except Exception as e:
+        logger.error(f"Error fetching client groups: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client_groups', methods=['POST'])
+@login_required
+def create_client_group_api():
+    data = request.json or {}
+    name = data.get('name')
+    domains = data.get('domains')
+    if not name or not domains:
+        return jsonify({'error': 'Missing name or domains'}), 400
+    try:
+        success = sql_logger.create_client_group(name, domains)
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to create client group'}), 500
+    except Exception as e:
+        logger.error(f"Error creating client group: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client_groups/merge', methods=['POST'])
+@login_required
+def merge_client_groups_api():
+    data = request.json or {}
+    name = data.get('name')
+    domains = data.get('domains', [])
+    if not name or not domains:
+        return jsonify({'error': 'Missing name or domains to merge'}), 400
+    try:
+        success = sql_logger.merge_client_entities(name, domains)
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to merge client groups'}), 500
+    except Exception as e:
+        logger.error(f"Error merging client groups: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client_groups/<int:group_id>', methods=['DELETE'])
+@login_required
+def delete_client_group_api(group_id):
+    try:
+        success = sql_logger.delete_client_group(group_id)
+        if success:
+            return jsonify({'success': True})
+        return jsonify({'error': 'Failed to delete client group'}), 500
+    except Exception as e:
+        logger.error(f"Error deleting client group: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/holidays/import', methods=['POST'])
+@login_required
+def import_holidays_api():
+    data = request.json or {}
+    text = data.get('text', '')
+    if not text:
+        return jsonify({'error': 'No holiday list text provided'}), 400
+    try:
+        parsed_holidays = ai_agent.parse_pasted_holidays(text)
+        added = 0
+        updated = 0
+        merged = 0
+        skipped = 0
+        
+        for item in parsed_holidays:
+            date_str = item['date']
+            holiday_name = item['holiday']
+            res = sql_logger.add_holiday(date_str, holiday_name)
+            status = res.get('status')
+            if status == 'added':
+                added += 1
+            elif status == 'merged':
+                merged += 1
+            elif status == 'skipped':
+                skipped += 1
+            elif status == 'updated':
+                updated += 1
+                
+        return jsonify({
+            'success': True,
+            'summary': {
+                'added': added,
+                'updated': updated,
+                'merged': merged,
+                'skipped': skipped
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error parsing/importing holidays: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/regenerate_ai', methods=['POST'])
 @login_required
 def regenerate_ai():
@@ -988,7 +1175,7 @@ def regenerate_ai_sync():
         
         # 3. DUAL RAG SEARCH
         # 3a. Search documentation (authoritative)
-        docs_raw = documentation_db.query_bookstack(query, n_results=Config.TOP_K_RESULTS)
+        docs_raw = get_documentation_db().query_bookstack(query, n_results=Config.TOP_K_RESULTS)
         # Format doc results to match OpenAIAgent expectations
         docs = []
         if docs_raw and 'documents' in docs_raw and docs_raw['documents']:
@@ -1000,7 +1187,7 @@ def regenerate_ai_sync():
                 })
 
         # 3b. Search experience (advisory)
-        experiences = experience_db.search_similar(query, top_k=Config.TOP_K_RESULTS)
+        experiences = get_experience_db().search_similar(query, top_k=Config.TOP_K_RESULTS)
         
         # 4. Generate response
         draft, provenance = ai_agent.generate_response(
@@ -1220,12 +1407,19 @@ def handle_typing_update(data):
 def handle_get_staff_metrics(data):
     """Get metrics for all staff members with time range"""
     time_range = data.get('time_range', 'all')
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
     
     users = auth.user_manager.list_users()
     staff_usernames = [u['username'] for u in users if u['role'] in ['staff', 'admin']]
     
-    metrics = sql_logger.get_all_staff_metrics(staff_usernames, time_range)
-    emit('staff_metrics_update', {'metrics': metrics, 'time_range': time_range})
+    metrics = sql_logger.get_all_staff_metrics(staff_usernames, time_range, from_date, to_date)
+    emit('staff_metrics_update', {
+        'metrics': metrics, 
+        'time_range': time_range,
+        'from_date': from_date,
+        'to_date': to_date
+    })
 
 
 @socketio.on('get_client_stats')
@@ -1233,8 +1427,40 @@ def handle_get_staff_metrics(data):
 def handle_get_client_stats(data):
     """Get metrics grouped by domain with time range"""
     time_range = data.get('time_range', 'all')
-    stats = sql_logger.get_client_stats(time_range)
-    emit('client_stats_update', {'stats': stats, 'time_range': time_range})
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
+    stats = sql_logger.get_client_stats(time_range, from_date, to_date)
+    emit('client_stats_update', {
+        'stats': stats, 
+        'time_range': time_range,
+        'from_date': from_date,
+        'to_date': to_date
+    })
+
+
+@socketio.on('get_drilldown_metrics')
+@socketio_admin_required
+def handle_get_drilldown_metrics(data):
+    """Get metrics for drilldown modal, optionally filtered by status"""
+    m_type = data.get('type')
+    m_id = data.get('id')
+    status = data.get('status')
+    time_range = data.get('time_range', 'all')
+    from_date = data.get('from_date')
+    to_date = data.get('to_date')
+    
+    if m_type == 'staff':
+        metrics = sql_logger.get_staff_metrics(m_id, time_range, from_date, to_date, status)
+    else:
+        client_stats = sql_logger.get_client_stats(time_range, from_date, to_date, status, domain_filter=m_id)
+        metrics = client_stats[0] if client_stats else {}
+        
+    emit('drilldown_metrics_update', {
+        'type': m_type,
+        'id': m_id,
+        'status': status,
+        'metrics': metrics
+    })
 
 
 @socketio.on('get_ticket_timeline')
@@ -1267,7 +1493,8 @@ def handle_get_settings():
         'PROCESSING_DAYS_BACK': env_vars.get('PROCESSING_DAYS_BACK', '2'),
         'GENERATIONAL_MODEL': env_vars.get('GENERATIONAL_MODEL', 'gpt-5-mini'),
         'INTERPRETATION_MODEL': env_vars.get('INTERPRETATION_MODEL', 'gpt-4.1-nano-2025-04-14'),
-        'ANALYSIS_MODEL': env_vars.get('ANALYSIS_MODEL', 'gpt-4.1-mini-2025-04-14')
+        'ANALYSIS_MODEL': env_vars.get('ANALYSIS_MODEL', 'gpt-4.1-mini-2025-04-14'),
+        'WEB_SEARCH_MODEL': env_vars.get('WEB_SEARCH_MODEL', 'gpt-4o-mini-2024-07-18')
     }
     emit('settings_update', {'settings': display_vars})
 
@@ -1288,7 +1515,8 @@ def handle_update_settings(data):
             'HARD_DELETE_AFTER_DAYS', 'POLLING_INTERVAL', 'TEST_MODE',
             'TEST_EMAIL', 'TEST_CC', 'TEST_SUBJECT_TAG',
             'USER_EMAIL', 'PROCESSING_DAYS_BACK',
-            'GENERATIONAL_MODEL', 'INTERPRETATION_MODEL', 'ANALYSIS_MODEL'
+            'GENERATIONAL_MODEL', 'INTERPRETATION_MODEL', 'ANALYSIS_MODEL',
+            'WEB_SEARCH_MODEL'
         ]
         filtered_data = {k: str(v) for k, v in data.items() if k in valid_keys}
         
@@ -1329,34 +1557,6 @@ def handle_reassign_ticket(data):
             'updated_by': session.get('user', {}).get('username')
         })
 
-
-@socketio.on('trigger_auto_assign')
-@socketio_admin_required
-def handle_trigger_auto_assign():
-    """Auto-assign all open, unassigned tickets to the least busy staff"""
-    # Fetch all tickets assigned to "Unassigned"
-    tickets = sql_logger.get_active_tickets(assigned_to="Unassigned")
-    # Filter only Open tickets
-    open_unassigned = [t for t in tickets if normalize_legacy_status(t.get('status')) == 'Open']
-    
-    assigned_count = 0
-    for ticket in open_unassigned:
-        least_busy_staff = sql_logger.get_least_busy_staff()
-        if least_busy_staff and least_busy_staff != 'Unassigned':
-            success = sql_logger.update_ticket_fields(ticket['ticket_id'], {'assigned_to': least_busy_staff})
-            if success:
-                assigned_count += 1
-                # Broadcast the assignment
-                socketio.emit('ticket_reassigned', {
-                    'ticket_id': ticket['ticket_id'],
-                    'assigned_to': least_busy_staff,
-                    'updated_by': session.get('user', {}).get('username')
-                })
-    
-    if assigned_count > 0:
-        emit('auto_assign_complete', {'success': True, 'count': assigned_count})
-    else:
-        emit('auto_assign_complete', {'success': False, 'message': 'No open tickets found or no active staff available.'})
 
 
 

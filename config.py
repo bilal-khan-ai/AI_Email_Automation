@@ -17,6 +17,7 @@ class Config:
     GENERATIONAL_MODEL = os.getenv('GENERATIONAL_MODEL', 'gpt-5-mini')
     INTERPRETATION_MODEL = os.getenv('INTERPRETATION_MODEL', 'gpt-4.1-nano-2025-04-14')
     ANALYSIS_MODEL = os.getenv('ANALYSIS_MODEL', 'gpt-4.1-mini-2025-04-14')
+    WEB_SEARCH_MODEL = os.getenv('WEB_SEARCH_MODEL', 'gpt-4o-mini-2024-07-18')
     
     # Chroma Database settings
     CHROMA_DB_PATH = os.getenv('CHROMA_DB_PATH', './data/chroma_db')
@@ -61,6 +62,9 @@ class Config:
     # SLA Analytics Settings
     INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'
 
+    # RAG Settings
+    ENABLE_RAG = os.getenv('ENABLE_RAG', 'False').lower() == 'true'
+
     @classmethod
     def reload(cls):
         """Reload configuration from .env file"""
@@ -79,4 +83,6 @@ class Config:
         cls.SOFT_DELETE_CLOSED_AFTER_DAYS = int(os.getenv('SOFT_DELETE_CLOSED_AFTER_DAYS', 1))
         cls.HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 6))
         cls.INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'
+        cls.ENABLE_RAG = os.getenv('ENABLE_RAG', 'False').lower() == 'true'
+        cls.WEB_SEARCH_MODEL = os.getenv('WEB_SEARCH_MODEL', 'gpt-4o-mini-2024-07-18')
         # Add other dynamic settings as needed

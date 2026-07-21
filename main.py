@@ -342,11 +342,12 @@ class SupportAgent:
     
     def _soft_delete_pass(self) -> int:
         """
-        Soft-delete eligible closed tickets.
+        Soft-delete functionality has been completely disabled as per requirements.
         
         Returns:
-            int: Number of tickets soft-deleted
+            int: 0
         """
+        return 0
         try:
             cutoff_dt = datetime.now() - timedelta(days=Config.SOFT_DELETE_CLOSED_AFTER_DAYS)
             batch_size = Config.CLEANUP_BATCH_SIZE
@@ -383,11 +384,12 @@ class SupportAgent:
     
     def _hard_delete_pass(self) -> int:
         """
-        Hard-delete old soft-deleted tickets.
+        Hard-delete functionality has been completely disabled as per requirements.
         
         Returns:
-            int: Number of tickets hard-deleted
+            int: 0
         """
+        return 0
         try:
             cutoff_dt = datetime.now() - timedelta(days=Config.HARD_DELETE_AFTER_DAYS)
             batch_size = Config.CLEANUP_BATCH_SIZE
@@ -401,10 +403,9 @@ class SupportAgent:
             
             deleted_count = 0
             
-            # Then, delete from SQL (cascades to messages). 
-            # Note: Knowledge base (ChromaDB) is preserved for RAG history.
+            # Purge messages and attachments, preserving metrics and logs
             if candidates and not self._shutdown_requested:
-                deleted_count = self.sql.hard_delete_tickets(candidates)
+                deleted_count = self.sql.purge_heavy_ticket_data(candidates)
             
             logger.info(f"📊 Hard-delete pass complete: {deleted_count} tickets processed")
             return deleted_count
@@ -557,18 +558,20 @@ class SupportAgent:
                     continue
 
                 if is_img:
-                    # RAG Image Processing (for AI context only)
-                    desc = self.img_processor.process_image(att_bytes, filename=name)
-                    if desc:
-                        attachment_descs.append(desc)
-                        # Store in buffer
-                        processed_attachments.append({
-                            'filename': name,
-                            'content_summary': desc,
-                            'metadata': {'type': 'image'}
-                        })
-                    
-                    logger.info(f"🖼️  Processed image {name} for RAG context.")
+                    if Config.ENABLE_RAG:
+                        # RAG Image Processing (for AI context only)
+                        desc = self.img_processor.process_image(att_bytes, filename=name)
+                        if desc:
+                            attachment_descs.append(desc)
+                            # Store in buffer
+                            processed_attachments.append({
+                                'filename': name,
+                                'content_summary': desc,
+                                'metadata': {'type': 'image'}
+                            })
+                        logger.info(f"🖼️  Processed image {name} for RAG context.")
+                    else:
+                        logger.info(f"🖼️  Image processing skipped (RAG is disabled).")
                             
                 elif is_table:
                     res = self.tables_processor.process_bytes(att_bytes, filename=name)
@@ -677,28 +680,36 @@ class SupportAgent:
 
             # Persist Issue State
             try:
-                full_thread = self.sql.get_thread_messages(ticket_id)
-                current_state = self.sql.get_ticket_issue_state(ticket_id)
-                new_state = self.ai.update_issue_state(full_thread, current_state)
-                self.sql.update_ticket_issue_state(ticket_id, new_state)
+                if self.ai:
+                    full_thread = self.sql.get_thread_messages(ticket_id)
+                    current_state = self.sql.get_ticket_issue_state(ticket_id)
+                    # Original line:
+                    # new_state = self.ai.update_issue_state(full_thread, current_state)
+                    new_state = self.ai.update_issue_state(full_thread, current_state)
+                    self.sql.update_ticket_issue_state(ticket_id, new_state)
+                else:
+                    logger.info(f"⏭️ Skipping persistent issue state update (AI is disabled)")
             except Exception as e:
                 # Use display_id for log if possible
                 logger.error(f"Failed to update persistent issue state for {display_id}: {e}")
             
             # Add to vector DB
-            self.experience_db.add_email(
-                email_id=redacted_email['id'],
-                subject=redacted_email['subject'],
-                body=redacted_email.get('body_text', redacted_email['body']),
-                sender=redacted_email['sender'],
-                image_descriptions=attachment_descs,
-                metadata={
-                    'ticket_id': ticket_id,
-                    'pii_redacted': redacted_email.get('pii_redacted', False),
-                    'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                },
-                display_id=display_id
-            )
+            if Config.ENABLE_RAG:
+                self.experience_db.add_email(
+                    email_id=redacted_email['id'],
+                    subject=redacted_email['subject'],
+                    body=redacted_email.get('body_text', redacted_email['body']),
+                    sender=redacted_email['sender'],
+                    image_descriptions=attachment_descs,
+                    metadata={
+                        'ticket_id': ticket_id,
+                        'pii_redacted': redacted_email.get('pii_redacted', False),
+                        'pii_entities_count': redacted_email.get('pii_entities_found', 0)
+                    },
+                    display_id=display_id
+                )
+            else:
+                logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
 
         
         else:
@@ -760,27 +771,35 @@ class SupportAgent:
 
                 # Persist Issue State (Internal replies also update context)
                 try:
-                    full_thread = self.sql.get_thread_messages(ticket_id)
-                    current_state = self.sql.get_ticket_issue_state(ticket_id)
-                    new_state = self.ai.update_issue_state(full_thread, current_state)
-                    self.sql.update_ticket_issue_state(ticket_id, new_state)
+                    if self.ai:
+                        full_thread = self.sql.get_thread_messages(ticket_id)
+                        current_state = self.sql.get_ticket_issue_state(ticket_id)
+                        # Original line:
+                        # new_state = self.ai.update_issue_state(full_thread, current_state)
+                        new_state = self.ai.update_issue_state(full_thread, current_state)
+                        self.sql.update_ticket_issue_state(ticket_id, new_state)
+                    else:
+                        logger.info(f"⏭️ Skipping persistent issue state update (AI is disabled) for ticket {ticket_id}")
                 except Exception as e:
                     logger.error(f"Failed to update persistent issue state for {ticket_id}: {e}")
                 
                 # Add to vector DB (for RAG context)
-                self.experience_db.add_email(
-                    email_id=redacted_email['id'],
-                    subject=redacted_email['subject'],
-                    body=redacted_email.get('body_text', redacted_email['body']),
-                    sender=redacted_email['sender'],
-                    image_descriptions=attachment_descs,
-                    metadata={
-                        'ticket_id': ticket_id,
-                        'pii_redacted': redacted_email.get('pii_redacted', False),
-                        'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                    },
-                    display_id=display_id
-                )
+                if Config.ENABLE_RAG:
+                    self.experience_db.add_email(
+                        email_id=redacted_email['id'],
+                        subject=redacted_email['subject'],
+                        body=redacted_email.get('body_text', redacted_email['body']),
+                        sender=redacted_email['sender'],
+                        image_descriptions=attachment_descs,
+                        metadata={
+                            'ticket_id': ticket_id,
+                            'pii_redacted': redacted_email.get('pii_redacted', False),
+                            'pii_entities_count': redacted_email.get('pii_entities_found', 0)
+                        },
+                        display_id=display_id
+                    )
+                else:
+                    logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
 
             else:
                 # Check if this orphan internal email was sent to support (to create a ticket)
@@ -816,19 +835,22 @@ class SupportAgent:
                             )
                         
                         # Add to vector DB
-                        self.experience_db.add_email(
-                            email_id=redacted_email['id'],
-                            subject=redacted_email['subject'],
-                            body=redacted_email.get('body_text', redacted_email['body']),
-                            sender=redacted_email['sender'],
-                            image_descriptions=attachment_descs,
-                            metadata={
-                                'ticket_id': ticket_id,
-                                'pii_redacted': redacted_email.get('pii_redacted', False),
-                                'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                            },
-                            display_id=display_id
-                        )
+                        if Config.ENABLE_RAG:
+                            self.experience_db.add_email(
+                                email_id=redacted_email['id'],
+                                subject=redacted_email['subject'],
+                                body=redacted_email.get('body_text', redacted_email['body']),
+                                sender=redacted_email['sender'],
+                                image_descriptions=attachment_descs,
+                                metadata={
+                                    'ticket_id': ticket_id,
+                                    'pii_redacted': redacted_email.get('pii_redacted', False),
+                                    'pii_entities_count': redacted_email.get('pii_entities_found', 0)
+                                },
+                                display_id=display_id
+                            )
+                        else:
+                            logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
                     else:
                         logger.error(
                             f"❌ Failed to create ticket from internal support request | "
@@ -853,6 +875,11 @@ class SupportAgent:
         - Passes contexts separately to AI agent
         - Tracks provenance from both sources
         """
+        # AI response generation requires RAG context, skip if disabled
+        if not Config.ENABLE_RAG:
+            logger.info(f"⏭️ Skipping AI response draft generation for ticket {ticket_id} (RAG is disabled).")
+            return
+
         # Resolve friendly ID early for all function logs
         display_id = self.sql.get_display_id(ticket_id)
 

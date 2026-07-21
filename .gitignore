@@ -10,3 +10,13 @@ Books/
 .vscode
 .venv
 *.backup.*
+*.tar.gz
+deploy_pkg.tar.gz
+data_pkg.tar.gz
+scratch/
+scratch_*
+test/
+tests/
+test_*
+*_test.py
+rag_tester.py

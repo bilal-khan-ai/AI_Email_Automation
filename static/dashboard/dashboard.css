@@ -5,12 +5,15 @@
     --text-secondary: #7f8c8d;
     --border-color: #e0e0e0;
     --input-bg: #ffffff;
-    --header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --header-bg: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
     --shadow: rgba(0, 0, 0, 0.05);
     --modal-bg: rgba(0, 0, 0, 0.5);
     --section-bg-info: #f8f9fa;
     --section-bg-attach: #e7f3ff;
     --section-bg-warn: #fff3cd;
+    --stat-total-color: #1e293b;
+    --stat-open-color: #10b981;
+    --stat-closed-color: #64748b;
 }
 
 /* Dark Mode Variables */
@@ -21,12 +24,15 @@ body.dark-mode {
     --text-secondary: #cbd5e1;
     --border-color: #404040;
     --input-bg: #333333;
-    --header-bg: linear-gradient(135deg, #2c3e50 0%, #000000 100%);
+    --header-bg: linear-gradient(135deg, #1b4332 0%, #111827 100%);
     --shadow: rgba(0, 0, 0, 0.3);
     --modal-bg: rgba(0, 0, 0, 0.8);
     --section-bg-info: #383838;
     --section-bg-attach: #003366;
     --section-bg-warn: #4d3e00;
+    --stat-total-color: #f1f5f9;
+    --stat-open-color: #34d399;
+    --stat-closed-color: #94a3b8;
 }
 
 body.dark-mode .text-secondary,
@@ -134,6 +140,17 @@ body.modal-open {
 .status-open {
     background: #d4edda;
     color: #155724;
+}
+
+.status-review {
+    background: #cff4fc;
+    color: #055160;
+}
+
+.status-ignore {
+    background: #f3f4f6;
+    color: #4b5563;
+    border: 1px solid #d1d5db;
 }
 
 .status-closed {
@@ -499,7 +516,7 @@ body.dark-mode .message-bubble .bubble-actor {
     padding: 1.5rem;
     border-radius: 10px;
     box-shadow: 0 2px 8px var(--shadow);
-    border-left: 4px solid #667eea;
+    border-left: 4px solid #2d6a4f;
 }
 
 .stat-card.pending {
@@ -511,9 +528,11 @@ body.dark-mode .message-bubble .bubble-actor {
 }
 
 .stat-value {
-    font-size: 2.5rem;
-    font-weight: bold;
-    color: #667eea;
+    font-size: 2.85rem;
+    font-weight: 800;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    letter-spacing: -1.5px;
+    color: var(--stat-closed-color);
     margin-bottom: 0.5rem;
 }
 
@@ -552,7 +571,7 @@ body.dark-mode .message-bubble .bubble-actor {
 
 .search-box input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .filter-buttons {
@@ -577,12 +596,12 @@ body.dark-mode .message-bubble .bubble-actor {
 
 .message-card:hover {
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .message-card.expanded {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    border-color: #667eea;
+    border-color: #2d6a4f;
     cursor: default;
 }
 
@@ -627,7 +646,7 @@ body.dark-mode .message-header {
 }
 
 .filter-btn {
-    padding: 0.65rem 1.4rem;
+    padding: 0.5rem 1rem;
     border: 1px solid var(--border-color);
     background: var(--bg-card);
     color: var(--text-primary);
@@ -640,14 +659,14 @@ body.dark-mode .message-header {
 }
 
 .filter-btn:hover {
-    border-color: #667eea;
-    color: #667eea;
+    border-color: #2d6a4f;
+    color: #2d6a4f;
 }
 
 .filter-btn.active {
-    background: #667eea;
+    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
     color: white;
-    border-color: #667eea;
+    border-color: #3A5A24;
 }
 
 /* Pill Toggle for Visibility (My/All) */
@@ -662,9 +681,10 @@ body.dark-mode .message-header {
     user-select: none;
     width: fit-content;
     margin-right: 1.5rem;
-    min-width: 240px;
+    min-width: 220px;
+    flex-shrink: 0;
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
-    height: 42px;
+    height: 38px;
     align-items: center;
 }
 
@@ -681,6 +701,7 @@ body.dark-mode .message-header {
     z-index: 2;
     text-align: center;
     letter-spacing: 0.5px;
+    white-space: nowrap;
 }
 
 .pill-option.active {
@@ -693,11 +714,11 @@ body.dark-mode .message-header {
     left: 3px;
     height: calc(100% - 6px);
     width: calc(50% - 3px);
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
     border-radius: 50px;
     transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     z-index: 1;
-    box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 10px rgba(45, 106, 79, 0.3);
 }
 
 [data-active="all"] .pill-slider {
@@ -710,7 +731,7 @@ body.dark-mode .message-header {
 }
 
 .filter-dropdown-btn {
-    padding: 0.65rem 1.2rem;
+    padding: 0.5rem 0.8rem;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 12px;
@@ -722,18 +743,18 @@ body.dark-mode .message-header {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    min-width: 170px;
+    min-width: 140px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .filter-dropdown-btn:hover {
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .filter-dropdown-btn.has-filter {
-    background: #667eea;
+    background: linear-gradient(135deg, #2ecc71 0%, #2d6a4f 100%);
     color: white;
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .filter-dropdown-content {
@@ -903,7 +924,7 @@ body.dark-mode .ticket-card.reopened-tint {
     font-family: 'Courier New', monospace;
     font-size: 0.9rem;
     font-weight: bold;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
     color: white;
     padding: 0.4rem 0.8rem;
     border-radius: 6px;
@@ -1215,7 +1236,7 @@ body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
 }
 
 .message-card.internal-note {
-    border-left: 5px solid #667eea;
+    border-left: 5px solid #3A5A24;
     background-color: var(--section-bg-info);
 }
 
@@ -1235,7 +1256,7 @@ body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
 
 /* Quoted Text Hiding */
 .quoted-text-toggle {
-    color: #667eea;
+    color: #3A5A24;
     cursor: pointer;
     font-size: 0.85rem;
     margin-top: 0.5rem;
@@ -1270,7 +1291,8 @@ body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: #ffffff;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     margin-top: 0;
     display: block;
     height: auto;
@@ -1293,7 +1315,7 @@ body.dark-mode .email-iframe-container {
 
 .quoted-text-btn {
     background: var(--bg-primary);
-    color: #667eea;
+    color: #2d6a4f;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 4px 12px;
@@ -1308,9 +1330,9 @@ body.dark-mode .email-iframe-container {
 }
 
 .quoted-text-btn:hover {
-    background: #667eea;
+    background: #2d6a4f;
     color: white;
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .modal {
@@ -1400,7 +1422,7 @@ body.dark-mode .close-btn {
 
 .assignment-dropdown select:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 /* Updated Layout for Collapsible Panel */
@@ -1478,13 +1500,13 @@ body.dark-mode .close-btn {
     padding: 0.75rem 1rem;
     /* Reduced vertical padding */
     border-radius: 8px;
-    border-left: 4px solid #667eea;
+    border-left: 4px solid #3A5A24;
 }
 
 .info-section h3 {
     font-size: 0.95rem;
     margin-bottom: 0.75rem;
-    color: #667eea;
+    color: #3A5A24;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -1589,7 +1611,7 @@ body.dark-mode .close-btn {
 
 .composer-field input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: #2d6a4f;
 }
 
 .toggle-cc-bcc {
@@ -1601,15 +1623,15 @@ body.dark-mode .close-btn {
 .toggle-cc-bcc button {
     padding: 0.3rem 0.8rem;
     background: none;
-    border: 1px solid #667eea;
-    color: #667eea;
+    border: 1px solid #2d6a4f;
+    color: #2d6a4f;
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.85rem;
 }
 
 .toggle-cc-bcc button:hover {
-    background: #667eea;
+    background: #2d6a4f;
     color: white;
 }
 
@@ -1640,7 +1662,7 @@ body.dark-mode .close-btn {
 
 .file-input-label {
     padding: 0.6rem 1.2rem;
-    background: #667eea;
+    background: #2d6a4f;
     color: white;
     border-radius: 6px;
     cursor: pointer;
@@ -1719,7 +1741,7 @@ body.dark-mode .close-btn {
 }
 
 .btn-primary {
-    background: #667eea;
+    background: #2d6a4f;
     color: white;
 }
 
@@ -1766,7 +1788,7 @@ body.dark-mode .close-btn {
     position: fixed;
     bottom: 2rem;
     right: 2rem;
-    background: #667eea;
+    background: #2d6a4f;
     color: white;
     padding: 0.75rem 1.5rem;
     border-radius: 25px;
@@ -2182,4 +2204,53 @@ body.dark-mode .sending-overlay-content {
 }
 body.dark-mode {
     --calendar-icon-filter: invert(1);
+}
+
+/* Custom Date Filter Layout Fix */
+.date-filter-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+}
+
+@media (max-width: 1300px) {
+    .filter-separator {
+        display: none !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .date-filter-container {
+        flex-wrap: wrap;
+    }
+}
+
+/* Custom Date Filter Popover */
+.date-filter-container {
+    position: relative;
+    display: inline-block;
+}
+
+#customDateInputs {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 1000;
+    background: var(--bg-card);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 8px;
+    white-space: nowrap;
+}
+
+/* Ensure input elements inside popover render nicely */
+#customDateInputs .filter-dropdown-btn {
+    min-width: 120px;
+    background: var(--input-bg);
 }
