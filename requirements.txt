@@ -7,7 +7,9 @@ Flask-SocketIO==5.3.6
 python-socketio==5.11.2
 python-engineio==4.13.1
 simple-websocket==1.1.0
-gunicorn
+# Bilal Khan (10/08/2026) Issue No  Sheet_Name  - Pin gunicorn and eventlet to versions supporting gunicorn eventlet worker
+eventlet==0.35.2
+gunicorn==21.2.0
 Werkzeug==3.0.3
 Jinja2==3.1.6
 itsdangerous==2.2.0
@@ -46,6 +48,9 @@ microsoft-kiota-serialization-text==1.9.8
 # ============================================================
 openai==1.97.0
 
+# Bilal Khan (05/08/2026) - Model unload: RAG-only packages commented out - start
+# Re-enable these lines if ENABLE_RAG=True is set in .env
+
 # Embeddings (lightweight model - deactivated in favor of OpenAI)
 # sentence-transformers==5.2.2
 
@@ -53,42 +58,48 @@ openai==1.97.0
 # --extra-index-url https://download.pytorch.org/whl/cpu
 # torch
 
-# PII Redaction
-presidio_analyzer==2.2.355
-presidio_anonymizer==2.2.355
-phonenumbers==8.13.55
+# PII Redaction (only needed when ENABLE_RAG=True)
+# presidio_analyzer==2.2.355
+# presidio_anonymizer==2.2.355
+# phonenumbers==8.13.55
+# langdetect==1.0.9
 
-# OPTIONAL (remove if not needed)
-spacy==3.7.5
-spacy-legacy==3.0.12
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+# spaCy NLP engine for Presidio (only needed when ENABLE_RAG=True)
+# spacy==3.7.5
+# spacy-legacy==3.0.12
+# en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+# Bilal Khan (05/08/2026) - Model unload: RAG-only packages commented out - end
 
 # ============================================================
 # 🗄️ Storage
 # ============================================================
 psycopg2-binary==2.9.11
-chromadb==1.5.0   # keep if still using it
+# Bilal Khan (10/08/2026) Issue No  Sheet_Name  - Commented out chromadb (Model Unloaded - optional import in vector_db.py)
+# chromadb>=0.4.0
 
 # ============================================================
 # 📊 Data
 # ============================================================
-pandas==2.2.3
-numpy>=1.26.4
-joblib==1.5.3
+# Bilal Khan (05/08/2026) - Model unload: pandas/numpy/joblib only needed by RAG attachment processing
+# pandas==2.2.3
+# numpy>=1.26.4
+# joblib==1.5.3
 
 # ============================================================
 # 🖼️ Image
 # ============================================================
-pillow==12.1.1
+# pillow==12.1.1  # Bilal Khan (05/08/2026) - Model unload: only needed when ENABLE_RAG=True
 
 # ============================================================
 # 📄 Docs
 # ============================================================
-python-docx==1.2.0
-openpyxl==3.1.5
-pypdf==6.7.0
-lxml==5.3.2
-et_xmlfile==2.0.0
+# Bilal Khan (05/08/2026) - Model unload: doc parsing only needed when ENABLE_RAG=True - start
+# python-docx==1.2.0
+# openpyxl==3.1.5
+# pypdf==6.7.0
+# lxml==5.3.2
+# et_xmlfile==2.0.0
+# Bilal Khan (05/08/2026) - Model unload: doc parsing only needed when ENABLE_RAG=True - end
 
 # ============================================================
 # 🌍 Networking
@@ -104,11 +115,11 @@ anyio==4.12.1
 python-dotenv==1.2.1
 beautifulsoup4==4.12.3
 regex==2026.1.15
-langdetect==1.0.9
+# langdetect==1.0.9  # Bilal Khan (05/08/2026) - Model unload: only needed by PIIRedactor
 packaging==26.0
 rich==14.3.2
 PyYAML==6.0.3
 six==1.17.0
 tqdm
 filelock==3.20.3
-networkx==3.6.1
+# networkx==3.6.1  # Bilal Khan (05/08/2026) - Model unload: only needed by spaCy dependency graph

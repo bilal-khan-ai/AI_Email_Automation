@@ -107,6 +107,30 @@ class RetryConfig:
         return max(0, delay)
 
 
+# Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker auth detection - start
+_AUTH_ERROR_PATTERNS = (
+    "401",
+    "unauthorized",
+    "invalid_client",
+    "authentication_failed",
+    "client secret",
+    "credentials",
+    "access token",
+    "token is expired",
+)
+
+def _is_auth_error(exc: Exception) -> bool:
+    """
+    Returns True if the exception looks like an Azure authentication
+    failure (expired/invalid credentials) vs a transient network error.
+    Auth errors should NOT be retried — they will never succeed until
+    the secret is rotated.
+    """
+    msg = str(exc).lower()
+    return any(pat in msg for pat in _AUTH_ERROR_PATTERNS)
+# Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker auth detection - end
+
+
 async def retry_with_backoff(
     operation: Callable,
     config: RetryConfig,
@@ -114,50 +138,61 @@ async def retry_with_backoff(
 ):
     """
     Retry an async operation with exponential backoff.
-    
+
+    Auth errors (401 / invalid_client) are NOT retried — they break
+    immediately and re-raise so the circuit-breaker in GraphConnector
+    can count consecutive failures and open the circuit.
+
     Args:
         operation: Async callable to retry
         config: Retry configuration
         operation_name: Name for logging
-        
+
     Returns:
         Result of operation
-        
+
     Raises:
         Exception: If all retries fail
     """
     last_exception = None
-    
+
     for attempt in range(config.max_retries + 1):
         try:
             result = await operation()
-            
+
             if attempt > 0:
                 logger.info(f"✅ {operation_name} succeeded on attempt {attempt + 1}")
-            
+
             return result
-        
+
         except Exception as e:
             last_exception = e
-            
+
+            # Bilal Khan (12/08/2026) - P1 Fix #5: Break immediately on auth errors, no retry
+            if _is_auth_error(e):
+                logger.error(
+                    f"🔐 {operation_name} failed with authentication error (no retry): {e}"
+                )
+                break
+
             # Don't retry on final attempt
             if attempt >= config.max_retries:
                 logger.error(
                     f"❌ {operation_name} failed after {config.max_retries + 1} attempts: {e}"
                 )
                 break
-            
+
             # Calculate delay
             delay = config.get_delay(attempt)
-            
+
             logger.warning(
                 f"⚠️  {operation_name} failed (attempt {attempt + 1}/{config.max_retries + 1}): {e}. "
                 f"Retrying in {delay:.2f}s..."
             )
-            
+
             # Wait before retry
             await asyncio.sleep(delay)
-    
+
     # All retries failed
     raise last_exception
 
@@ -281,6 +316,7 @@ class AsyncioWorker:
         """
         try:
             if request.request_type == RequestType.FETCH_EMAILS:
+                # Bilal Khan (05/08/2026) - Wave 1A: Timeout covers full retry cycle (3x30s per attempt + jitter)
                 result = self.loop.run_until_complete(
                     asyncio.wait_for(
                         retry_with_backoff(
@@ -288,7 +324,7 @@ class AsyncioWorker:
                             self.retry_config,
                             f"fetch_emails({request.params.get('user_email', 'unknown')})"
                         ),
-                        timeout=45.0
+                        timeout=120.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -301,7 +337,13 @@ class AsyncioWorker:
                             self.retry_config,
                             f"get_attachment({request.params.get('attachment_id', 'unknown')[:20]}...)"
                         ),
-                        timeout=30.0
+                        # Bilal Khan (12/08/2026) - P0 Fix #1: Reduced from 60s → 25s.
+                        # Outer queue.get() in get_attachment_sync is 30s; inner MUST be
+                        # shorter so the worker always puts a GraphResponse on the queue
+                        # before the caller times out. 60s > 30s was causing the caller to
+                        # abandon the request while the async coroutine kept running,
+                        # orphaning SSL contexts and HTTP buffers in memory each poll cycle.
+                        timeout=25.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -314,7 +356,7 @@ class AsyncioWorker:
                             self.retry_config,
                             "send_email"
                         ),
-                        timeout=45.0
+                        timeout=120.0  # Bilal Khan (05/08/2026) - Wave 1A: was 45s, increased to cover retries
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -327,7 +369,7 @@ class AsyncioWorker:
                             self.retry_config,
                             "reply_to_email"
                         ),
-                        timeout=45.0
+                        timeout=120.0  # Bilal Khan (05/08/2026) - Wave 1A: was 45s, increased to cover retries
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -676,6 +718,12 @@ class GraphConnector:
     - Enhanced logging
     """
     
+    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker constants
+    # Trip after this many consecutive auth failures across any operation
+    CIRCUIT_TRIP_THRESHOLD: int = 3
+    # Stay open for this many seconds before auto-resetting
+    CIRCUIT_COOLDOWN_SECONDS: float = 300.0  # 5 minutes
+
     def __init__(
         self,
         client_id: str,
@@ -689,6 +737,9 @@ class GraphConnector:
         self.retry_config = retry_config or RetryConfig()
         self.worker: Optional[AsyncioWorker] = None
         self._authenticated = False
+        # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker state
+        self._consecutive_auth_failures: int = 0
+        self._circuit_open_until: float = 0.0  # epoch seconds
     
     def authenticate(self) -> bool:
         """
@@ -714,7 +765,7 @@ class GraphConnector:
             self._authenticated = False
             return False
     
-    def _send_request(self, request_type: RequestType, params: dict, timeout: float = 60.0) -> GraphResponse:
+    def _send_request(self, request_type: RequestType, params: dict, timeout: float = 150.0) -> GraphResponse:  # Bilal Khan (05/08/2026) - Wave 1A: 60→150s so inner async timeout (120s) always fires first
         """
         Send a request to the asyncio worker and wait for response.
         
@@ -745,26 +796,81 @@ class GraphConnector:
             response = response_queue.get(timeout=timeout)
             return response
         except queue.Empty:
-            logger.warning(f"⚠️ Graph request timed out after {timeout}s. Resetting worker thread...")
-            try:
-                self.shutdown()
-            except Exception as e:
-                logger.error(f"❌ Error during timeout shutdown: {e}")
-            self.authenticate()
+            # Bilal Khan (05/08/2026) - Wave 1A: Removed re-authenticate-on-timeout.
+            # Previously: shutdown() + authenticate() spawned a new thread while the old one
+            # was still alive (5s join not enough), causing a thread accumulation leak that
+            # exhausted RAM under sustained Graph API throttling. Now we log and raise only.
+            # The inner asyncio.wait_for (120s) always fires before this outer timeout (150s),
+            # so the worker thread always puts a response on the queue before we get here.
+            thread_alive = self.worker.worker_thread.is_alive() if self.worker else 'N/A'
+            logger.error(
+                f"❌ Graph request timed out after {timeout}s (outer queue). "
+                f"Worker thread alive: {thread_alive}. This should not happen with aligned timeouts."
+            )
             raise RuntimeError(f"Request timed out after {timeout} seconds")
     
+    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker helpers - start
+    def _is_circuit_open(self) -> bool:
+        """Returns True if the circuit is currently open (tripped)."""
+        if self._circuit_open_until > 0:
+            remaining = self._circuit_open_until - time.time()
+            if remaining > 0:
+                logger.warning(
+                    f"⚡ Circuit OPEN — Azure auth failure threshold hit. "
+                    f"Skipping Graph API call. Resets in {remaining:.0f}s. "
+                    f"Rotate the Azure client secret in .env and redeploy."
+                )
+                return True
+            else:
+                # Auto-reset after cooldown
+                logger.info("⚡ Circuit RESET — cooldown elapsed, allowing Graph API calls again.")
+                self._circuit_open_until = 0.0
+                self._consecutive_auth_failures = 0
+        return False
+
+    def _record_outcome(self, success: bool, error: str = "") -> None:
+        """Track consecutive auth failures and trip/reset the circuit."""
+        if not success and _is_auth_error(Exception(error or "")):
+            self._consecutive_auth_failures += 1
+            logger.warning(
+                f"🔐 Auth failure #{self._consecutive_auth_failures} / "
+                f"{self.CIRCUIT_TRIP_THRESHOLD} before circuit trips."
+            )
+            if self._consecutive_auth_failures >= self.CIRCUIT_TRIP_THRESHOLD:
+                self._circuit_open_until = time.time() + self.CIRCUIT_COOLDOWN_SECONDS
+                logger.critical(
+                    f"🚨 CIRCUIT TRIPPED — {self._consecutive_auth_failures} consecutive Azure "
+                    f"authentication failures. All Graph API calls blocked for "
+                    f"{self.CIRCUIT_COOLDOWN_SECONDS:.0f}s. "
+                    f"ACTION REQUIRED: rotate AZURE_CLIENT_SECRET in .env and redeploy."
+                )
+        elif success:
+            if self._consecutive_auth_failures > 0:
+                logger.info(
+                    f"✅ Circuit RESET — successful call after "
+                    f"{self._consecutive_auth_failures} prior auth failure(s)."
+                )
+            self._consecutive_auth_failures = 0
+            self._circuit_open_until = 0.0
+    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker helpers - end
+
     def fetch_latest_emails(self, user_email: str, minutes: int = 10, top: int = 100) -> List[Dict]:
         """
         Fetch emails from the last N minutes (SYNCHRONOUS with retry).
-        
+
+        Returns empty list immediately if the auth circuit is open.
+
         Args:
             user_email: Email address to fetch from
             minutes: Time window in minutes
             top: Maximum number of emails to fetch
-            
+
         Returns:
             List of email dicts
         """
+        # Bilal Khan (12/08/2026) - P1 Fix #5: Check circuit before issuing request
+        if self._is_circuit_open():
+            return []
         try:
             response = self._send_request(
                 RequestType.FETCH_EMAILS,
@@ -774,29 +880,36 @@ class GraphConnector:
                     'top': top
                 }
             )
-            
+
+            self._record_outcome(response.success, response.error or "")
             if response.success:
                 return response.data
             else:
                 logger.error(f"❌ Fetch emails failed: {response.error}")
                 return []
-        
+
         except Exception as e:
+            self._record_outcome(False, str(e))
             logger.error(f"❌ Error fetching emails: {e}")
             return []
     
     def get_attachment_sync(self, user_email: str, message_id: str, attachment_id: str):
         """
         Download attachment bytes (SYNCHRONOUS with retry).
-        
+
+        Returns None immediately if the auth circuit is open.
+
         Args:
             user_email: Email address
             message_id: Message ID
             attachment_id: Attachment ID
-            
+
         Returns:
             bytes: Attachment data, or None if failed
         """
+        # Bilal Khan (12/08/2026) - P1 Fix #5: Check circuit before issuing request
+        if self._is_circuit_open():
+            return None
         try:
             response = self._send_request(
                 RequestType.GET_ATTACHMENT,
@@ -807,14 +920,16 @@ class GraphConnector:
                 },
                 timeout=30.0
             )
-            
+
+            self._record_outcome(response.success, response.error or "")
             if response.success:
                 return response.data
             else:
                 logger.error(f"❌ Get attachment failed: {response.error}")
                 return None
-        
+
         except Exception as e:
+            self._record_outcome(False, str(e))
             logger.error(f"❌ Error getting attachment: {e}")
             return None
 

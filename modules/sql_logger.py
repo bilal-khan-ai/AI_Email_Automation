@@ -1061,6 +1061,35 @@ class SQLLogger:
             logger.error(f"❌ Error getting tickets needing regeneration: {e}")
             return []
     
+    def clear_ai_regeneration_flags(self, ticket_ids: List[str]) -> bool:
+        """
+        Bilal Khan (05/08/2026) - Wave 3A: Extracted from run_live() inline SQL - start
+        Bulk-clear needs_ai_generation flags via the managed connection pool.
+        Replaces the raw conn_manager.get_connection() call that was holding pool
+        slots open during AI generation in the polling loop.
+
+        Args:
+            ticket_ids: List of ticket IDs to clear the flag for.
+
+        Returns:
+            bool: True if successful, False on error.
+        """
+        if not ticket_ids:
+            return True
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE tickets SET needs_ai_generation = FALSE WHERE ticket_id = ANY(%s)",
+                        (ticket_ids,)
+                    )
+            logger.debug(f"🧹 Cleared ai_regeneration flag for {len(ticket_ids)} ticket(s)")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error clearing ai_regeneration flags: {e}")
+            return False
+        # Bilal Khan (05/08/2026) - Wave 3A: Extracted from run_live() inline SQL - end
+
     def update_ticket_issue_state(self, ticket_id: str, issue_state: Dict) -> bool:
         """Update the persistent issue state for a ticket."""
         try:

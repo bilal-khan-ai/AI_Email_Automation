@@ -16,7 +16,8 @@ import auth
 from auth import init_auth, login_required, socketio_login_required, socketio_admin_required, admin_required, get_current_user, is_admin
 from config import Config
 from modules.openai_agent import OpenAIAgent
-from modules.vector_db import VectorDatabase, BookVectorDB
+# Bilal Khan (12/08/2026) - P1 Fix #6: VectorDB import gated behind ENABLE_RAG to avoid loading
+# chromadb/HuggingFace stubs at module level when RAG is disabled. Import moved inside lazy helpers.
 
 from flask.json.provider import DefaultJSONProvider
 
@@ -36,13 +37,14 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 init_auth(app)  # Initialize custom authentication system
 
 # Initialize SocketIO with async mode and custom JSON provider
+# Bilal Khan (10/08/2026) Issue No  Sheet_Name  - Update async_mode to eventlet to match gunicorn worker
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='threading',
+    async_mode='eventlet',
     json=app.json,
     logger=True,
-    engineio_logger=True
+    engineio_logger=False  # Bilal Khan (12/08/2026) - P1 Fix #6 / P2 #9: Disable Engine.IO debug logging (heartbeat spam eats stdout buffer memory)
 )
 
 # Ensure data directory exists
@@ -79,12 +81,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 ai_agent = OpenAIAgent(Config.OPENAI_API_KEY)
 ai_agent.authenticate()
 
-# Lazy initialization helper functions to prevent Gunicorn process forks from deadlocking on SQLite database files
+# Bilal Khan (12/08/2026) - P1 Fix #6: VectorDB lazy init guarded behind ENABLE_RAG - start
+# When ENABLE_RAG=False (current production) chromadb is not installed and these helpers
+# return None. Callers must check for None before calling methods on the result.
 _experience_db = None
 _documentation_db = None
 
 def get_experience_db():
+    """Return the experience VectorDatabase, or None if RAG is disabled."""
     global _experience_db
+    if not Config.ENABLE_RAG:
+        return None
     if _experience_db is None:
         print("Initializing lazy experience vector DB...")
         from modules.vector_db import VectorDatabase
@@ -92,12 +99,16 @@ def get_experience_db():
     return _experience_db
 
 def get_documentation_db():
+    """Return the documentation BookVectorDB, or None if RAG is disabled."""
     global _documentation_db
+    if not Config.ENABLE_RAG:
+        return None
     if _documentation_db is None:
         print("Initializing lazy documentation vector DB...")
         from modules.vector_db import BookVectorDB
         _documentation_db = BookVectorDB(Config.BOOKSTACK_DB_PATH)
     return _documentation_db
+# Bilal Khan (12/08/2026) - P1 Fix #6: VectorDB lazy init guarded behind ENABLE_RAG - end
 
 
 # Track connected users and their rooms
@@ -608,11 +619,15 @@ def toggle_ticket_status():
         display_id = sql_logger.get_display_id(ticket_id)
         
         # Update vector DB with resolution status for RAG quality
+        # Bilal Khan (12/08/2026) - P1 Fix #6: Skip VectorDB ops when RAG disabled (db returns None)
         is_resolved = (new_status == 'Closed')
-        get_experience_db().update_ticket_status(ticket_id, is_resolved, display_id=display_id)
-        
+        exp_db = get_experience_db()
+        if exp_db is not None:
+            exp_db.update_ticket_status(ticket_id, is_resolved, display_id=display_id)
+
         # New: Resolution Gold Labeling (Gold Labeling ensures high-quality RAG retrieval for repeat issues)
-        get_experience_db().update_authority_status(ticket_id, is_resolved, display_id=display_id)
+        if exp_db is not None:
+            exp_db.update_authority_status(ticket_id, is_resolved, display_id=display_id)
         sql_logger.mark_ticket_as_authority(ticket_id, is_resolved)
 
         # Release lock if closing
@@ -1173,21 +1188,26 @@ def regenerate_ai_sync():
         last_customer_msg = next((m for m in reversed(messages) if not m.get('is_internal')), messages[-1])
         query = last_customer_msg.get('body_text', '')
         
-        # 3. DUAL RAG SEARCH
+        # 3. DUAL RAG SEARCH (skipped when ENABLE_RAG=False)
+        # Bilal Khan (12/08/2026) - P1 Fix #6: Guard RAG search behind ENABLE_RAG flag
         # 3a. Search documentation (authoritative)
-        docs_raw = get_documentation_db().query_bookstack(query, n_results=Config.TOP_K_RESULTS)
-        # Format doc results to match OpenAIAgent expectations
         docs = []
-        if docs_raw and 'documents' in docs_raw and docs_raw['documents']:
-            for i, doc_text in enumerate(docs_raw['documents'][0]):
-                docs.append({
-                    'content': doc_text,
-                    'metadata': docs_raw['metadatas'][0][i] if 'metadatas' in docs_raw else {},
-                    'distance': docs_raw['distances'][0][i] if 'distances' in docs_raw else 0.5
-                })
+        experiences = []
+        if Config.ENABLE_RAG:
+            docs_raw = get_documentation_db().query_bookstack(query, n_results=Config.TOP_K_RESULTS)
+            # Format doc results to match OpenAIAgent expectations
+            if docs_raw and 'documents' in docs_raw and docs_raw['documents']:
+                for i, doc_text in enumerate(docs_raw['documents'][0]):
+                    docs.append({
+                        'content': doc_text,
+                        'metadata': docs_raw['metadatas'][0][i] if 'metadatas' in docs_raw else {},
+                        'distance': docs_raw['distances'][0][i] if 'distances' in docs_raw else 0.5
+                    })
 
-        # 3b. Search experience (advisory)
-        experiences = get_experience_db().search_similar(query, top_k=Config.TOP_K_RESULTS)
+            # 3b. Search experience (advisory)
+            experiences = get_experience_db().search_similar(query, top_k=Config.TOP_K_RESULTS)
+        else:
+            logger.info("⏭️ Skipping RAG search in dashboard regen (ENABLE_RAG=False)")
         
         # 4. Generate response
         draft, provenance = ai_agent.generate_response(

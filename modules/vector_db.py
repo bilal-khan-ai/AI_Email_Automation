@@ -4,9 +4,17 @@ Permanently eliminates all local CPU/GPU/VRAM memory overhead.
 Soft-Delete Support and unified path structure.
 """
 
-import chromadb
-from chromadb.config import Settings
-from chromadb.utils import embedding_functions
+# Bilal Khan (10/08/2026) Issue No  Sheet_Name  - Make chromadb optional to support model unload mode
+try:
+    import chromadb
+    from chromadb.config import Settings
+    from chromadb.utils import embedding_functions
+    HAS_CHROMADB = True
+except ImportError:
+    chromadb = None
+    Settings = None
+    embedding_functions = None
+    HAS_CHROMADB = False
 from typing import List, Dict, Optional
 import logging
 import gc
@@ -26,6 +34,13 @@ class VectorDatabase:
     def __init__(self, db_path: str, collection_name: str, force_cpu: bool = True):
         self.db_path = db_path
         self.collection_name = collection_name
+        
+        # Bilal Khan (10/08/2026) Issue No  Sheet_Name  - Guard VectorDatabase initialization when chromadb is not installed
+        if not HAS_CHROMADB:
+            logger.warning("⚠️ chromadb is not installed. VectorDatabase functionality is disabled.")
+            self.client = None
+            self.collection = None
+            return
         
         # Load API key dynamically from Config to avoid import cycles
         from config import Config

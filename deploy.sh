@@ -48,7 +48,7 @@ echo "🚀 Deploying to $SSH_USER@$VM_IP ($MODE mode)..."
 
 # Step 1: Package files locally
 echo "📦 Packing files..."
-tar -czvf deploy_pkg.tar.gz --exclude='deploy_pkg.tar.gz' --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='uploads' --exclude='Books' --exclude='data' --exclude='chroma_db' --exclude='chromaDB' .
+tar -czvf deploy_pkg.tar.gz --exclude='deploy_pkg.tar.gz' --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='uploads' --exclude='Books' --exclude='data' --exclude='chroma_db' --exclude='chromaDB' --exclude='*.dump' --exclude='*.sql' --exclude='*.db' .
 
 # Step 2: Upload
 echo "📤 Uploading package..."
@@ -69,38 +69,64 @@ $SSH_CMD $SSH_USER@$VM_IP << EOF
     tar -xzvf deploy_pkg.tar.gz
     rm deploy_pkg.tar.gz
 
-    # SWAP setup
-    if [ ! -f /swapfile ]; then
-        eval "\$SUDO fallocate -l 4G /swapfile" || eval "\$SUDO dd if=/dev/zero of=/swapfile bs=1M count=4096"
-        eval "\$SUDO chmod 600 /swapfile"
-        eval "\$SUDO mkswap /swapfile"
+# Bilal Khan (18/08/2026) Issue No  Sheet_Name  - Bulletproof swap verification, auto docker cache cleanup, and system health checks - start
+    # Step 3.1: Bulletproof SWAP Setup (Check active swap, create 4G if missing, persist in fstab)
+    if ! swapon --show | grep -q '/swapfile'; then
+        echo "🔧 Configuring 4GB Swap Space..."
+        if [ ! -f /swapfile ] || [ $(stat -c%s /swapfile 2>/dev/null || echo 0) -lt 4000000000 ]; then
+            eval "\$SUDO swapoff /swapfile 2>/dev/null || true"
+            eval "\$SUDO rm -f /swapfile"
+            eval "\$SUDO fallocate -l 4G /swapfile" || eval "\$SUDO dd if=/dev/zero of=/swapfile bs=1M count=4096"
+            eval "\$SUDO chmod 600 /swapfile"
+            eval "\$SUDO mkswap /swapfile"
+        fi
         eval "\$SUDO swapon /swapfile"
     fi
+    # Ensure swap persists across reboots in /etc/fstab
+    if ! grep -q '/swapfile' /etc/fstab; then
+        echo '/swapfile none swap sw 0 0' | eval "\$SUDO tee -a /etc/fstab"
+    fi
 
-    # Docker check & Install
+    # Step 3.2: Docker check & Install
     if ! command -v docker &> /dev/null; then
         curl -fsSL https://get.docker.com -o get-docker.sh
         eval "\$SUDO sh get-docker.sh"
         eval "\$SUDO usermod -aG docker \$USER"
     fi
 
-    # Docker Compose check & Install
-    if ! command -v docker-compose &> /dev/null; then
+    # Step 3.3: Docker Compose check & Aliasing (v2 or v1)
+    if docker compose version &> /dev/null; then
+        COMPOSE_CMD="docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+    else
         eval "\$SUDO curl -L \"https://github.com/docker/compose/releases/latest/download/docker-compose-\$(uname -s)-\$(uname -m)\" -o /usr/local/bin/docker-compose"
         eval "\$SUDO chmod +x /usr/local/bin/docker-compose"
+        COMPOSE_CMD="docker-compose"
     fi
 
-    # Deployment
+    # Step 3.4: Deployment
     if [ "$MODE" == "build" ]; then
-        eval "\$SUDO docker-compose up -d --build"
+        eval "\$SUDO \$COMPOSE_CMD up -d --build"
     else
-        eval "\$SUDO docker-compose up -d"
-        eval "\$SUDO docker-compose restart web"
+        eval "\$SUDO \$COMPOSE_CMD up -d"
+        eval "\$SUDO \$COMPOSE_CMD restart web"
     fi
-    eval "\$SUDO docker-compose restart worker"
+    eval "\$SUDO \$COMPOSE_CMD restart worker"
+
+    # Step 3.5: Auto-Prune dangling build cache to prevent disk exhaustion
+    echo "🧹 Cleaning up temporary build cache and dangling images..."
+    eval "\$SUDO docker builder prune -f 2>/dev/null || true"
+    eval "\$SUDO docker image prune -f 2>/dev/null || true"
 
     echo "✅ Deployment successful!"
-    eval "\$SUDO docker-compose ps"
+    eval "\$SUDO \$COMPOSE_CMD ps"
+
+    # Step 3.6: Report System Health Status
+    echo "📊 --- SYSTEM HEALTH REPORT ---"
+    free -h
+    df -h /
+    # Bilal Khan (18/08/2026) Issue No  Sheet_Name  - Bulletproof swap verification, auto docker cache cleanup, and system health checks - end
 EOF
 
 echo "🏁 Done."

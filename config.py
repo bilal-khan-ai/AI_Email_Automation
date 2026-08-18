@@ -28,9 +28,11 @@ class Config:
     # PSQL
     POSTGRES_HOST = os.getenv('POSTGRES_HOST', 'localhost')
     POSTGRES_PORT = os.getenv('POSTGRES_PORT', '5432')
-    POSTGRES_DB = os.getenv('POSTGRES_DB', 'support_tickets')
-    POSTGRES_USER = os.getenv('POSTGRES_USER', 'postgres')
-    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
+    # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_DB fallback to support_db
+    POSTGRES_DB = os.getenv('POSTGRES_DB', 'support_db')
+    # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_USER and POSTGRES_PASSWORD fallbacks
+    POSTGRES_USER = os.getenv('POSTGRES_USER', 'bilal_k')
+    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'India@123')
     POSTGRES_MIN_CONN = int(os.getenv('POSTGRES_MIN_CONN', 1))
     POSTGRES_MAX_CONN = int(os.getenv('POSTGRES_MAX_CONN', 10))
 

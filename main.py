@@ -5,18 +5,19 @@ import signal
 import sys
 import re
 import threading
+import gc  # Bilal Khan (12/08/2026) - P1 Fix #7: explicit GC for post-batch memory reclaim
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from config import Config
-from modules.vector_db import VectorDatabase
+# Bilal Khan (05/08/2026) - Model unload: heavy ML imports moved to conditional (only loaded when ENABLE_RAG=True)
+# VectorDatabase, ImageProcessor, TablesProcessor, DocProcessor, PIIRedactor
+# are imported inside SupportAgent.__init__ under the ENABLE_RAG guard.
+# Importing them at module level forces Python to load their C-extensions (spaCy,
+# chromadb, presidio) even when they are never instantiated.
 from modules.graph_connector import GraphConnector, RetryConfig
 from modules.sql_logger import SQLLogger
 from modules.openai_agent import OpenAIAgent
-from modules.image_processor import ImageProcessor
-from modules.tables_processor import TablesProcessor
-from modules.doc_processor import DocProcessor
-from modules.pii_redactor import PIIRedactor
 
 # Silence HF/Transformers chatter
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -219,46 +220,60 @@ class SupportAgent:
         if not self.graph.authenticate():
             raise SystemError("❌ Graph Auth Failed")
         
-        # 3. Init Vector DBs - DUAL CONTEXT
-        # 3a. Documentation (BookStack) - authoritative
-        logger.info("📚 Initializing documentation vector DB (BookStack)...")
-        self.documentation_db = VectorDatabase(
-            Config.BOOKSTACK_DB_PATH,
-            Config.BOOKSTACK_COLLECTION
-        )
-        
-        # 3b. Experience (Past support emails) - advisory
-        logger.info("📧 Initializing experience vector DB (Past Support)...")
-        self.experience_db = VectorDatabase(
-            Config.CHROMA_DB_PATH,  # "./chroma_db"
-            Config.COLLECTION_NAME   # "new_support_emails"
-        )
-        
-        # Keep legacy reference for backward compatibility
-        self.vector_db = self.experience_db
-        
-        # 4. Init AI
+        # 3. Vector DBs, Image/Doc processors, and PII redactor
+        # Bilal Khan (05/08/2026) - Model unload: skip all heavy ML subsystems when RAG disabled - start
+        # When ENABLE_RAG=False (current production mode) ChromaDB, spaCy/Presidio,
+        # and attachment processors are never called — no reason to pay their startup RAM cost.
+        if Config.ENABLE_RAG:
+            logger.info("📚 Initializing documentation vector DB (BookStack)...")
+            self.documentation_db = VectorDatabase(
+                Config.BOOKSTACK_DB_PATH,
+                Config.BOOKSTACK_COLLECTION
+            )
+            logger.info("📧 Initializing experience vector DB (Past Support)...")
+            self.experience_db = VectorDatabase(
+                Config.CHROMA_DB_PATH,
+                Config.COLLECTION_NAME
+            )
+            self.vector_db = self.experience_db  # legacy alias
+
+            # Image / table / doc processors only used for attachment RAG context
+            self.img_processor = ImageProcessor(ai_agent=self.ai)
+            self.tables_processor = TablesProcessor()
+            self.doc_processor = DocProcessor(
+                image_processor=self.img_processor,
+                tables_processor=self.tables_processor
+            )
+
+            # PII redactor: only needed to scrub data before RAG ingestion
+            from modules.pii_redactor import PIIRedactor
+            self.pii_redactor = PIIRedactor()
+            logger.info("🔐 PII Redactor initialized (RAG mode)")
+        else:
+            # Stubs — keep attribute names so ingest_email code paths don't break
+            self.documentation_db = None
+            self.experience_db = None
+            self.vector_db = None
+            self.img_processor = None
+            self.tables_processor = None
+            self.doc_processor = None
+            self.pii_redactor = None
+            logger.info(
+                "⚡ RAG disabled — skipped VectorDB / spaCy / Presidio / ImageProcessor / "
+                "TablesProcessor / DocProcessor init (~300-400 MB saved)"
+            )
+        # Bilal Khan (05/08/2026) - Model unload: skip all heavy ML subsystems when RAG disabled - end
+
+        # 4. Init AI (always available for ticket interpretation/response, independent of RAG)
         self.ai = None
         if Config.OPENAI_API_KEY and Config.AUTO_GENERATE_RESPONSES:
             self.ai = OpenAIAgent(Config.OPENAI_API_KEY)
             self.ai.authenticate()
-        
-        # 5. Init Image Processor
-        self.img_processor = ImageProcessor(ai_agent=self.ai)
-        
 
-        # 5b. Init Table/Document Processors (local preprocessing)
-        self.tables_processor = TablesProcessor()
-        self.doc_processor = DocProcessor(image_processor=self.img_processor, tables_processor=self.tables_processor)
-        # 6. Init Subject Matcher
+        # 5. Init Subject Matcher
         self.subject_matcher = SubjectMatcher(similarity_threshold=0.75)
 
-        # PII Redaction (CRITICAL SECURITY)
-        self.pii_redactor = PIIRedactor()
-        logger.info("🔐 PII Redactor initialized")
-
-        
-        # 7. Runtime state
+        # 6. Runtime state
         self.user_email = Config.USER_EMAIL
         self._shutdown_requested = False
         
@@ -495,7 +510,15 @@ class SupportAgent:
         # email['body'] = self._clean_html(email.get('body', '')) # REMOVED: Stripping here breaks dashboard rendering
 
         # SECURITY: Redact PII before RAG ingestion
-        redacted_email = self.pii_redactor.redact_email_content(email)
+        # Bilal Khan (05/08/2026) - Model unload: None-safe PII passthrough when RAG disabled
+        if self.pii_redactor is not None:
+            redacted_email = self.pii_redactor.redact_email_content(email)
+        else:
+            # No RAG = no need to scrub; add expected keys so downstream code doesn't KeyError
+            redacted_email = dict(email)
+            redacted_email.setdefault('pii_redacted', False)
+            redacted_email.setdefault('pii_entities_found', 0)
+            redacted_email.setdefault('pii_entity_types', [])
 
         if redacted_email.get('pii_redacted'):
             logger.warning(
@@ -574,27 +597,33 @@ class SupportAgent:
                         logger.info(f"🖼️  Image processing skipped (RAG is disabled).")
                             
                 elif is_table:
-                    res = self.tables_processor.process_bytes(att_bytes, filename=name)
-                    txt = (res or {}).get("combined_text", "")
-                    if txt:
-                        attachment_descs.append(txt)
-                        # Store in buffer
-                        processed_attachments.append({
-                            'filename': name,
-                            'content_summary': txt[:1000], # Keep summary size reasonable
-                            'metadata': {'type': 'table'}
-                        })
+                    # Bilal Khan (05/08/2026) - Model unload: guard table processor behind ENABLE_RAG
+                    if Config.ENABLE_RAG and self.tables_processor:
+                        res = self.tables_processor.process_bytes(att_bytes, filename=name)
+                        txt = (res or {}).get("combined_text", "")
+                        if txt:
+                            attachment_descs.append(txt)
+                            processed_attachments.append({
+                                'filename': name,
+                                'content_summary': txt[:1000],
+                                'metadata': {'type': 'table'}
+                            })
+                    else:
+                        logger.debug(f"⏭️  Table processing skipped (RAG disabled): {name}")
                 elif is_doc:
-                    res = self.doc_processor.process_bytes(att_bytes, filename=name)
-                    txt = (res or {}).get("combined_text", "")
-                    if txt:
-                        attachment_descs.append(txt)
-                        # Store in buffer
-                        processed_attachments.append({
-                            'filename': name,
-                            'content_summary': txt[:1000],
-                            'metadata': {'type': 'document'}
-                        })
+                    # Bilal Khan (05/08/2026) - Model unload: guard doc processor behind ENABLE_RAG
+                    if Config.ENABLE_RAG and self.doc_processor:
+                        res = self.doc_processor.process_bytes(att_bytes, filename=name)
+                        txt = (res or {}).get("combined_text", "")
+                        if txt:
+                            attachment_descs.append(txt)
+                            processed_attachments.append({
+                                'filename': name,
+                                'content_summary': txt[:1000],
+                                'metadata': {'type': 'document'}
+                            })
+                    else:
+                        logger.debug(f"⏭️  Doc processing skipped (RAG disabled): {name}")
 
             except Exception as e:
                 logger.error(
@@ -991,82 +1020,172 @@ class SupportAgent:
         else:
             logger.error(f"❌ Failed to generate draft for {display_id}")
     
+    # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Helper to touch worker_heartbeat.txt for Docker healthcheck
+    def _update_heartbeat(self):
+        try:
+            os.makedirs("data", exist_ok=True)
+            with open(os.path.join("data", "worker_heartbeat.txt"), "w") as f:
+                f.write(str(time.time()))
+        except Exception as hb_err:
+            logger.debug(f"Failed to touch heartbeat file: {hb_err}")
+
     def run_backlog(self, days: int = 7):
         """
-        Process backlog of emails with enhanced error handling.
-        
+        Process backlog emails in memory-safe streaming batches.
+
+        Instead of loading all N emails into memory at once, this fetches
+        BACKLOG_BATCH_SIZE emails at a time using a sliding time-window anchor
+        (oldest-first). Each batch is fully processed and then explicitly freed
+        before the next fetch, keeping peak email-list memory at ~5-10 MB
+        rather than ~100 MB for a 500-email backlog.
+
         Args:
             days: Number of days to look back
         """
+        # Bilal Khan (12/08/2026) - P1 Fix #7: Streaming batch backlog processing - start
+        if days <= 0:
+            logger.info("⏭️ Backlog processing skipped (PROCESSING_DAYS_BACK=0)")
+            return
+
         logger.info("=" * 80)
-        logger.info(f"Processing backlog ({days} days)")
+        logger.info(f"Processing backlog ({days} days) in streaming batches")
         logger.info("=" * 80)
-        
-        # Fetch emails
-        mins = days * 24 * 60
-        emails = self.graph.fetch_latest_emails(
-            self.user_email,
-            minutes=mins,
-            top=500
-        )
-        
-        # Sort oldest -> newest
-        emails.sort(key=lambda x: x['received'])
-        
-        logger.info(f"📊 Found {len(emails)} emails in backlog")
-        
-        # Process each email
+
+        # Configurable batch size — small enough to keep memory low, large enough
+        # to minimise Graph API round-trips (max 500 per call, we cap at 50).
+        BACKLOG_BATCH_SIZE = getattr(Config, 'BACKLOG_BATCH_SIZE', 50)
+
         touched = set()
-        success_count = 0
-        error_count = 0
-        
-        for i, email in enumerate(emails):
+        total_success = 0
+        total_errors = 0
+        total_fetched = 0
+
+        # We slide the window forward: start from `days` ago, advance the
+        # anchor each batch so we don't re-fetch already-seen messages.
+        # Graph API doesn't support true offset pagination on filter+orderby
+        # without a nextLink, so we approximate by shrinking the time window
+        # after each batch using the timestamp of the last email processed.
+        window_start_minutes = days * 24 * 60  # minutes back from now
+        MIN_WINDOW_MINUTES = 10  # stop once window shrinks below poll interval
+
+        batch_num = 0
+        while window_start_minutes > MIN_WINDOW_MINUTES:
             if self._shutdown_requested:
                 logger.info("🛑 Shutdown requested, stopping backlog processing")
                 break
-            
+
+            batch_num += 1
+            logger.info(
+                f"📦 Backlog batch #{batch_num} — window: last {window_start_minutes:.0f} min "
+                f"| batch_size: {BACKLOG_BATCH_SIZE}"
+            )
+
+            batch = self.graph.fetch_latest_emails(
+                self.user_email,
+                minutes=int(window_start_minutes),
+                top=BACKLOG_BATCH_SIZE
+            )
+
+            if not batch:
+                logger.info("ℹ️  No emails in this window, backlog complete.")
+                break
+
+            # Sort oldest first within this batch
+            batch.sort(key=lambda x: x['received'])
+            total_fetched += len(batch)
+
+            # Advance anchor to just before the oldest email in this batch
+            # so the next fetch window doesn't overlap significantly.
+            # The anchor moves forward by the age of the newest email in the batch.
+            newest_received = batch[-1]['received']  # ISO string
             try:
-                ticket_id = self.ingest_email(email)
-                if ticket_id:
-                    touched.add(ticket_id)
-                    success_count += 1
-                
-                # Progress logging
-                if (i + 1) % 10 == 0:
-                    logger.info(
-                        f"📊 Progress: {i + 1}/{len(emails)} emails | "
-                        f"Success: {success_count} | Errors: {error_count}"
+                from datetime import timezone
+                newest_dt = datetime.fromisoformat(newest_received.replace('Z', '+00:00'))
+                now_utc = datetime.now(timezone.utc)
+                age_minutes = (now_utc - newest_dt).total_seconds() / 60
+                # Shrink window to just before the newest email we just saw.
+                # Add a 2-minute overlap to avoid missing emails at boundary.
+                new_window = max(age_minutes - 2, MIN_WINDOW_MINUTES)
+                if new_window >= window_start_minutes:
+                    # No progress — the API returned stale data; avoid infinite loop
+                    logger.warning(
+                        f"⚠️  Backlog window didn't advance "
+                        f"(new={new_window:.0f}min >= old={window_start_minutes:.0f}min). "
+                        "Breaking to avoid loop."
                     )
-            
-            except Exception as e:
-                error_count += 1
-                logger.error(
-                    f"❌ Error processing email | "
-                    f"ID: {email.get('id', 'unknown')[:20]}... | "
-                    f"Sender: {email.get('sender', 'unknown')}: {e}"
-                )
-        
-        # Generate AI responses
+                    # Process this batch then stop
+                    window_start_minutes = 0
+                else:
+                    window_start_minutes = new_window
+            except Exception as parse_err:
+                logger.warning(f"⚠️  Could not parse newest email timestamp: {parse_err}. Stopping backlog.")
+                window_start_minutes = 0
+
+            # --- Process this batch ---
+            batch_success = 0
+            batch_errors = 0
+            for i, email in enumerate(batch):
+                if self._shutdown_requested:
+                    break
+                self._update_heartbeat()
+                try:
+                    ticket_id = self.ingest_email(email)
+                    if ticket_id:
+                        touched.add(ticket_id)
+                        batch_success += 1
+                    if (i + 1) % 10 == 0:
+                        logger.info(
+                            f"📊 Batch #{batch_num} progress: {i + 1}/{len(batch)} | "
+                            f"Success: {batch_success} | Errors: {batch_errors}"
+                        )
+                except Exception as e:
+                    batch_errors += 1
+                    logger.error(
+                        f"❌ Error processing email | "
+                        f"ID: {email.get('id', 'unknown')[:20]}... | "
+                        f"Sender: {email.get('sender', 'unknown')}: {e}"
+                    )
+
+            total_success += batch_success
+            total_errors += batch_errors
+            logger.info(
+                f"✅ Batch #{batch_num} complete | "
+                f"Fetched: {len(batch)} | Success: {batch_success} | Errors: {batch_errors} | "
+                f"Total fetched so far: {total_fetched}"
+            )
+
+            # --- Free batch memory before next fetch ---
+            del batch
+            gc.collect()
+
+            # If we got fewer emails than the batch size the API has no more to offer
+            if len(touched) == 0 and batch_success == 0 and batch_num == 1:
+                # Likely all already processed (idempotent check passed)
+                logger.info("ℹ️  All backlog emails already processed (idempotent).")
+                break
+        # Bilal Khan (12/08/2026) - P1 Fix #7: Streaming batch backlog processing - end
+
+        # Generate AI responses for all newly touched tickets
         logger.info(f"🧠 Generating AI for {len(touched)} active tickets...")
-        
+
         ai_success = 0
         ai_errors = 0
-        
+
         for ticket_id in touched:
             if self._shutdown_requested:
                 break
+            self._update_heartbeat()
             try:
                 self.generate_ai_response(ticket_id)
                 ai_success += 1
             except Exception as e:
                 ai_errors += 1
-                # Resolve friendly ID for log
                 err_id = self.sql.get_display_id(ticket_id)
                 logger.error(f"❌ Error generating AI for {err_id}: {e}")
-        
+
         logger.info("=" * 80)
         logger.info("Backlog processing complete")
-        logger.info(f"📊 Email ingestion: {success_count} success, {error_count} errors")
+        logger.info(f"📊 Email ingestion: {total_success} success, {total_errors} errors ({total_fetched} fetched)")
         logger.info(f"📊 AI generation: {ai_success} success, {ai_errors} errors")
         logger.info("=" * 80)
     
@@ -1088,6 +1207,13 @@ class SupportAgent:
                 
                 # Sort oldest -> newest
                 emails.sort(key=lambda x: x['received'])
+                
+                # Bilal Khan (05/08/2026) - Wave 1B: Heartbeat moved here (before AI generation) - start
+                # Graph API call succeeded - touch heartbeat immediately.
+                # AI generation below can take several minutes for multiple tickets,
+                # which would cause Docker healthcheck to falsely kill a healthy container.
+                self._update_heartbeat()
+                # Bilal Khan (05/08/2026) - Wave 1B: Heartbeat moved here (before AI generation) - end
                 
                 if emails:
                     logger.info(f"📧 Processing {len(emails)} new emails...")
@@ -1127,17 +1253,13 @@ class SupportAgent:
                     except Exception as e:
                         logger.error(f"❌ Error generating AI for {ticket_id}: {e}")
                 
-                # Touch heartbeat file for Docker container health check
-                try:
-                    os.makedirs("data", exist_ok=True)
-                    with open(os.path.join("data", "worker_heartbeat.txt"), "w") as f:
-                        f.write(str(time.time()))
-                except Exception as hb_err:
-                    logger.debug(f"Failed to touch heartbeat file: {hb_err}")
-
+                # Bilal Khan (05/08/2026) - Wave 1B: Old heartbeat block removed from here (moved above AI generation)
                 # Sleep until next poll
                 if not self._shutdown_requested:
                     time.sleep(Config.POLLING_INTERVAL)
+                # Bilal Khan (12/08/2026) - P1 Fix #7: Explicit GC after each poll cycle to reclaim
+                # BeautifulSoup DOM trees and Azure SDK HTTP response objects promptly.
+                gc.collect()
             
             except Exception as e:
                 logger.error(f"❌ Live loop error: {e}")

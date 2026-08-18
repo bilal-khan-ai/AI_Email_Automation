@@ -3,10 +3,41 @@ services:
   db:
     image: postgres:16-alpine
     restart: always
+    # Bilal Khan (12/08/2026) - P0 Fix #2: Restore Postgres memory cap.
+    # Uncapped Postgres on a 2GB VM causes the kernel page cache to grow to fill
+    # all available RAM, pushing web + worker into swap thrashing. 300MB RAM /
+    # 450MB swap matches the tuned postgres config (shared_buffers=32MB +
+    # max_connections=15 * work_mem=4MB + maintenance_work_mem=16MB = ~140MB peak).
+    # memswap_limit intentionally > mem_limit to absorb brief VACUUM spikes.
+    mem_limit: 300m
+    memswap_limit: 450m
+    # Bilal Khan (12/08/2026) - P2 Fix #10: Cap log files. Without this Docker writes
+    # unbounded JSON logs to /var/lib/docker/containers/ until the disk fills up.
+    # 10MB * 3 = 30MB max per container — enough for diagnostics without disk pressure.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-support_tickets}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_password}
+      # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_DB to support_db
+      POSTGRES_DB: ${POSTGRES_DB:-support_db}
+      # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_USER and POSTGRES_PASSWORD
+      POSTGRES_USER: ${POSTGRES_USER:-bilal_k}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-India@123}
+      # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Restored PGDATA subfolder path for Postgres initdb compatibility
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # Bilal Khan (12/08/2026) - P0 Fix #3: max_connections reduced 20 → 15 to match
+    # POSTGRES_MAX_CONN=8 pools in .env (web pool 8 + worker pool 8 = 16 peak, server cap 15).
+    command: >
+      postgres
+      -c shared_buffers=32MB
+      -c work_mem=4MB
+      -c maintenance_work_mem=16MB
+      -c max_connections=15
+      -c effective_cache_size=64MB
+      -c wal_buffers=4MB
+      -c checkpoint_completion_target=0.9
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -20,7 +51,16 @@ services:
   web:
     build: .
     restart: always
-    command: gunicorn -w 1 --threads 50 dashboard_socketio:app --bind 0.0.0.0:5000 --log-level info --timeout 120 --capture-output --enable-stdio-inheritance --access-logfile -
+    # Bilal Khan (05/08/2026) - Wave 2A (2GB VM): web container RAM budget
+    mem_limit: 200m
+    memswap_limit: 350m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Fixed: -k eventlet required for Flask-SocketIO; --threads 50 removed (incompatible with eventlet)
+    command: gunicorn -k eventlet -w 1 dashboard_socketio:app --bind 0.0.0.0:5000 --log-level info --timeout 120 --capture-output --enable-stdio-inheritance --access-logfile -
     ports:
       - "5000:5000"
     env_file:
@@ -42,6 +82,16 @@ services:
   worker:
     build: .
     restart: always
+    # Bilal Khan (05/08/2026) - Wave 2A (2GB VM): worker container RAM budget
+    # Worker is heaviest: Python + OpenAI SDK + psycopg2 + Azure/Graph SDK.
+    # memswap > mem_limit intentionally: absorbs backlog bursts rather than OOM-killing.
+    mem_limit: 450m
+    memswap_limit: 700m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     command: python main.py
     env_file:
       - .env
@@ -62,8 +112,9 @@ services:
       test: [ "CMD-SHELL", "python -c 'import os, time, sys; p=\"data/worker_heartbeat.txt\"; sys.exit(0 if os.path.exists(p) and (time.time() - os.stat(p).st_mtime) < 180 else 1)'" ]
       interval: 60s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      # Bilal Khan (05/08/2026) - Wave 2A: Increased retries+start_period to prevent false-kill during slow startup
+      retries: 5
+      start_period: 60s
 
 volumes:
   postgres_data:
