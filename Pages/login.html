@@ -1,3 +1,4 @@
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Login Template with Vector Icons - start -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,14 +7,18 @@
     <title>Login - Support Dashboard</title>
     <link rel="icon" href="{{ url_for('static', filename='login/gws_logo.png') }}" type="image/png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='login/login.css') }}">
+    <script src="{{ url_for('static', filename='shared/theme.js') }}"></script>
 </head>
 <body>
     <div class="login-container">
         <div class="login-card">
             <div class="login-header">
                 <div class="login-icon">
-                    <img src="{{ url_for('static', filename='login/gws_logo.png') }}" alt="GWS Logo" style="height: 60px; width: auto; object-fit: contain;">
+                    <img src="{{ url_for('static', filename='management/logo_banner.png') }}" alt="GWS Logo" style="height: 55px; width: auto; object-fit: contain;">
                 </div>
                 <h2>Support Dashboard</h2>
                 <p class="subtitle">Sign in to manage support tickets</p>
@@ -53,14 +58,14 @@
                                placeholder="Enter your password" 
                                required
                                autocomplete="current-password">
-                        <span class="password-toggle" onclick="togglePassword()">
-                            <i id="toggleIcon">👁️</i>
+                        <span class="password-toggle" onclick="togglePassword()" title="Toggle password visibility">
+                            <i id="toggleIcon" class="fa fa-eye"></i>
                         </span>
                     </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-login">
-                    🔐 Sign In
+                    <i class="fa fa-arrow-right-to-bracket me-2"></i> Sign In
                 </button>
             </form>
         </div>
@@ -70,3 +75,4 @@
     <script src="{{ url_for('static', filename='login/login.js') }}"></script>
 </body>
 </html>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Login Template with Vector Icons - end -->

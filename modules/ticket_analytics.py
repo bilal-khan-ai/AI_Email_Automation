@@ -74,11 +74,18 @@ class TicketAnalytics:
                 timestamp or datetime.now()
             )
 
+            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix ticket_metrics schema columns and transaction isolation - start
             if cur:
                 cur.execute(query, params)
                 inserted = cur.rowcount > 0
                 if inserted:
-                    self._update_ticket_metrics_with_cursor(cur, ticket_id, action_type, actor_id, metadata, timestamp)
+                    try:
+                        cur.execute("SAVEPOINT audit_metric_sp")
+                        self._update_ticket_metrics_with_cursor(cur, ticket_id, action_type, actor_id, metadata, timestamp)
+                        cur.execute("RELEASE SAVEPOINT audit_metric_sp")
+                    except Exception as me:
+                        logger.error(f"⚠️ Error updating ticket_metrics for {ticket_id}: {me}")
+                        cur.execute("ROLLBACK TO SAVEPOINT audit_metric_sp")
             else:
                 with self.conn_manager.get_connection() as conn:
                     with conn.cursor() as inner_cur:
@@ -158,12 +165,12 @@ class TicketAnalytics:
             cur.execute("SELECT * FROM ticket_metrics WHERE ticket_id = %s FOR UPDATE", (ticket_id,))
             metric = cur.fetchone()
 
-        # Update metrics based on action type
+        # Update metrics based on action type matching ticket_metrics schema
         if action_type == ActionType.MESSAGE_RECEIVED:
             cur.execute("""
                 UPDATE ticket_metrics 
-                SET message_count_client = message_count_client + 1,
-                    last_client_message_at = %s
+                SET message_count_customer = message_count_customer + 1,
+                    last_updated_at = %s
                 WHERE ticket_id = %s
             """, (now, ticket_id))
 
@@ -180,14 +187,14 @@ class TicketAnalytics:
                         SET first_response_at = %s,
                             first_response_duration = %s,
                             message_count_agent = message_count_agent + 1,
-                            last_agent_response_at = %s
+                            last_updated_at = %s
                         WHERE ticket_id = %s
                     """, (now, duration, now, ticket_id))
                 else:
                     cur.execute("""
                         UPDATE ticket_metrics 
                         SET message_count_agent = message_count_agent + 1,
-                            last_agent_response_at = %s
+                            last_updated_at = %s
                         WHERE ticket_id = %s
                     """, (now, ticket_id))
 
@@ -201,26 +208,30 @@ class TicketAnalytics:
                     cur.execute("""
                         UPDATE ticket_metrics 
                         SET resolved_at = %s,
-                            total_resolution_duration = %s
+                            total_resolution_duration = %s,
+                            last_updated_at = %s
                         WHERE ticket_id = %s
-                    """, (now, duration, ticket_id))
+                    """, (now, duration, now, ticket_id))
             elif new_status == 'Reopened':
                 cur.execute("""
                     UPDATE ticket_metrics 
                     SET reopen_count = reopen_count + 1,
                         resolved_at = NULL,
-                        total_resolution_duration = NULL
+                        total_resolution_duration = NULL,
+                        last_updated_at = %s
                     WHERE ticket_id = %s
-                """, (ticket_id,))
+                """, (now, ticket_id))
 
         elif action_type == ActionType.ASSIGNMENT_CHANGED:
             new_agent = metadata.get('to')
             if new_agent:
                 cur.execute("""
                     UPDATE ticket_metrics 
-                    SET assigned_agent = %s
+                    SET assigned_agent = %s,
+                        last_updated_at = %s
                     WHERE ticket_id = %s
-                """, (new_agent, ticket_id))
+                """, (new_agent, now, ticket_id))
+            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix ticket_metrics schema columns and transaction isolation - end
 
     def log_ticket_event(self, ticket_id: str, event_type: str, actor: str, details: dict = None, cur = None) -> bool:
         """

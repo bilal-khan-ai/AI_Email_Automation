@@ -158,13 +158,30 @@ def admin_delete_user(username):
 @admin_required
 def admin_change_password(username):
     """Change user password (admin only, restrictions apply)."""
+    # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - start
+    old_password = request.form.get('old_password')
     new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
     current_user = get_current_user()
     target_user = auth.user_manager.get_user(username)
     
     if not new_password:
         flash('New password is required', 'danger')
         return redirect(url_for('auth.management'))
+
+    if confirm_password and new_password != confirm_password:
+        flash('❌ New password and confirmation do not match', 'danger')
+        return redirect(url_for('auth.management'))
+
+    if len(new_password) < 6:
+        flash('❌ Password must be at least 6 characters long', 'danger')
+        return redirect(url_for('auth.management'))
+
+    # If admin is changing their own password, verify old password
+    if username == current_user['username']:
+        if not old_password or not auth.user_manager.authenticate_user(username, old_password):
+            flash('❌ Current (old) password is incorrect', 'danger')
+            return redirect(url_for('auth.management'))
 
     # BLOCK: Admin to Admin password changing (unless it's yourself)
     if target_user and target_user['role'] == 'admin' and username != current_user['username']:
@@ -182,20 +199,34 @@ def admin_change_password(username):
 @auth_bp.route('/api/user/change-password', methods=['POST'])
 @login_required
 def user_change_password():
-    """Route for any logged-in user to change their own password."""
+    """Route for any logged-in user to change their own password with old password verification."""
+    old_password = request.form.get('old_password')
     new_password = request.form.get('new_password')
+    confirm_password = request.form.get('confirm_password')
     current_user = get_current_user()
     
+    if not old_password:
+        return jsonify({'error': 'Current (old) password is required'}), 400
+
     if not new_password:
         return jsonify({'error': 'New password is required'}), 400
+
+    if confirm_password and new_password != confirm_password:
+        return jsonify({'error': 'New password and confirmation password do not match'}), 400
     
     if len(new_password) < 6:
         return jsonify({'error': 'Password must be at least 6 characters long'}), 400
+
+    # Verify old password
+    user_auth = auth.user_manager.authenticate_user(current_user['username'], old_password)
+    if not user_auth:
+        return jsonify({'error': 'Current (old) password is incorrect'}), 400
 
     if auth.user_manager.update_password(current_user['username'], new_password):
         return jsonify({'success': True, 'message': 'Password updated successfully'})
     else:
         return jsonify({'error': 'Failed to update password'}), 500
+    # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - end
 
 __all__ = ['auth_bp']
 # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Auth & User Management Blueprint - end

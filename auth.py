@@ -5,7 +5,7 @@ Simple username/password authentication with role-based access control
 
 import hashlib
 import secrets
-from flask import session, redirect, url_for, request, flash
+from flask import session, redirect, url_for, request, flash, jsonify
 from functools import wraps
 from datetime import datetime
 import logging
@@ -563,19 +563,16 @@ def init_auth(app):
     logger.info("✅ Authentication system initialized")
 
 
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Return JSON 401 for API requests on login/admin required - start
 def login_required(f):
     """
     Decorator to require authentication for routes.
-    
-    Usage:
-        @app.route('/dashboard')
-        @login_required
-        def dashboard():
-            return render_template('dashboard.html')
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
+            if request.path.startswith('/api/') or request.is_json:
+                return jsonify({'error': 'Unauthorized', 'message': 'Please log in first'}), 401
             flash('Please log in to access this page.', 'warning')
             return redirect(url_for('auth.login', next=request.url))
         return f(*args, **kwargs)
@@ -585,25 +582,24 @@ def login_required(f):
 def admin_required(f):
     """
     Decorator to require admin role for routes.
-    
-    Usage:
-        @app.route('/admin/users')
-        @admin_required
-        def manage_users():
-            return render_template('users.html')
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
+            if request.path.startswith('/api/') or request.is_json:
+                return jsonify({'error': 'Unauthorized', 'message': 'Please log in first'}), 401
             flash('Please log in to access this page.', 'warning')
             return redirect(url_for('auth.login', next=request.url))
         
         if session['user'].get('role') != 'admin':
+            if request.path.startswith('/api/') or request.is_json:
+                return jsonify({'error': 'Forbidden', 'message': 'Admin access required'}), 403
             flash('You do not have permission to access this page.', 'danger')
             return redirect(url_for('core.index'))
         
         return f(*args, **kwargs)
     return decorated_function
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Return JSON 401 for API requests on login/admin required - end
 
 
 def socketio_login_required(f):

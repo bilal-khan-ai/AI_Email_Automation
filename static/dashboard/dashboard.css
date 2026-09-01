@@ -1,44 +1,11 @@
-:root {
-    --bg-primary: #f5f7fa;
-    --bg-card: #ffffff;
-    --text-primary: #2c3e50;
-    --text-secondary: #7f8c8d;
-    --border-color: #e0e0e0;
-    --input-bg: #ffffff;
-    --header-bg: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
-    --shadow: rgba(0, 0, 0, 0.05);
-    --modal-bg: rgba(0, 0, 0, 0.5);
-    --section-bg-info: #f8f9fa;
-    --section-bg-attach: #e7f3ff;
-    --section-bg-warn: #fff3cd;
-    --stat-total-color: #1e293b;
-    --stat-open-color: #10b981;
-    --stat-closed-color: #64748b;
-}
-
-/* Dark Mode Variables */
-body.dark-mode {
-    --bg-primary: #1a1a1a;
-    --bg-card: #2d2d2d;
-    --text-primary: #ffffff;
-    --text-secondary: #cbd5e1;
-    --border-color: #404040;
-    --input-bg: #333333;
-    --header-bg: linear-gradient(135deg, #1b4332 0%, #111827 100%);
-    --shadow: rgba(0, 0, 0, 0.3);
-    --modal-bg: rgba(0, 0, 0, 0.8);
-    --section-bg-info: #383838;
-    --section-bg-attach: #003366;
-    --section-bg-warn: #4d3e00;
-    --stat-total-color: #f1f5f9;
-    --stat-open-color: #34d399;
-    --stat-closed-color: #94a3b8;
-}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Stylesheet Tokens Cleanup - start */
+/* Tokens and global dark-mode variables are inherited from shared/theme.css and shared/components.css */
 
 body.dark-mode .text-secondary,
 body.dark-mode .text-muted {
     color: #cbd5e1 !important;
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Stylesheet Tokens Cleanup - end */
 
 /* Dark mode overrides for Quill's interface */
 body.dark-mode .ql-toolbar {
@@ -348,6 +315,27 @@ body.dark-mode .autocomplete-suggestion.active {
     background: #1e3a8a;
     color: #ffffff;
 }
+
+/* Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - DevOps Assignee Typeahead Autocomplete Styles - start */
+.devops-user-suggestion {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s ease-in-out;
+}
+
+.devops-user-suggestion:last-child {
+    border-bottom: none;
+}
+
+.devops-user-suggestion:hover {
+    background: rgba(13, 110, 253, 0.12);
+}
+
+body.dark-mode .devops-user-suggestion:hover {
+    background: rgba(13, 110, 253, 0.25);
+}
+/* Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - DevOps Assignee Typeahead Autocomplete Styles - end */
 
 /* Filter button active states */
 .filter-btn[data-filter="Open"].active {
@@ -663,67 +651,20 @@ body.dark-mode .message-header {
     color: #2d6a4f;
 }
 
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Filter Button Theme Tokens - start */
 .filter-btn.active {
-    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
-    color: white;
-    border-color: #3A5A24;
+    background: var(--gradient-primary);
+    color: #ffffff;
+    border-color: var(--accent);
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Filter Button Theme Tokens - end */
 
-/* Pill Toggle for Visibility (My/All) */
-.pill-toggle {
-    display: flex;
-    background: rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--border-color);
-    border-radius: 50px;
-    padding: 3px;
-    position: relative;
-    cursor: pointer;
-    user-select: none;
-    width: fit-content;
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Pill Toggle Shared Tokens - start */
+.controls .pill-toggle {
     margin-right: 1.5rem;
-    min-width: 220px;
     flex-shrink: 0;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
-    height: 38px;
-    align-items: center;
 }
-
-.pill-option {
-    flex: 1;
-    padding: 0 16px;
-    line-height: 36px;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--text-secondary);
-    border-radius: 50px;
-    transition: all 0.3s ease;
-    position: relative;
-    z-index: 2;
-    text-align: center;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
-}
-
-.pill-option.active {
-    color: white;
-}
-
-.pill-slider {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    height: calc(100% - 6px);
-    width: calc(50% - 3px);
-    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
-    border-radius: 50px;
-    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    z-index: 1;
-    box-shadow: 0 4px 10px rgba(45, 106, 79, 0.3);
-}
-
-[data-active="all"] .pill-slider {
-    transform: translateX(100%);
-}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Pill Toggle Shared Tokens - end */
 
 .filter-dropdown {
     position: relative;
@@ -977,16 +918,19 @@ body.dark-mode .ticket-card.reopened-tint {
     flex-wrap: wrap;
 }
 
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Ticket ID Badge Token Variable - start */
 .ticket-id {
-    font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
-    font-weight: bold;
-    background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%);
-    color: white;
-    padding: 0.4rem 0.8rem;
-    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.88rem;
+    font-weight: 700;
+    background: var(--gradient-primary);
+    color: #ffffff;
+    padding: 0.35rem 0.75rem;
+    border-radius: var(--radius-sm);
     white-space: nowrap;
+    letter-spacing: 0.5px;
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Ticket ID Badge Token Variable - end */
 
 .ticket-status {
     padding: 0.4rem 0.8rem;
@@ -1573,22 +1517,23 @@ body.dark-mode .close-btn:hover {
     cursor: pointer;
 }
 
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Info Section Theme Tokens - start */
 .info-section {
     background: var(--section-bg-info);
     padding: 0.75rem 1rem;
-    /* Reduced vertical padding */
-    border-radius: 8px;
-    border-left: 4px solid #3A5A24;
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--accent);
 }
 
 .info-section h3 {
     font-size: 0.95rem;
     margin-bottom: 0.75rem;
-    color: #3A5A24;
+    color: var(--accent);
     display: flex;
     align-items: center;
     gap: 0.5rem;
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Info Section Theme Tokens - end */
 
 .info-item {
     padding: 0.4rem 0;
@@ -1925,15 +1870,55 @@ body.dark-mode .attachment-tile:hover {
     color: #c0392b;
 }
 
-.modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 1rem;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 2px solid var(--border-color);
-    flex-shrink: 0;
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Composer Action Buttons - start */
+.modal-actions #btnSave {
+    height: 36px !important;
+    padding: 0 1.1rem !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    font-family: var(--font-family-base) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    cursor: pointer !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
+
+.modal-actions #btnSave:hover {
+    background: var(--bg-surface-alt) !important;
+    border-color: var(--text-secondary) !important;
+    transform: translateY(-1px);
+}
+
+.modal-actions #btnSend {
+    height: 36px !important;
+    padding: 0 1.25rem !important;
+    border-radius: var(--radius-sm) !important;
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    font-family: var(--font-family-base) !important;
+    background: var(--accent) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--accent) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+    cursor: pointer !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.modal-actions #btnSend:hover {
+    background: var(--accent-hover) !important;
+    border-color: var(--accent-hover) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(45, 106, 79, 0.25) !important;
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Composer Action Buttons - end */
 
 .btn {
     padding: 0.75rem 1.5rem;
@@ -2103,28 +2088,9 @@ body.dark-mode .sla-card-long-running {
     background: rgba(255, 87, 51, 0.15) !important;
 }
 
-.theme-toggle {
-    background: rgba(255, 255, 255, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    padding: 0.4rem 1rem;
-    border-radius: 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: background 0.3s;
-    font-size: 0.8rem;
-}
-
-.theme-toggle:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-body.dark-mode .theme-toggle {
-    color: #e0e0e0;
-    background: rgba(0, 0, 0, 0.4);
-}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme toggle styled via shared components.css - start */
+/* Theme toggle styles inherited from static/shared/components.css */
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme toggle styled via shared components.css - end */
 
 .hidden {
     display: none !important;
@@ -2868,33 +2834,160 @@ body.dark-mode .devops-open-link {
 }
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Section & Drawer Styles - end */
 
-/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - DevOps Header Button Styles - start */
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Header Action Buttons Styles - start */
+.modal-header-toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: nowrap;
+}
+
+/* Base Modal Action Control (Standard height 34px, radius 8px, 0.85rem font) */
+.modal-action-btn,
+.modal-action-select {
+    height: 34px !important;
+    min-height: 34px !important;
+    font-size: 0.84rem !important;
+    font-weight: 600 !important;
+    font-family: var(--font-family-base) !important;
+    border-radius: var(--radius-sm) !important;
+    box-sizing: border-box !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    vertical-align: middle !important;
+}
+
+.modal-action-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    padding: 0 0.85rem !important;
+    border: 1px solid var(--border-color) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    text-decoration: none !important;
+    white-space: nowrap !important;
+}
+
+/* Azure DevOps Header Button */
 .devops-header-btn {
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    border: 1.5px solid #0078d4;
-    color: #0078d4;
-    background: transparent;
-    transition: all 0.2s ease;
+    gap: 0.45rem !important;
+    border: 1px solid var(--border-color) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
 }
 
 .devops-header-btn:hover {
-    background: #0078d4;
-    color: white;
-}
-
-body.dark-mode .devops-header-btn {
-    border-color: #4daafc;
-    color: #4daafc;
+    border-color: var(--info) !important;
+    color: var(--info) !important;
+    background: rgba(59, 130, 246, 0.08) !important;
+    transform: translateY(-1px);
 }
 
 body.dark-mode .devops-header-btn:hover {
-    background: #4daafc;
-    color: #111;
+    border-color: #60a5fa !important;
+    color: #60a5fa !important;
+    background: rgba(96, 165, 250, 0.15) !important;
 }
-/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - DevOps Header Button Styles - end */
+
+.devops-btn-icon {
+    font-size: 0.85rem;
+}
+
+.devops-count-pill {
+    background: rgba(59, 130, 246, 0.18);
+    color: var(--info);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    line-height: 1.2;
+}
+
+body.dark-mode .devops-count-pill {
+    background: rgba(96, 165, 250, 0.25);
+    color: #93c5fd;
+}
+
+.dropdown-chevron {
+    font-size: 0.65rem;
+    opacity: 0.7;
+    margin-left: 2px;
+}
+
+/* Take Ticket Button */
+.modal-btn-take {
+    background: var(--accent) !important;
+    color: #ffffff !important;
+    border: 1px solid var(--accent) !important;
+    padding: 0 0.95rem !important;
+}
+
+.modal-btn-take:hover {
+    background: var(--accent-hover) !important;
+    border-color: var(--accent-hover) !important;
+    color: #ffffff !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(45, 106, 79, 0.25) !important;
+}
+
+.modal-btn-take:active {
+    transform: translateY(0) !important;
+}
+
+/* Standardized Dropdowns (Status & Assignee) */
+.modal-action-select {
+    display: inline-block !important;
+    padding: 0 2rem 0 0.75rem !important;
+    border: 1px solid var(--border-color) !important;
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    cursor: pointer !important;
+    width: auto !important;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%237f8c8d' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.65rem center !important;
+    background-size: 11px 9px !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+}
+
+body.dark-mode .modal-action-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23cbd5e1' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e") !important;
+}
+
+.modal-action-select:focus {
+    border-color: var(--accent) !important;
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(45, 106, 79, 0.18) !important;
+}
+
+body.dark-mode .modal-action-select:focus {
+    box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.22) !important;
+}
+
+/* Close Modal Button */
+.modal-close-btn {
+    width: 34px !important;
+    height: 34px !important;
+    min-width: 34px !important;
+    padding: 0 !important;
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--border-color) !important;
+    background: var(--bg-card) !important;
+    color: var(--text-secondary) !important;
+    font-size: 0.95rem !important;
+    cursor: pointer !important;
+}
+
+.modal-close-btn:hover {
+    background: rgba(231, 76, 60, 0.12) !important;
+    border-color: rgba(231, 76, 60, 0.4) !important;
+    color: #e74c3c !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.25) !important;
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Header Action Buttons Styles - end */
 
 /* ==========================================================================
    Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor Styles - start
@@ -3046,12 +3139,13 @@ body.dark-mode .toolbar-btn:hover {
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
 }
 
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Internal Note & Avatar Tokens - start */
 .message-card.internal-note {
-    border-left: 4px solid #3A5A24;
+    border-left: 4px solid var(--accent);
 }
 
 .message-card.customer-message {
-    border-left: 4px solid #0078d4;
+    border-left: 4px solid var(--info);
 }
 
 .msg-header-top {
@@ -3079,18 +3173,19 @@ body.dark-mode .toolbar-btn:hover {
     justify-content: center;
     font-weight: 700;
     font-size: 0.78rem;
-    color: white;
+    color: #ffffff;
     text-transform: uppercase;
     flex-shrink: 0;
 }
 
 .sender-avatar.staff {
-    background: linear-gradient(135deg, #3A5A24 0%, #5c8d3d 100%);
+    background: var(--gradient-primary);
 }
 
 .sender-avatar.customer {
     background: linear-gradient(135deg, #0078d4 0%, #4daafc 100%);
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Internal Note & Avatar Tokens - end */
 
 .msg-time-badge {
     font-size: 0.78rem;

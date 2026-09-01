@@ -308,14 +308,23 @@ def register_handlers(socketio) -> None:
         
         logger.info(f"⚙️ Received settings update request: {list(data.keys())}")
         
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Comprehensive settings whitelist for live .env updates - start
         try:
             valid_keys = [
-                'ENABLE_TICKET_CLEANUP_DAEMON', 'INTERNAL_NOTE_AS_RESPONSE', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
-                'HARD_DELETE_AFTER_DAYS', 'POLLING_INTERVAL', 'TEST_MODE',
-                'TEST_EMAIL', 'TEST_CC', 'TEST_SUBJECT_TAG',
-                'USER_EMAIL', 'PROCESSING_DAYS_BACK',
-                'GENERATIONAL_MODEL', 'INTERPRETATION_MODEL', 'ANALYSIS_MODEL',
-                'WEB_SEARCH_MODEL'
+                # Email & Polling
+                'USER_EMAIL', 'POLLING_INTERVAL', 'PROCESSING_DAYS_BACK',
+                # Test Mode & Safe Dispatch
+                'TEST_MODE', 'TEST_EMAIL', 'TEST_CC', 'TEST_SUBJECT_TAG',
+                # AI & Automation Engine
+                'ENABLE_AI', 'ENABLE_RAG', 'AUTO_GENERATE_RESPONSES', 'TOP_K_RESULTS',
+                # Ticket Retention & Cleanup
+                'ENABLE_TICKET_CLEANUP_DAEMON', 'SOFT_DELETE_CLOSED_AFTER_DAYS',
+                'HARD_DELETE_AFTER_DAYS', 'DAYS_TO_KEEP_TICKET',
+                'CLEANUP_DAEMON_INTERVAL_SECONDS', 'CLEANUP_BATCH_SIZE',
+                # SLA & Data Analytics
+                'INTERNAL_NOTE_AS_RESPONSE', 'TABLES_INCLUDE_PREVIEW', 'TABLES_PREVIEW_ROWS',
+                # Azure DevOps
+                'AZURE_DEVOPS_ORG', 'AZURE_DEVOPS_PROJECT', 'AZURE_DEVOPS_POLLING_INTERVAL'
             ]
             filtered_data = {k: str(v) for k, v in data.items() if k in valid_keys}
             
@@ -323,6 +332,7 @@ def register_handlers(socketio) -> None:
                 logger.warning("⚠️ No valid settings found in update request")
                 emit('settings_saved', {'success': False, 'message': 'No valid settings provided'})
                 return
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Comprehensive settings whitelist for live .env updates - end
 
             success = env_manager.update_vars(filtered_data)
             if success:

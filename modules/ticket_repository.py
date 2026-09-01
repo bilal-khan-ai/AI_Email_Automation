@@ -1124,6 +1124,11 @@ class TicketRepository:
                     attachments = email.get('attachments', [])
                     attachments_json = json.dumps(attachments) if isinstance(attachments, list) else attachments
 
+                    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Robust field fallbacks for ticket_messages insertion - start
+                    body_text_val = email.get('body_text') or email.get('body') or ''
+                    body_html_val = email.get('body_html') or email.get('body') or ''
+                    to_email_val = email.get('to_email') or email.get('to') or ''
+
                     cur.execute("""
                         INSERT INTO ticket_messages (
                             ticket_id, message_id, internet_message_id, sender, 
@@ -1133,11 +1138,12 @@ class TicketRepository:
                         ON CONFLICT (message_id) DO NOTHING
                     """, (
                         ticket_id, email.get('id'), email.get('internet_message_id'),
-                        email.get('sender'), email.get('to_email', ''),
-                        email.get('body'), email.get('body_html', ''),
+                        email.get('sender'), to_email_val,
+                        body_text_val, body_html_val,
                         msg_timestamp, attachments_json,
                         email.get('cc', ''), email.get('bcc', ''), is_internal
                     ))
+                    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Robust field fallbacks for ticket_messages insertion - end
                     
                     inserted = cur.rowcount > 0
                     if inserted:

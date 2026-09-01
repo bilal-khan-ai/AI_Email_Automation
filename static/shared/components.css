@@ -1,0 +1,607 @@
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Shared Component Factory & Utility Classes - start */
+
+/* ==========================================================================
+   1. GLOBAL BASE, TYPOGRAPHY & MODERN SCROLLBARS
+   ========================================================================== */
+/* Standard W3C Scrollbar (Firefox, Modern Chromium) */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Webkit Scrollbars (Chrome, Safari, Edge, Electron) */
+::-webkit-scrollbar {
+    width: var(--scrollbar-width, 6px);
+    height: var(--scrollbar-width, 6px);
+}
+
+::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+    border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius-pill);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+    box-shadow: 0 0 6px rgba(45, 106, 79, 0.4);
+}
+
+body.dark-mode ::-webkit-scrollbar-thumb:hover {
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+body {
+    font-family: var(--font-family-base);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background 0.3s ease, color 0.3s ease;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ==========================================================================
+   2. STANDARD APP HEADER & TOP ACTIONS
+   ========================================================================== */
+.app-header {
+    background: var(--header-bg);
+    color: #ffffff;
+    padding: 1.5rem 2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    transition: background 0.3s ease;
+}
+
+.app-header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 1600px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.app-header-brand {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+}
+
+.app-header-brand img {
+    height: 55px;
+    width: auto;
+    object-fit: contain;
+}
+
+.app-header-title {
+    margin: 0;
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #ffffff;
+}
+
+.app-header-subtitle {
+    margin-top: 0.25rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    opacity: 0.9;
+    color: #ffffff;
+}
+
+.app-header-actions {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Header Ghost Action Buttons */
+.app-btn-ghost {
+    color: #ffffff !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    border-radius: var(--radius-xl) !important;
+    padding: 0.4rem 1.1rem !important;
+    text-decoration: none !important;
+    font-size: 0.825rem !important;
+    font-weight: 600 !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    cursor: pointer !important;
+}
+
+.app-btn-ghost:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-color: rgba(255, 255, 255, 0.7) !important;
+    transform: translateY(-1px);
+}
+
+.app-btn-danger-ghost {
+    background: rgba(231, 76, 60, 0.85) !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: var(--radius-xl) !important;
+    padding: 0.4rem 1.1rem !important;
+    text-decoration: none !important;
+    font-size: 0.825rem !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    cursor: pointer !important;
+}
+
+.app-btn-danger-ghost:hover {
+    background: rgba(231, 76, 60, 1) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+}
+
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Sleek Circular Theme Toggle Icon Button - start */
+.theme-toggle {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #ffffff;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s ease, border-color 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    font-size: 0.95rem;
+}
+
+.theme-toggle:hover {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: translateY(-1px) rotate(15deg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+body.dark-mode .theme-toggle {
+    color: #f1f5f9;
+    background: rgba(0, 0, 0, 0.4);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode .theme-toggle:hover {
+    background: rgba(0, 0, 0, 0.65);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Sleek Circular Theme Toggle Icon Button - end */
+
+/* ==========================================================================
+   3. UNIFIED CARDS & CONTAINERS
+   ========================================================================== */
+.app-card,
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.app-card-header,
+.card-header {
+    background: rgba(0, 0, 0, 0.02);
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--text-primary);
+}
+
+body.dark-mode .app-card-header,
+body.dark-mode .card-header {
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.dark-mode .card,
+body.dark-mode .app-card,
+body.dark-mode .modal-content {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+    box-shadow: var(--shadow-md);
+}
+
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Bootstrap Dark Mode Utility Overrides - start */
+body.dark-mode .bg-light,
+body.dark-mode .card-body.bg-light,
+body.dark-mode .modal-body.bg-light {
+    background-color: var(--bg-primary) !important;
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .bg-white,
+body.dark-mode .card-header.bg-white,
+body.dark-mode .card.bg-white {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .border-bottom,
+body.dark-mode .border-top,
+body.dark-mode .border-start,
+body.dark-mode .border-end,
+body.dark-mode .border {
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .table {
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .table > :not(caption) > * > * {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+body.dark-mode .table-hover > tbody > tr:hover > * {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .form-control,
+body.dark-mode .form-select,
+body.dark-mode textarea.form-control {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .form-control:focus,
+body.dark-mode .form-select:focus,
+body.dark-mode textarea.form-control:focus {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--accent) !important;
+}
+
+body.dark-mode .form-control::placeholder,
+body.dark-mode .form-control::-webkit-input-placeholder,
+body.dark-mode .form-control::-moz-placeholder,
+body.dark-mode .form-control:-ms-input-placeholder,
+body.dark-mode textarea::placeholder,
+body.dark-mode input::placeholder {
+    color: var(--text-muted) !important;
+    opacity: 0.85 !important;
+}
+
+body.dark-mode .form-label,
+body.dark-mode label,
+body.dark-mode .form-check-label {
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .form-text,
+body.dark-mode .text-secondary,
+body.dark-mode .text-muted,
+body.dark-mode small.text-secondary,
+body.dark-mode span.text-secondary,
+body.dark-mode div.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+body.dark-mode .form-check-input {
+    background-color: var(--input-bg);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .form-check-input:checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+body.dark-mode .input-group-text,
+body.dark-mode .btn-outline-secondary {
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Bootstrap Dark Mode Utility Overrides - end */
+
+/* ==========================================================================
+   4. UNIFIED STAT CARDS
+   ========================================================================== */
+.app-stat-card {
+    background: var(--bg-card);
+    padding: 1.25rem 1.5rem;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
+}
+
+.app-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.app-stat-value {
+    font-size: 2.25rem;
+    font-weight: 800;
+    font-family: var(--font-family-base);
+    letter-spacing: -1px;
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-bottom: 0.25rem;
+}
+
+.app-stat-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+/* ==========================================================================
+   5. UNIFIED FORM CONTROLS & SEARCH BOXES
+   ========================================================================== */
+.form-control, .form-select {
+    border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border-color);
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 0.2rem rgba(45, 106, 79, 0.2);
+}
+
+body.dark-mode .form-control,
+body.dark-mode .form-select {
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .form-control:focus,
+body.dark-mode .form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 0.2rem rgba(52, 211, 153, 0.25);
+}
+
+body.dark-mode .form-control::placeholder {
+    color: #888 !important;
+}
+
+/* Master Search Box */
+.search-box-container {
+    position: relative;
+    margin-bottom: 1rem;
+}
+
+.search-box-container input {
+    padding-left: 2.5rem;
+    background-color: var(--input-bg);
+    color: var(--text-primary);
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-sm);
+}
+
+.search-box-container::before {
+    content: '🔍';
+    position: absolute;
+    left: 0.9rem;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    font-size: 0.85rem;
+}
+
+body.dark-mode .search-box-container input {
+    background-color: var(--input-bg) !important;
+    border-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+/* ==========================================================================
+   6. MASTER PILL TOGGLE (Reports, View Filters, Sub-Tabs)
+   ========================================================================== */
+.pill-toggle {
+    display: inline-flex;
+    background: rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-pill);
+    padding: 3px;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+    width: fit-content;
+    min-width: 260px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.06);
+    height: 40px;
+    align-items: center;
+}
+
+body.dark-mode .pill-toggle {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.pill-option {
+    flex: 1;
+    padding: 0 16px;
+    line-height: 34px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    border-radius: var(--radius-pill);
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 2;
+    text-align: center;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.pill-option.active {
+    color: #ffffff;
+}
+
+.pill-slider {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    height: calc(100% - 6px);
+    width: calc(50% - 3px);
+    background: var(--gradient-primary);
+    border-radius: var(--radius-pill);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 1;
+    box-shadow: 0 4px 10px rgba(45, 106, 79, 0.3);
+}
+
+[data-active="staff"] .pill-slider,
+[data-active="all"] .pill-slider {
+    transform: translateX(100%);
+}
+
+/* ==========================================================================
+   7. MASTER TABLES & HOVER STATES
+   ========================================================================== */
+.table {
+    color: var(--text-primary);
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--text-primary);
+    margin-bottom: 0;
+}
+
+.table thead th {
+    border-bottom: 2px solid var(--border-color);
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+    padding: 1rem 1.25rem;
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+.table td {
+    padding: 1rem 1.25rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+body.dark-mode .table thead th {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    color: var(--text-secondary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+body.dark-mode .table td {
+    border-bottom-color: var(--border-color) !important;
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .table-hover tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* ==========================================================================
+   8. MASTER STATUS TOGGLE SWITCH
+   ========================================================================== */
+.status-toggle {
+    cursor: pointer;
+    width: 48px;
+    height: 24px;
+    background: #ccc;
+    border-radius: 20px;
+    position: relative;
+    display: inline-block;
+    transition: background 0.3s ease;
+}
+
+.status-toggle.active {
+    background: var(--success);
+}
+
+.status-toggle::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: left 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.status-toggle.active::after {
+    left: 26px;
+}
+
+/* ==========================================================================
+   9. MASTER DROPDOWNS
+   ========================================================================== */
+.dropdown-menu {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+}
+
+.dropdown-item {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.dropdown-item:hover {
+    background-color: rgba(45, 106, 79, 0.08);
+    color: var(--accent);
+}
+
+body.dark-mode .dropdown-menu {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .dropdown-item {
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode .dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: var(--accent) !important;
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Shared Component Factory & Utility Classes - end */

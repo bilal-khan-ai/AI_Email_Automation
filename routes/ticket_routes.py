@@ -301,8 +301,14 @@ def send_to_customer():
             final_cc = cc
             final_bcc = bcc
         
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Direct reply and send without automated fallback - start
         messages = sql_logger.get_thread_messages(ticket_id)
-        last_message_id = messages[-1].get('message_id') if messages else None
+        # Select the latest message with a valid Graph API message ID (ignore internal/sent synthetic IDs)
+        real_messages = [
+            m for m in messages 
+            if m.get('message_id') and not str(m.get('message_id')).startswith('sent_')
+        ]
+        last_message_id = real_messages[-1].get('message_id') if real_messages else None
 
         if Config.TEST_MODE:
             intended_msg = f"<hr><p style='color: #666; font-size: 0.8em;'><b>[TEST MODE]</b><br>"
@@ -325,7 +331,7 @@ def send_to_customer():
             )
         else:
             logger.warning(f"⚠️ No messages found for ticket {ticket_id}. Falling back to standard send_email.")
-            final_subject = f"Re: {ticket['subject']}"
+            final_subject = f"Re: {ticket.get('subject', 'Support Request')}"
             if Config.TEST_MODE:
                 final_subject = f"{Config.TEST_SUBJECT_TAG}{final_subject}"
 
@@ -342,6 +348,7 @@ def send_to_customer():
 
         if not success:
             return jsonify({'error': 'Failed to send email via Graph API'}), 500
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Direct reply and send without automated fallback - end
 
         actor_username = session.get('user', {}).get('username', 'system')
         update_payload = {

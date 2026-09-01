@@ -78,6 +78,9 @@ class Config:
     AZURE_DEVOPS_ORG = os.getenv('AZURE_DEVOPS_ORG', '')
     AZURE_DEVOPS_PROJECT = os.getenv('AZURE_DEVOPS_PROJECT', '')
     AZURE_DEVOPS_PAT = os.getenv('AZURE_DEVOPS_PAT', '')
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Azure DevOps Polling Interval Configuration - start
+    AZURE_DEVOPS_POLLING_INTERVAL = int(os.getenv('AZURE_DEVOPS_POLLING_INTERVAL', 600))
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Azure DevOps Polling Interval Configuration - end
     # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add ENABLE_AI and Azure DevOps settings - end
 
     @classmethod
@@ -104,8 +107,18 @@ class Config:
         cls.AZURE_DEVOPS_ORG = os.getenv('AZURE_DEVOPS_ORG', '')
         cls.AZURE_DEVOPS_PROJECT = os.getenv('AZURE_DEVOPS_PROJECT', '')
         cls.AZURE_DEVOPS_PAT = os.getenv('AZURE_DEVOPS_PAT', '')
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Reload Azure DevOps Polling Interval - start
+        cls.AZURE_DEVOPS_POLLING_INTERVAL = int(os.getenv('AZURE_DEVOPS_POLLING_INTERVAL', 600))
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Reload Azure DevOps Polling Interval - end
         # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Reload ENABLE_AI and Azure DevOps settings - end
-        cls.WEB_SEARCH_MODEL = os.getenv('WEB_SEARCH_MODEL', 'gpt-4o-mini-2024-07-18')
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dynamic reload of all configurable settings - start
+        cls.AUTO_GENERATE_RESPONSES = os.getenv('AUTO_GENERATE_RESPONSES', 'True').lower() == 'true'
+        cls.TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', 5))
+        cls.DAYS_TO_KEEP_TICKET = int(os.getenv('DAYS_TO_KEEP_TICKET', 30))
+        cls.CLEANUP_DAEMON_INTERVAL_SECONDS = int(os.getenv('CLEANUP_DAEMON_INTERVAL_SECONDS', 3600))
+        cls.CLEANUP_BATCH_SIZE = int(os.getenv('CLEANUP_BATCH_SIZE', 100))
+        cls.TABLES_INCLUDE_PREVIEW = os.getenv('TABLES_INCLUDE_PREVIEW', 'False').lower() == 'true'
+        cls.TABLES_PREVIEW_ROWS = int(os.getenv('TABLES_PREVIEW_ROWS', 8))
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dynamic reload of all configurable settings - end
         # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Reload CORS_ALLOWED_ORIGINS
         cls.CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '*')
-        # Add other dynamic settings as needed

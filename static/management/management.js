@@ -33,6 +33,7 @@ function formatDateDMY(isoString) {
 
 // Handle metrics update
 socket.on('staff_metrics_update', (data) => {
+    if (!data || !Array.isArray(data.metrics)) return;
     data.metrics.forEach(m => {
         currentMetrics.staff[m.username] = m;
         const elAssigned = document.getElementById(`assigned-${m.username}`);
@@ -87,7 +88,7 @@ socket.on('client_stats_update', (data) => {
     const container = document.getElementById('clientStatsGrid');
     if (!container) return;
     container.innerHTML = '';
-    if (!data.stats || data.stats.length === 0) {
+    if (!data || !Array.isArray(data.stats) || data.stats.length === 0) {
         container.innerHTML = '<div class="col-12 text-center py-5 text-secondary" style="grid-column: 1 / -1;">No client data found for this range.</div>';
         return;
     }
@@ -137,19 +138,52 @@ socket.on('client_stats_update', (data) => {
     onReportSearch();
 });
 
-socket.on('settings_update', (data) => {
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Robust settings REST loader and live socket sync - start
+function populateSettingsForm(settings) {
     const form = document.getElementById('settingsForm');
-    for (const [key, value] of Object.entries(data.settings)) {
+    if (!form || !settings) return;
+    for (const [key, value] of Object.entries(settings)) {
         const input = form.querySelector(`[name="${key}"]`);
         if (input) {
             if (input.type === 'checkbox') {
-                input.checked = (value === 'True');
+                input.checked = (value === 'True' || value === true || value === 'true');
             } else {
                 input.value = value;
             }
         }
     }
+}
+
+function loadSettings() {
+    fetch('/api/settings')
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.settings) {
+                populateSettingsForm(data.settings);
+            }
+        })
+        .catch(err => console.error("Error loading settings via REST:", err));
+}
+
+function togglePatVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const icon = btn.querySelector('i');
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa fa-eye-slash';
+    } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa fa-eye';
+    }
+}
+
+socket.on('settings_update', (data) => {
+    if (data && data.settings) {
+        populateSettingsForm(data.settings);
+    }
 });
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Robust settings REST loader and live socket sync - end
 
 socket.on('settings_saved', (data) => {
     if (data.success) {
@@ -178,7 +212,10 @@ function showSection(sectionId) {
 
     // Trigger refreshes
     if (sectionId === 'reports') refreshMetrics();
-    if (sectionId === 'settings') socket.emit('get_settings');
+    if (sectionId === 'settings') {
+        loadSettings();
+        if (socket && socket.connected) socket.emit('get_settings');
+    }
     if (sectionId === 'holidays') loadHolidays();
     if (sectionId === 'management') loadClientGroups();
 }
@@ -187,17 +224,25 @@ function showSection(sectionId) {
 // Client Groups Management
 // ============================================================================
 
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Defensive client groups loader supporting array and object formats - start
 function loadClientGroups() {
     fetch('/api/client_groups')
         .then(res => res.json())
         .then(data => {
-            if (data.groups) {
-                renderClientGroupsTable(data.groups);
-                updateMergeDatalist(data.groups);
+            let groups = [];
+            if (Array.isArray(data.groups)) {
+                groups = data.groups;
+            } else if (data.groups && typeof data.groups === 'object') {
+                const grpList = (data.groups.groups || []).map(g => ({ ...g, type: 'group' }));
+                const unmerged = (data.groups.unmerged_domains || []).map(d => ({ id: null, name: d, domains: d, type: 'domain' }));
+                groups = [...grpList, ...unmerged];
             }
+            renderClientGroupsTable(groups);
+            updateMergeDatalist(groups);
         })
         .catch(err => console.error("Error loading client groups:", err));
 }
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Defensive client groups loader supporting array and object formats - end
 
 function updateMergeDatalist(groups) {
     const dataList = document.getElementById('existingClientList');
@@ -639,27 +684,9 @@ function saveSettings() {
     socket.emit('update_settings', data);
 }
 
-// Theme Toggle Logic
-function toggleTheme() {
-    const body = document.body;
-    const isDark = body.classList.toggle('dark-mode');
-    localStorage.setItem('darkMode', isDark);
-    updateThemeButton(isDark);
-}
-
-function updateThemeButton(isDark) {
-    const icon = document.getElementById('theme-icon');
-    const text = document.getElementById('theme-text');
-    if (icon) icon.textContent = isDark ? '☀️' : '🌙';
-    if (text) text.textContent = isDark ? 'Light Mode' : 'Dark Mode';
-}
-
-// Initialize Theme
-const savedTheme = localStorage.getItem('darkMode') === 'true';
-if (savedTheme) {
-    document.body.classList.add('dark-mode');
-    updateThemeButton(true);
-}
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme managed centrally via shared/theme.js - start
+// Note: toggleTheme and updateThemeButton are loaded globally from static/shared/theme.js
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme managed centrally via shared/theme.js - end
 
 function refreshMetrics() {
     const range = document.getElementById('timeRangeSelect').value;
@@ -731,11 +758,35 @@ function onReportSearch() {
     }
 }
 
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - start
 function showChangePasswordModal(username) {
     document.getElementById('changePasswordUsername').textContent = username;
     document.getElementById('changePasswordForm').action = `/admin/users/${username}/change-password`;
+    
+    const oldGroup = document.getElementById('changePasswordOldGroup');
+    const oldInput = document.getElementById('changePasswordOldInput');
+    const newInput = document.getElementById('changePasswordNewInput');
+    const confirmInput = document.getElementById('changePasswordConfirmInput');
+
+    if (oldInput) oldInput.value = '';
+    if (newInput) newInput.value = '';
+    if (confirmInput) confirmInput.value = '';
+
+    // If changing own password, require old password. If admin resetting staff, old password not required.
+    const activeAdmin = typeof currentAdminUsername !== 'undefined' ? currentAdminUsername : document.querySelector('.header strong')?.textContent?.trim();
+    if (oldGroup && oldInput) {
+        if (!activeAdmin || username === activeAdmin) {
+            oldGroup.style.display = 'block';
+            oldInput.required = true;
+        } else {
+            oldGroup.style.display = 'none';
+            oldInput.required = false;
+        }
+    }
+
     new bootstrap.Modal(document.getElementById('changePasswordModal')).show();
 }
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - end
 
 function openDrilldown(type, id) {
     const data = type === 'staff' ? currentMetrics.staff[id] : currentMetrics.clients[id];
@@ -1063,4 +1114,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+
+    // Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Pre-fetch reference datasets on initial load - start
+    loadSettings();
+    loadHolidays();
+    loadClientGroups();
+    // Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Pre-fetch reference datasets on initial load - end
 });

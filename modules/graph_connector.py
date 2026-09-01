@@ -345,15 +345,12 @@ class AsyncioWorker:
                 )
                 response = GraphResponse(success=True, data=result)
 
+            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Single-attempt transmission to prevent duplicate sends - start
             elif request.request_type == RequestType.SEND_EMAIL:
                 result = self.loop.run_until_complete(
                     asyncio.wait_for(
-                        retry_with_backoff(
-                            lambda: self._send_email_async(**request.params),
-                            self.retry_config,
-                            "send_email"
-                        ),
-                        timeout=120.0  # Bilal Khan (05/08/2026) - Wave 1A: was 45s, increased to cover retries
+                        self._send_email_async(**request.params),
+                        timeout=60.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
@@ -361,15 +358,12 @@ class AsyncioWorker:
             elif request.request_type == RequestType.REPLY_TO_EMAIL:
                 result = self.loop.run_until_complete(
                     asyncio.wait_for(
-                        retry_with_backoff(
-                            lambda: self._reply_to_email_async(**request.params),
-                            self.retry_config,
-                            "reply_to_email"
-                        ),
-                        timeout=120.0  # Bilal Khan (05/08/2026) - Wave 1A: was 45s, increased to cover retries
+                        self._reply_to_email_async(**request.params),
+                        timeout=60.0
                     )
                 )
                 response = GraphResponse(success=True, data=result)
+            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Single-attempt transmission to prevent duplicate sends - end
             
             else:
                 response = GraphResponse(
@@ -386,16 +380,18 @@ class AsyncioWorker:
     async def _fetch_emails_async(self, user_email: str, minutes: int, top: int) -> List[Dict]:
         """Async implementation of email fetching"""
         try:
+            # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Filter out draft messages to prevent stale IDs - start
             time_threshold = (datetime.utcnow() - timedelta(minutes=minutes)).strftime('%Y-%m-%dT%H:%M:%SZ')
-            filter_query = f"receivedDateTime ge {time_threshold}"
+            filter_query = f"isDraft eq false and receivedDateTime ge {time_threshold}"
             
             query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
                 filter=filter_query,
-                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients', 'internetMessageId'],
+                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients', 'internetMessageId', 'isDraft'],
                 orderby=['receivedDateTime ASC'],
                 top=top,
                 expand=['attachments']
             )
+            # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Filter out draft messages to prevent stale IDs - end
             
             request_config = MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
                 query_parameters=query_params
@@ -408,6 +404,8 @@ class AsyncioWorker:
             
             while messages and messages.value:
                 for msg in messages.value:
+                    if getattr(msg, 'is_draft', False):
+                        continue
                     # FALLBACK: Fetch attachments if missing but referenced in body or has_attachments is true
                     # Some clients don't set has_attachments flag for inline images
                     body_content = getattr(msg.body, 'content', '') if msg.body else ''
@@ -607,6 +605,7 @@ class AsyncioWorker:
         await self.client.users.by_user_id(user_email).send_mail.post(body=body)
         return True
 
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix Graph API reply body and comment payload - start
     async def _reply_to_email_async(
         self,
         user_email: str,
@@ -623,17 +622,12 @@ class AsyncioWorker:
         """
         from msgraph.generated.users.item.messages.item.reply.reply_post_request_body import ReplyPostRequestBody
         from msgraph.generated.models.message import Message
-        from msgraph.generated.models.item_body import ItemBody
-        from msgraph.generated.models.body_type import BodyType
         from msgraph.generated.models.recipient import Recipient
         from msgraph.generated.models.email_address import EmailAddress
         from msgraph.generated.models.file_attachment import FileAttachment
 
-        # 1. Create the reply message structure
+        # 1. Create the reply message structure (for recipient overrides and attachments)
         reply_message = Message()
-        reply_message.body = ItemBody()
-        reply_message.body.content_type = BodyType.Html
-        reply_message.body.content = body_html
 
         # 2. Add Recipients (To, CC, BCC)
         def make_recipient(email):
@@ -669,8 +663,9 @@ class AsyncioWorker:
                 files.append(fa)
             reply_message.attachments = files
 
-        # 4. Prepare the request body
+        # 4. Prepare the request body: Graph API requires reply content in `comment`
         request_body = ReplyPostRequestBody()
+        request_body.comment = body_html
         request_body.message = reply_message
 
         # 5. Execute the reply
@@ -681,6 +676,7 @@ class AsyncioWorker:
 
         logger.info(f"✅ Successfully replied to message {parent_message_id[:10]}...")
         return True
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix Graph API reply body and comment payload - end
 
     
     def shutdown(self, timeout: float = 5.0):
@@ -1012,6 +1008,7 @@ class GraphConnector:
             logger.error(f"❌ send_email failed: {e}")
             return False
 
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Add circuit-breaker and outcome tracking to reply_to_email - start
     def reply_to_email(
         self,
         user_email: str,
@@ -1025,6 +1022,8 @@ class GraphConnector:
         """
         Reply to an existing email (SYNCHRONOUS with retry).
         """
+        if self._is_circuit_open():
+            return False
         try:
             response = self._send_request(
                 RequestType.REPLY_TO_EMAIL,
@@ -1038,10 +1037,17 @@ class GraphConnector:
                     'attachments': attachments
                 }
             )
-            return response.success
+            self._record_outcome(response.success, response.error or "")
+            if response.success:
+                return True
+            else:
+                logger.error(f"❌ reply_to_email failed: {response.error}")
+                return False
         except Exception as e:
+            self._record_outcome(False, str(e))
             logger.error(f"❌ reply_to_email failed: {e}")
             return False
+    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Add circuit-breaker and outcome tracking to reply_to_email - end
     
     def shutdown(self):
         """Shutdown the asyncio worker thread cleanly"""

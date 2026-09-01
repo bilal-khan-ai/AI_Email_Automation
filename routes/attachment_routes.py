@@ -107,10 +107,10 @@ def view_attachment():
     Serve attachment for inline viewing or preview with SHA-256 content-addressable deduplication and thumbnail caching.
     """
     try:
-        user_email = request.args.get('user_email', Config.USER_EMAIL)
+        user_email = request.args.get('user_email') or Config.USER_EMAIL
         message_id = request.args.get('message_id')
         attachment_id = request.args.get('attachment_id')
-        filename = request.args.get('filename', 'attachment')
+        filename = request.args.get('filename') or request.args.get('attachment_name', 'attachment')
         is_thumbnail = request.args.get('thumbnail', 'false').lower() in ('true', '1')
 
         if not message_id or not attachment_id:
@@ -138,6 +138,7 @@ def view_attachment():
         )
 
         if not attachment_data:
+            logger.error(f"Failed to download attachment data | User: {user_email} | Msg: {message_id[:15]}... | Att: {attachment_id[:15]}...")
             return jsonify({'error': 'Attachment not found or failed to download'}), 404
 
         # 3. Compute SHA-256 content hash
@@ -160,6 +161,7 @@ def view_attachment():
 
             if not os.path.exists(thumb_path):
                 try:
+                    from PIL import Image
                     with Image.open(io.BytesIO(attachment_data)) as img:
                         img.thumbnail((260, 260))
                         if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
@@ -180,7 +182,8 @@ def view_attachment():
         resp = make_response(send_file(
             io.BytesIO(attachment_data),
             mimetype=mimetype,
-            as_attachment=False
+            as_attachment=False,
+            download_name=secure_filename(filename) or 'attachment'
         ))
         resp.headers['Cache-Control'] = 'private, max-age=86400'
         resp.headers['ETag'] = f'"{content_hash}"'
@@ -196,7 +199,7 @@ def view_attachment():
 def download_attachment():
     """Download attachment from Microsoft Graph with Content-Disposition attachment header."""
     try:
-        user_email = request.args.get('user_email', Config.USER_EMAIL)
+        user_email = request.args.get('user_email') or Config.USER_EMAIL
         message_id = request.args.get('message_id')
         attachment_id = request.args.get('attachment_id')
         attachment_name = request.args.get('attachment_name') or request.args.get('filename', 'attachment')
@@ -211,6 +214,7 @@ def download_attachment():
         )
 
         if not attachment_data:
+            logger.error(f"Failed to download attachment for download | User: {user_email} | Msg: {message_id[:15]}... | Att: {attachment_id[:15]}...")
             return jsonify({'error': 'Attachment failed to download'}), 404
 
         mimetype, _ = mimetypes.guess_type(attachment_name)
@@ -220,7 +224,7 @@ def download_attachment():
         return send_file(
             io.BytesIO(attachment_data),
             as_attachment=True,
-            download_name=secure_filename(attachment_name),
+            download_name=secure_filename(attachment_name) or 'attachment',
             mimetype=mimetype
         )
     except Exception as e:

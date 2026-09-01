@@ -163,27 +163,9 @@ function truncateTicketId(id) {
     return id.substring(0, 10) + '...' + id.substring(id.length - 6);
 }
 
-function toggleTheme() {
-    const body = document.body;
-    body.classList.toggle('dark-mode');
-    const isDark = body.classList.contains('dark-mode');
-    localStorage.setItem('darkMode', isDark);
-    updateThemeButton(isDark);
-}
-
-function updateThemeButton(isDark) {
-    const icon = document.getElementById('theme-icon');
-    const text = document.getElementById('theme-text');
-    if (icon && text) {
-        if (isDark) {
-            icon.textContent = '☀️';
-            text.textContent = 'Light Mode';
-        } else {
-            icon.textContent = '🌙';
-            text.textContent = 'Dark Mode';
-        }
-    }
-}
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme managed centrally via shared/theme.js - start
+// Note: toggleTheme and updateThemeButton are loaded globally from static/shared/theme.js
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Theme managed centrally via shared/theme.js - end
 
 /*
 function initializeEditor() {
@@ -2042,8 +2024,11 @@ async function importTicketAttachmentToEmail(filename, msgId, attId, contentType
 // Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Outbound Email Attachments Logic with Deduplication and Lightbox - end
 // Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Outbound Email Attachments Logic - end
 
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Strict duplicate send protection in sendToCustomer - start
+let isSendingEmail = false;
+
 async function sendToCustomer() {
-    if (isTicketLocked) return;
+    if (isTicketLocked || isSendingEmail) return;
 
     const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
     const assignedTo = document.getElementById('modal-assignment').value;
@@ -2059,6 +2044,10 @@ async function sendToCustomer() {
         alert('Recipient email is missing.');
         return;
     }
+
+    isSendingEmail = true;
+    const btnSend = document.getElementById('btnSend');
+    if (btnSend) btnSend.disabled = true;
 
     const formData = new FormData();
     formData.append('ticket_id', currentTicketIdStr);
@@ -2106,9 +2095,12 @@ async function sendToCustomer() {
         console.error('Error sending email:', error);
         alert('Error sending email. Please try again.');
     } finally {
+        isSendingEmail = false;
+        if (btnSend) btnSend.disabled = false;
         hideSendingOverlay();
     }
 }
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Strict duplicate send protection in sendToCustomer - end
 
 // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Floating Dropdown Menu Logic - start
 let currentLinkedDevOpsItems = [];
@@ -2878,7 +2870,7 @@ function onDevOpsTypeChange() {
     bugFields.style.display = isBug ? 'block' : 'none';
 }
 
-// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - start
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - start
 let devopsUserSearchTimer = null;
 
 async function onDevOpsUserSearch(query) {
@@ -2895,29 +2887,36 @@ async function onDevOpsUserSearch(query) {
                 const users = data.users || [];
                 
                 let html = `
-                    <div class="autocomplete-item p-2" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onclick="selectDevOpsAssignedUser('', 'Unassigned')">
-                        <span class="text-muted">👤 Unassigned</span>
+                    <div class="devops-user-suggestion p-2" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onmousedown="selectDevOpsAssignedUser('', 'Unassigned')">
+                        <span class="text-muted small">👤 Unassigned</span>
                     </div>
                 `;
 
                 if (users.length > 0) {
-                    html += users.map(u => `
-                        <div class="autocomplete-item p-2 d-flex flex-column" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onclick="selectDevOpsAssignedUser('${escapeHtml(u.uniqueName || u.displayName)}', '${escapeHtml(u.displayName)}')">
-                            <span class="fw-bold small" style="color: var(--text-primary);">👤 ${escapeHtml(u.displayName)}</span>
-                            <span class="text-muted" style="font-size: 0.72rem;">${escapeHtml(u.mailAddress || u.uniqueName || '')}</span>
-                        </div>
-                    `).join('');
+                    html += users.map(u => {
+                        const safeVal = (u.uniqueName || u.mailAddress || u.displayName || '').replace(/'/g, "\\'");
+                        const safeDisplay = (u.displayName || u.uniqueName || '').replace(/'/g, "\\'");
+                        const dispName = escapeHtml(u.displayName || u.uniqueName || '');
+                        const email = escapeHtml(u.mailAddress || u.uniqueName || '');
+                        return `
+                            <div class="devops-user-suggestion p-2 d-flex flex-column" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onmousedown="selectDevOpsAssignedUser('${safeVal}', '${safeDisplay}')">
+                                <span class="fw-bold small" style="color: var(--text-primary);">👤 ${dispName}</span>
+                                <span class="text-muted" style="font-size: 0.72rem;">${email}</span>
+                            </div>
+                        `;
+                    }).join('');
                 } else if (query) {
                     html += `<div class="p-2 text-muted small">No matching team members found</div>`;
                 }
 
                 suggestions.innerHTML = html;
+                suggestions.style.display = 'block';
                 suggestions.classList.remove('d-none');
             }
         } catch (e) {
             console.error('Error searching DevOps users:', e);
         }
-    }, 200);
+    }, 120);
 }
 
 function selectDevOpsAssignedUser(val, display) {
@@ -2925,9 +2924,12 @@ function selectDevOpsAssignedUser(val, display) {
     const hiddenVal = document.getElementById('devopsAssignedValue');
     const suggestions = document.getElementById('devopsAssignedSuggestions');
 
-    if (input) input.value = display === 'Unassigned' ? '' : display;
+    if (input) input.value = (display === 'Unassigned' || !display) ? '' : display;
     if (hiddenVal) hiddenVal.value = val;
-    if (suggestions) suggestions.classList.add('d-none');
+    if (suggestions) {
+        suggestions.style.display = 'none';
+        suggestions.classList.add('d-none');
+    }
 }
 
 // Close DevOps user suggestions when clicking outside
@@ -2935,10 +2937,11 @@ document.addEventListener('click', (e) => {
     const input = document.getElementById('devopsAssignedInput');
     const suggestions = document.getElementById('devopsAssignedSuggestions');
     if (suggestions && input && !input.contains(e.target) && !suggestions.contains(e.target)) {
+        suggestions.style.display = 'none';
         suggestions.classList.add('d-none');
     }
 });
-// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - end
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - end
 
 async function submitDevOpsCreate(e) {
     e.preventDefault();
@@ -3567,3 +3570,101 @@ socket.on('ticket_unlocked', (data) => {
         socket.emit('lock_ticket', { ticket_id: currentTicketIdStr });
     }
 });
+
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - start
+function showChangePasswordModal(username) {
+    const user = username || (typeof currentUsername !== 'undefined' ? currentUsername : '');
+    const userElem = document.getElementById('changePasswordUsername');
+    if (userElem) userElem.textContent = user;
+    const oldInput = document.getElementById('changePasswordOldInput');
+    const newInput = document.getElementById('changePasswordNewInput');
+    const confirmInput = document.getElementById('changePasswordConfirmInput');
+    if (oldInput) oldInput.value = '';
+    if (newInput) newInput.value = '';
+    if (confirmInput) confirmInput.value = '';
+
+    const modalElem = document.getElementById('changePasswordModal');
+    if (modalElem) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const bsModal = bootstrap.Modal.getInstance(modalElem) || new bootstrap.Modal(modalElem);
+            bsModal.show();
+        } else {
+            modalElem.style.display = 'block';
+            modalElem.classList.add('show');
+        }
+    }
+}
+
+function closeChangePasswordModal() {
+    const modalElem = document.getElementById('changePasswordModal');
+    if (modalElem) {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            const bsModal = bootstrap.Modal.getInstance(modalElem);
+            if (bsModal) bsModal.hide();
+        }
+        modalElem.style.display = 'none';
+        modalElem.classList.remove('show');
+    }
+}
+
+async function handleDashboardChangePassword(e) {
+    e.preventDefault();
+    const oldInput = document.getElementById('changePasswordOldInput');
+    const newInput = document.getElementById('changePasswordNewInput');
+    const confirmInput = document.getElementById('changePasswordConfirmInput');
+
+    const oldPassword = oldInput ? oldInput.value : '';
+    const newPassword = newInput ? newInput.value : '';
+    const confirmPassword = confirmInput ? confirmInput.value : '';
+    const btn = document.getElementById('btnSubmitChangePassword');
+    const originalText = btn ? btn.textContent : 'Update Password';
+
+    if (!oldPassword) {
+        alert('Please enter your current (old) password');
+        return;
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+        alert('New password must be at least 6 characters long');
+        return;
+    }
+
+    if (newPassword !== confirmPassword) {
+        alert('New password and confirmation password do not match');
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Updating...';
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('old_password', oldPassword);
+        formData.append('new_password', newPassword);
+        formData.append('confirm_password', confirmPassword);
+
+        const resp = await fetch('/api/user/change-password', {
+            method: 'POST',
+            body: formData
+        });
+
+        const res = await resp.json();
+        if (resp.ok && res.success) {
+            showToast('✅ Password updated successfully!', 'success');
+            closeChangePasswordModal();
+        } else {
+            alert(res.error || 'Failed to update password');
+        }
+    } catch (err) {
+        console.error('Password change error:', err);
+        alert('Network error while updating password');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+// Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - end

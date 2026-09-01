@@ -1,13 +1,14 @@
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icon Password Toggle - start
 function togglePassword() {
     const passwordInput = document.getElementById('password');
     const toggleIcon = document.getElementById('toggleIcon');
     
     if (passwordInput.type === 'password') {
         passwordInput.type = 'text';
-        toggleIcon.textContent = '🙈';
+        toggleIcon.className = 'fa fa-eye-slash';
     } else {
         passwordInput.type = 'password';
-        toggleIcon.textContent = '👁️';
+        toggleIcon.className = 'fa fa-eye';
     }
 }
 
@@ -30,3 +31,4 @@ setTimeout(function() {
         bsAlert.close();
     });
 }, 5000);
+// Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icon Password Toggle - end

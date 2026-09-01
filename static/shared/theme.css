@@ -1,0 +1,112 @@
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Shared Design Tokens & Theme - start */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+    /* Brand & Theme Colors */
+    --brand-primary-start: #3A5A24;
+    --brand-primary-end: #B1D599;
+    --gradient-primary: linear-gradient(135deg, var(--brand-primary-start) 0%, var(--brand-primary-end) 100%);
+    --gradient-accent: linear-gradient(135deg, #2ecc71 0%, #1b4332 100%);
+
+    /* Core Palette - Light Mode */
+    --bg-primary: #f5f7fa;
+    --bg-card: #ffffff;
+    --bg-surface-alt: #f8f9fa;
+    --text-primary: #2c3e50;
+    --text-secondary: #7f8c8d;
+    --text-muted: #94a3b8;
+    --border-color: #e0e0e0;
+    --input-bg: #ffffff;
+    --header-bg: var(--gradient-primary);
+    --shadow: rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.15);
+    --modal-bg: rgba(0, 0, 0, 0.5);
+
+    /* Semantic Colors */
+    --accent: #2d6a4f;
+    --accent-hover: #27ae60;
+    --primary-color: #2d6a4f;
+    --success: #2ecc71;
+    --danger: #e74c3c;
+    --warning: #f39c12;
+    --info: #3b82f6;
+
+    /* Status Semantics */
+    --status-open-bg: #d4edda;
+    --status-open-text: #155724;
+    --status-review-bg: #cff4fc;
+    --status-review-text: #055160;
+    --status-closed-bg: #e2e3e5;
+    --status-closed-text: #383d41;
+
+    /* Dashboard Specific Elements */
+    --section-bg-info: #f8f9fa;
+    --section-bg-attach: #e7f3ff;
+    --section-bg-warn: #fff3cd;
+    --stat-total-color: #1e293b;
+    --stat-open-color: #10b981;
+    --stat-closed-color: #64748b;
+
+    /* Spacing & Radii Tokens */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 15px;
+    --radius-xl: 20px;
+    --radius-pill: 50px;
+
+    /* Scrollbar Tokens - Light Mode */
+    --scrollbar-width: 6px;
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(0, 0, 0, 0.18);
+    --scrollbar-thumb-hover: var(--accent);
+
+    /* Typography */
+    --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+}
+
+/* Dark Mode Tokens */
+:root.dark-mode,
+html.dark-mode,
+body.dark-mode {
+    /* Scrollbar Tokens - Dark Mode */
+    --scrollbar-track: transparent;
+    --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+    --scrollbar-thumb-hover: var(--accent);
+    --bg-primary: #1a1a1a;
+    --bg-card: #2d2d2d;
+    --bg-surface-alt: #252525;
+    --text-primary: #ffffff;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-color: #404040;
+    --input-bg: #333333;
+    --header-bg: linear-gradient(135deg, #1b4332 0%, #111827 100%);
+    --shadow: rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --modal-bg: rgba(0, 0, 0, 0.8);
+
+    --accent: #34d399;
+    --accent-hover: #10b981;
+    --primary-color: #34d399;
+    --success: #34d399;
+    --danger: #ef4444;
+    --warning: #fbbf24;
+    --info: #60a5fa;
+
+    --status-open-bg: rgba(52, 211, 153, 0.2);
+    --status-open-text: #34d399;
+    --status-review-bg: rgba(96, 165, 250, 0.2);
+    --status-review-text: #93c5fd;
+    --status-closed-bg: rgba(148, 163, 184, 0.2);
+    --status-closed-text: #cbd5e1;
+
+    --section-bg-info: #383838;
+    --section-bg-attach: #003366;
+    --section-bg-warn: #4d3e00;
+    --stat-total-color: #f1f5f9;
+    --stat-open-color: #34d399;
+    --stat-closed-color: #94a3b8;
+}
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Shared Design Tokens & Theme - end */

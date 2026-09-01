@@ -1,127 +1,112 @@
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Login Stylesheet - start */
+
 body {
-    background: linear-gradient(135deg, #2ecc71 0%, #1b4332 100%);
+    background: var(--header-bg);
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--font-family-base);
+    transition: background 0.3s ease;
 }
+
 .login-container {
-    max-width: 450px;
+    max-width: 460px;
     width: 100%;
     padding: 20px;
 }
+
 .login-card {
-    background: white;
-    border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    padding: 50px;
-    animation: slideUp 0.5s ease-out;
+    background: var(--bg-card);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+    padding: 40px 45px;
+    animation: slideUp 0.4s ease-out;
 }
+
 @keyframes slideUp {
     from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(20px);
     }
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
+
 .login-header {
     text-align: center;
-    margin-bottom: 40px;
+    margin-bottom: 30px;
 }
+
 .login-header h2 {
-    color: #333;
+    color: var(--text-primary);
     font-weight: 700;
-    font-size: 28px;
-    margin-bottom: 10px;
-}
-.login-header .subtitle {
-    color: #666;
-    font-size: 15px;
-}
-.login-icon {
-    font-size: 60px;
-    margin-bottom: 20px;
-}
-.form-floating {
-    margin-bottom: 20px;
-}
-.form-control {
-    border-radius: 10px;
-    border: 2px solid #e0e0e0;
-    padding: 12px 15px;
-    font-size: 15px;
-    transition: all 0.3s ease;
-}
-.form-control:focus {
-    border-color: #2d6a4f;
-    box-shadow: 0 0 0 0.2rem rgba(45, 106, 79, 0.25);
-}
-.form-label {
-    color: #555;
-    font-weight: 500;
+    font-size: 24px;
     margin-bottom: 8px;
+    letter-spacing: -0.5px;
 }
+
+.login-header .subtitle {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 0;
+}
+
+.login-icon {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 6px;
+}
+
 .btn-login {
-    background: linear-gradient(135deg, #2ecc71 0%, #1b4332 100%);
+    background: var(--gradient-primary);
     border: none;
-    padding: 14px;
+    padding: 12px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    border-radius: 10px;
-    font-size: 16px;
-    transition: all 0.3s ease;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    transition: all 0.25s ease;
     width: 100%;
     margin-top: 10px;
+    color: #ffffff;
 }
+
 .btn-login:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 25px rgba(45, 106, 79, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(45, 106, 79, 0.35);
+    background: var(--gradient-primary);
+    filter: brightness(1.05);
 }
+
 .btn-login:active {
-    transform: translateY(-1px);
+    transform: translateY(0);
 }
-.default-creds {
-    background: #f8f9fa;
-    border-left: 4px solid #ffc107;
-    padding: 15px;
-    border-radius: 8px;
-    margin-top: 25px;
-    font-size: 13px;
-}
-.default-creds strong {
-    color: #856404;
-}
-.alert {
-    border-radius: 10px;
-    border: none;
-    animation: slideDown 0.3s ease-out;
-}
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
+
 .password-toggle {
     position: absolute;
     right: 15px;
     top: 50%;
     transform: translateY(-50%);
     cursor: pointer;
-    color: #666;
+    color: var(--text-secondary);
     user-select: none;
+    font-size: 1.1rem;
 }
+
 .password-toggle:hover {
-    color: #333;
+    color: var(--text-primary);
 }
+
 .input-wrapper {
     position: relative;
 }
+/* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Login Stylesheet - end */
