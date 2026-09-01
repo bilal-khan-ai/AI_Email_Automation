@@ -74,7 +74,9 @@ class EnvManager:
                 try:
                     import subprocess
                     subprocess.run(['attrib', '-R', '-H', '-S', self.env_path], capture_output=True)
-                except: pass
+                # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on attribute update
+                except Exception:
+                    pass
 
             # Create temp file in same directory with restricted permissions
             fd, temp_path = tempfile.mkstemp(dir=os.path.dirname(self.env_path), prefix=".env_new_")
@@ -107,8 +109,11 @@ class EnvManager:
                 
             except Exception as inner_e:
                 if 'fd' in locals():
-                    try: os.close(fd)
-                    except: pass
+                    try:
+                        os.close(fd)
+                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on fd close
+                    except OSError:
+                        pass
                 
                 # ROLLBACK: If it failed, try to restore from backup
                 if os.path.exists(backup_path) and not os.path.exists(self.env_path):
@@ -123,6 +128,9 @@ class EnvManager:
             # Ensure we don't leave mess
             for p in [temp_path, backup_path]:
                 if p and os.path.exists(p):
-                    try: os.remove(p)
-                    except: pass
+                    try:
+                        os.remove(p)
+                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on cleanup
+                    except OSError:
+                        pass
             return False

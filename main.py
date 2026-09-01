@@ -7,6 +7,7 @@ import re
 import threading
 import gc  # Bilal Khan (12/08/2026) - P1 Fix #7: explicit GC for post-batch memory reclaim
 from datetime import datetime, timedelta
+from typing import Optional
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from config import Config
@@ -17,7 +18,9 @@ from config import Config
 # chromadb, presidio) even when they are never instantiated.
 from modules.graph_connector import GraphConnector, RetryConfig
 from modules.sql_logger import SQLLogger
-from modules.openai_agent import OpenAIAgent
+# Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate OpenAIAgent import behind ENABLE_AI to save RAM - start
+# from modules.openai_agent import OpenAIAgent  # Moved inside SupportAgent.__init__ under ENABLE_AI check
+# Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate OpenAIAgent import behind ENABLE_AI to save RAM - end
 
 # Silence HF/Transformers chatter
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -193,6 +196,10 @@ class SupportAgent:
     """
     
     def __init__(self):
+        """
+        Initialize SupportAgent subsystems: database persistence, Graph API connector,
+        conditional RAG vector databases, and AI generation components.
+        """
         logger.info("=" * 80)
         logger.info("Initializing Support Agent (Enhanced Mode)")
         logger.info("=" * 80)
@@ -264,11 +271,16 @@ class SupportAgent:
             )
         # Bilal Khan (05/08/2026) - Model unload: skip all heavy ML subsystems when RAG disabled - end
 
-        # 4. Init AI (always available for ticket interpretation/response, independent of RAG)
+        # 4. Init AI (lazy loaded only if ENABLE_AI is True)
         self.ai = None
-        if Config.OPENAI_API_KEY and Config.AUTO_GENERATE_RESPONSES:
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate AI initialization behind ENABLE_AI - start
+        if Config.ENABLE_AI and Config.OPENAI_API_KEY and Config.AUTO_GENERATE_RESPONSES:
+            from modules.openai_agent import OpenAIAgent
             self.ai = OpenAIAgent(Config.OPENAI_API_KEY)
             self.ai.authenticate()
+        else:
+            logger.info("⚡ AI disabled (ENABLE_AI=False) — skipped OpenAIAgent initialization")
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate AI initialization behind ENABLE_AI - end
 
         # 5. Init Subject Matcher
         self.subject_matcher = SubjectMatcher(similarity_threshold=0.75)
@@ -475,63 +487,20 @@ class SupportAgent:
                 
         return sender # Fallback
     
-    def ingest_email(self, email: dict) -> str:
+    # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Ingestion pipeline modularization - start
+    def _process_attachments(self, email: dict, msg_id: str) -> tuple[list[str], list[dict]]:
         """
-        Ingest email into support system with enhanced logging.
-        
-        Flow:
-        1. Check if message already processed (idempotent)
-        2. Determine if customer or internal message
-        3. Find or create ticket
-        4. Log message to ticket
-        5. Add to vector DB
+        Process email attachments (images, tables, documents) for RAG context.
         
         Args:
-            email: Email dict from Graph API
+            email: Raw email dictionary from Graph API
+            msg_id: Message ID for logging and attachment retrieval
             
         Returns:
-            ticket_id if processed, None if skipped
+            tuple: (attachment_descs: list of text summaries, processed_attachments: list of context dicts)
         """
-        msg_id = email.get('id')
-        sender = email.get('sender', '').lower()
-        subject = email.get('subject', 'No Subject')
-        conv_id = email.get('conversation_id')
-        
-        # Idempotency check (Checks both Graph ID and Internet Message ID)
-        internet_msg_id = email.get('internet_message_id')
-        if self.sql.message_exists(msg_id, internet_msg_id):
-            logger.debug(f"ℹ️  Message {msg_id[:20]}... already processed (skipping)")
-            return None
-        
-        # Determine if internal
-        is_internal = self._is_internal_email(sender)
-        
-        # Clean body for internal use, but preserve original for database
-        # email['body'] = self._clean_html(email.get('body', '')) # REMOVED: Stripping here breaks dashboard rendering
-
-        # SECURITY: Redact PII before RAG ingestion
-        # Bilal Khan (05/08/2026) - Model unload: None-safe PII passthrough when RAG disabled
-        if self.pii_redactor is not None:
-            redacted_email = self.pii_redactor.redact_email_content(email)
-        else:
-            # No RAG = no need to scrub; add expected keys so downstream code doesn't KeyError
-            redacted_email = dict(email)
-            redacted_email.setdefault('pii_redacted', False)
-            redacted_email.setdefault('pii_entities_found', 0)
-            redacted_email.setdefault('pii_entity_types', [])
-
-        if redacted_email.get('pii_redacted'):
-            logger.warning(
-                f"🔐 PII redacted | Msg: {msg_id[:20]}... | "
-            f"Entities: {redacted_email.get('pii_entities_found', 0)}"
-            )
-        
-        # Create plain text version for RAG and AI (after redaction)
-        redacted_email['body_text'] = self._clean_html(redacted_email.get('body', ''))
-        # Process attachments (images + docx/pdf + xlsx/csv)
-        # NOTE: we store these as "attachment descriptions" in Vector DB so RAG can use them later.
         attachment_descs = []
-        processed_attachments = [] # NEW: Buffer to store context until ticket_id is known
+        processed_attachments = []
         MAX_BYTES = getattr(Config, "MAX_ATTACHMENT_PROCESSING_BYTES", 10 * 1024 * 1024)
 
         for att in email.get('attachments', []):
@@ -539,7 +508,6 @@ class SupportAgent:
             ct = (att.get('content_type') or '').lower()
             size = att.get('size') or 0
 
-            # Skip huge files (safety). You can override via Config.MAX_ATTACHMENT_PROCESSING_BYTES
             if size and size > MAX_BYTES:
                 logger.warning(
                     f"⏭️  Skipping large attachment ({size} bytes) | "
@@ -548,7 +516,6 @@ class SupportAgent:
                 continue
 
             lower_name = name.lower()
-
             is_img = ct in ('image/jpeg', 'image/png', 'image/jpg', 'image/webp') or lower_name.endswith(('.png', '.jpg', '.jpeg', '.webp'))
             is_table = (
                 lower_name.endswith(('.xlsx', '.xlsm', '.csv', '.tsv')) or
@@ -576,17 +543,14 @@ class SupportAgent:
                     msg_id,
                     att['id']
                 )
-
                 if not att_bytes:
                     continue
 
                 if is_img:
-                    if Config.ENABLE_RAG:
-                        # RAG Image Processing (for AI context only)
+                    if Config.ENABLE_RAG and self.img_processor:
                         desc = self.img_processor.process_image(att_bytes, filename=name)
                         if desc:
                             attachment_descs.append(desc)
-                            # Store in buffer
                             processed_attachments.append({
                                 'filename': name,
                                 'content_summary': desc,
@@ -594,10 +558,9 @@ class SupportAgent:
                             })
                         logger.info(f"🖼️  Processed image {name} for RAG context.")
                     else:
-                        logger.info(f"🖼️  Image processing skipped (RAG is disabled).")
-                            
+                        logger.info("🖼️  Image processing skipped (RAG is disabled).")
+
                 elif is_table:
-                    # Bilal Khan (05/08/2026) - Model unload: guard table processor behind ENABLE_RAG
                     if Config.ENABLE_RAG and self.tables_processor:
                         res = self.tables_processor.process_bytes(att_bytes, filename=name)
                         txt = (res or {}).get("combined_text", "")
@@ -610,8 +573,8 @@ class SupportAgent:
                             })
                     else:
                         logger.debug(f"⏭️  Table processing skipped (RAG disabled): {name}")
+
                 elif is_doc:
-                    # Bilal Khan (05/08/2026) - Model unload: guard doc processor behind ENABLE_RAG
                     if Config.ENABLE_RAG and self.doc_processor:
                         res = self.doc_processor.process_bytes(att_bytes, filename=name)
                         txt = (res or {}).get("combined_text", "")
@@ -631,269 +594,217 @@ class SupportAgent:
                     f"Msg: {msg_id[:20]}... | Att: {name}: {e}"
                 )
 
-        # Find or create ticket
+        return attachment_descs, processed_attachments
 
-        ticket_id = None
+    def _persist_to_vector_db(self, ticket_id: str, display_id: str, redacted_email: dict, attachment_descs: list[str]):
+        """
+        Add message content and attachment summaries to the experience Vector DB.
         
-        if not is_internal:
-            # CUSTOMER MESSAGE - create or link ticket
-            
-            # Try conversation ID match first
-            existing = self.sql.find_ticket_by_conversation_id(conv_id)
-            
-            if existing:
-                ticket_id = existing['ticket_id']
-                # Resolve friendly ID for logging
-                display_id = self.sql.get_display_id(ticket_id)
-                
-                # RE-OPEN LOGIC: If ticket was soft-deleted or closed, re-open it
-                if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
-                    self.sql.reopen_ticket(ticket_id)
-                    # Update vector DB status
-                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
-                
-                logger.info(
-                    f"🔗 Linked to existing ticket {display_id} | "
-                    f"ConvID match | Sender: {sender}"
-                )
-            else:
-                # Try fuzzy subject match
-                active_tickets = self.sql.get_active_tickets()
-                fuzzy_match = self.subject_matcher.find_matching_ticket(
-                    subject, sender, active_tickets
-                )
-                
-                if fuzzy_match:
-                    ticket_id = fuzzy_match['ticket_id']
-                    display_id = self.sql.get_display_id(ticket_id)
-                    logger.info(
-                        f"🔗 Linked to existing ticket {display_id} | "
-                        f"Fuzzy match | Sender: {sender}"
-                    )
-                else:
-                    # Create new ticket
-                    ticket_id = f"TKT-{msg_id}"
-                    customer_email = self.find_customer_email(email)
-                    
-                    success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, customer_email, actor=sender,
-                        source_received_at=email.get('received')
-                    )
-                    
-                    if success:
-                        display_id = self.sql.get_display_id(ticket_id)
-                        logger.info(
-                            f"✨ Created new ticket {display_id} | "
-                            f"Customer: {sender} | Subject: {subject[:50]}"
-                        )
-                    else:
-                        logger.error(
-                            f"❌ Failed to create ticket | "
-                            f"Msg: {msg_id[:20]}... | Sender: {sender}"
-                        )
-                        return None
-            
-            # Log message
-            self.sql.log_message(ticket_id, email, is_internal=False)
-
-            # Store attachment contexts now that ticket_id is confirmed
-            for att_ctx in processed_attachments:
-                self.sql.store_attachment_context(
-                    ticket_id=ticket_id,
-                    message_id=msg_id,
-                    filename=att_ctx['filename'],
-                    content_summary=att_ctx['content_summary'],
-                    metadata=att_ctx['metadata']
-                )
-
-            # Persist Issue State
-            try:
-                if self.ai:
-                    full_thread = self.sql.get_thread_messages(ticket_id)
-                    current_state = self.sql.get_ticket_issue_state(ticket_id)
-                    # Original line:
-                    # new_state = self.ai.update_issue_state(full_thread, current_state)
-                    new_state = self.ai.update_issue_state(full_thread, current_state)
-                    self.sql.update_ticket_issue_state(ticket_id, new_state)
-                else:
-                    logger.info(f"⏭️ Skipping persistent issue state update (AI is disabled)")
-            except Exception as e:
-                # Use display_id for log if possible
-                logger.error(f"Failed to update persistent issue state for {display_id}: {e}")
-            
-            # Add to vector DB
-            if Config.ENABLE_RAG:
-                self.experience_db.add_email(
-                    email_id=redacted_email['id'],
-                    subject=redacted_email['subject'],
-                    body=redacted_email.get('body_text', redacted_email['body']),
-                    sender=redacted_email['sender'],
-                    image_descriptions=attachment_descs,
-                    metadata={
-                        'ticket_id': ticket_id,
-                        'pii_redacted': redacted_email.get('pii_redacted', False),
-                        'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                    },
-                    display_id=display_id
-                )
-            else:
-                logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
-
-        
+        Args:
+            ticket_id: Internal ticket identifier
+            display_id: Human-readable ticket display ID
+            redacted_email: Email dict with PII redacted
+            attachment_descs: List of attachment text summaries
+        """
+        if Config.ENABLE_RAG and self.experience_db:
+            self.experience_db.add_email(
+                email_id=redacted_email['id'],
+                subject=redacted_email['subject'],
+                body=redacted_email.get('body_text', redacted_email.get('body', '')),
+                sender=redacted_email['sender'],
+                image_descriptions=attachment_descs,
+                metadata={
+                    'ticket_id': ticket_id,
+                    'pii_redacted': redacted_email.get('pii_redacted', False),
+                    'pii_entities_count': redacted_email.get('pii_entities_found', 0)
+                },
+                display_id=display_id
+            )
         else:
-            # INTERNAL MESSAGE (Staff Sender)
-            
-            existing = self.sql.find_ticket_by_conversation_id(conv_id)
-            
-            if not existing:
-                # NEW: Check if support was looped in (To/CC) on a thread involving a customer
-                to_str = email.get('to', '').lower()
-                cc_str = email.get('cc', '').lower()
-                
-                if self.user_email.lower() in to_str or self.user_email.lower() in cc_str:
-                    customer_email = self.find_customer_email(email)
-                    
-                    # Only create if we found an actual external customer
-                    if not self._is_internal_email(customer_email):
-                        logger.info(f"✨ Creating ticket from internal chain | Customer: {customer_email} | Looped in: {self.user_email}")
-                        
-                        ticket_id = f"TKT-{msg_id}"
-                        success = self.sql.create_ticket(
-                            ticket_id, conv_id, subject, customer_email, actor=sender,
-                            source_received_at=email.get('received')
-                        )
-                        if success:
-                            # Re-fetch the newly created ticket info
-                            existing = self.sql.find_ticket_by_conversation_id(conv_id)
-            
-            if existing:
-                ticket_id = existing['ticket_id']
-                
-                # Resolve friendly ID for logging
-                display_id = self.sql.get_display_id(ticket_id)
-                
-                # RE-OPEN LOGIC: Even for internal replies, we should clear soft-delete or closed status
-                if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
-                    self.sql.reopen_ticket(ticket_id)
-                    # Update vector DB status
-                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+            logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
 
-                logger.info(
-                    f"📨 Internal reply to ticket {display_id} | "
-                    f"Sender: {sender}"
-                )
-                
-                # Log message
-                self.sql.log_message(ticket_id, email, is_internal=True)
+    def _flush_attachment_contexts(self, ticket_id: str, msg_id: str, processed_attachments: list[dict]):
+        """Store processed attachment contexts in the database for a resolved ticket."""
+        for att_ctx in processed_attachments:
+            self.sql.store_attachment_context(
+                ticket_id=ticket_id,
+                message_id=msg_id,
+                filename=att_ctx['filename'],
+                content_summary=att_ctx['content_summary'],
+                metadata=att_ctx['metadata']
+            )
 
-                # Store attachment contexts now that ticket_id is confirmed
-                for att_ctx in processed_attachments:
-                    self.sql.store_attachment_context(
-                        ticket_id=ticket_id,
-                        message_id=msg_id,
-                        filename=att_ctx['filename'],
-                        content_summary=att_ctx['content_summary'],
-                        metadata=att_ctx['metadata']
-                    )
+    def _update_issue_state_safe(self, ticket_id: str, display_id: str):
+        """Update persistent AI issue state for a ticket thread safely."""
+        if not self.ai:
+            logger.info(f"⏭️ Skipping persistent issue state update (AI is disabled) for ticket {display_id}")
+            return
+        try:
+            full_thread = self.sql.get_thread_messages(ticket_id)
+            current_state = self.sql.get_ticket_issue_state(ticket_id)
+            new_state = self.ai.update_issue_state(full_thread, current_state)
+            self.sql.update_ticket_issue_state(ticket_id, new_state)
+        except Exception as e:
+            logger.error(f"Failed to update persistent issue state for {display_id}: {e}")
 
-                # Persist Issue State (Internal replies also update context)
-                try:
-                    if self.ai:
-                        full_thread = self.sql.get_thread_messages(ticket_id)
-                        current_state = self.sql.get_ticket_issue_state(ticket_id)
-                        # Original line:
-                        # new_state = self.ai.update_issue_state(full_thread, current_state)
-                        new_state = self.ai.update_issue_state(full_thread, current_state)
-                        self.sql.update_ticket_issue_state(ticket_id, new_state)
-                    else:
-                        logger.info(f"⏭️ Skipping persistent issue state update (AI is disabled) for ticket {ticket_id}")
-                except Exception as e:
-                    logger.error(f"Failed to update persistent issue state for {ticket_id}: {e}")
-                
-                # Add to vector DB (for RAG context)
-                if Config.ENABLE_RAG:
-                    self.experience_db.add_email(
-                        email_id=redacted_email['id'],
-                        subject=redacted_email['subject'],
-                        body=redacted_email.get('body_text', redacted_email['body']),
-                        sender=redacted_email['sender'],
-                        image_descriptions=attachment_descs,
-                        metadata={
-                            'ticket_id': ticket_id,
-                            'pii_redacted': redacted_email.get('pii_redacted', False),
-                            'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                        },
-                        display_id=display_id
-                    )
-                else:
-                    logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
-
-            else:
-                # Check if this orphan internal email was sent to support (to create a ticket)
-                is_direct_to_support = self.user_email and self.user_email.lower() in email.get('to', '').lower()
-                
-                if is_direct_to_support:
-                    # Create new ticket
-                    ticket_id = f"TKT-{msg_id}"
-                    customer_email = self.find_customer_email(email)
-                    
-                    success = self.sql.create_ticket(
-                        ticket_id, conv_id, subject, customer_email, actor=sender
-                    )
-                    
-                    if success:
-                        display_id = self.sql.get_display_id(ticket_id)
-                        logger.info(
-                            f"✨ Created new ticket {display_id} from internal support request | "
-                            f"Staff: {sender} | Subject: {subject[:50]}"
-                        )
-                        
-                        # Log message (as non-internal for the initial ticket entry so it shows up)
-                        self.sql.log_message(ticket_id, email, is_internal=False)
-                        
-                        # Store attachment contexts
-                        for att_ctx in processed_attachments:
-                            self.sql.store_attachment_context(
-                                ticket_id=ticket_id,
-                                message_id=msg_id,
-                                filename=att_ctx['filename'],
-                                content_summary=att_ctx['content_summary'],
-                                metadata=att_ctx['metadata']
-                            )
-                        
-                        # Add to vector DB
-                        if Config.ENABLE_RAG:
-                            self.experience_db.add_email(
-                                email_id=redacted_email['id'],
-                                subject=redacted_email['subject'],
-                                body=redacted_email.get('body_text', redacted_email['body']),
-                                sender=redacted_email['sender'],
-                                image_descriptions=attachment_descs,
-                                metadata={
-                                    'ticket_id': ticket_id,
-                                    'pii_redacted': redacted_email.get('pii_redacted', False),
-                                    'pii_entities_count': redacted_email.get('pii_entities_found', 0)
-                                },
-                                display_id=display_id
-                            )
-                        else:
-                            logger.info(f"⏭️ Skipping experience vector DB addition for ticket {display_id} (RAG is disabled).")
-                    else:
-                        logger.error(
-                            f"❌ Failed to create ticket from internal support request | "
-                            f"Msg: {msg_id[:20]}... | Sender: {sender}"
-                        )
-                        return None
-                else:
-                    logger.warning(
-                        f"⚠️  Orphan internal email skipped (no parent ticket) | "
-                        f"Msg: {msg_id[:20]}... | Sender: {sender}"
-                    )
-                    return None
+    def _find_or_create_customer_ticket(self, email: dict, conv_id: str, msg_id: str, sender: str, subject: str) -> tuple[Optional[str], Optional[str]]:
+        """
+        Find existing ticket by conversation ID / fuzzy matching or create a new customer ticket.
         
+        Returns:
+            tuple: (ticket_id, display_id) or (None, None) on creation failure.
+        """
+        existing = self.sql.find_ticket_by_conversation_id(conv_id)
+        if existing:
+            ticket_id = existing['ticket_id']
+            display_id = self.sql.get_display_id(ticket_id)
+            if existing.get('deleted_at') or existing.get('status') == 'Closed':
+                logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
+                self.sql.reopen_ticket(ticket_id)
+                if self.experience_db:
+                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+            logger.info(f"🔗 Linked to existing ticket {display_id} | ConvID match | Sender: {sender}")
+            return ticket_id, display_id
+
+        # Try fuzzy subject match
+        active_tickets = self.sql.get_active_tickets()
+        fuzzy_match = self.subject_matcher.find_matching_ticket(subject, sender, active_tickets)
+        if fuzzy_match:
+            ticket_id = fuzzy_match['ticket_id']
+            display_id = self.sql.get_display_id(ticket_id)
+            logger.info(f"🔗 Linked to existing ticket {display_id} | Fuzzy match | Sender: {sender}")
+            return ticket_id, display_id
+
+        # Create new ticket
+        ticket_id = f"TKT-{msg_id}"
+        customer_email = self.find_customer_email(email)
+        success = self.sql.create_ticket(
+            ticket_id, conv_id, subject, customer_email, actor=sender,
+            source_received_at=email.get('received')
+        )
+        if success:
+            display_id = self.sql.get_display_id(ticket_id)
+            logger.info(f"✨ Created new ticket {display_id} | Customer: {sender} | Subject: {subject[:50]}")
+            return ticket_id, display_id
+
+        logger.error(f"❌ Failed to create ticket | Msg: {msg_id[:20]}... | Sender: {sender}")
+        return None, None
+
+    def _route_internal_email(self, email: dict, conv_id: str, msg_id: str, sender: str, subject: str) -> tuple[Optional[str], Optional[str], bool]:
+        """
+        Route an internal staff message: match existing thread, detect customer loop-in, or handle direct support request.
+        
+        Returns:
+            tuple: (ticket_id, display_id, is_initial_entry) or (None, None, False) if skipped.
+        """
+        existing = self.sql.find_ticket_by_conversation_id(conv_id)
+        if not existing:
+            # Check if support was looped in (To/CC) on a thread involving an external customer
+            to_str = email.get('to', '').lower()
+            cc_str = email.get('cc', '').lower()
+            if self.user_email.lower() in to_str or self.user_email.lower() in cc_str:
+                customer_email = self.find_customer_email(email)
+                if not self._is_internal_email(customer_email):
+                    logger.info(f"✨ Creating ticket from internal chain | Customer: {customer_email} | Looped in: {self.user_email}")
+                    ticket_id = f"TKT-{msg_id}"
+                    if self.sql.create_ticket(ticket_id, conv_id, subject, customer_email, actor=sender, source_received_at=email.get('received')):
+                        existing = self.sql.find_ticket_by_conversation_id(conv_id)
+
+        if existing:
+            ticket_id = existing['ticket_id']
+            display_id = self.sql.get_display_id(ticket_id)
+            if existing.get('deleted_at') or existing.get('status') == 'Closed':
+                logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
+                self.sql.reopen_ticket(ticket_id)
+                if self.experience_db:
+                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+            logger.info(f"📨 Internal reply to ticket {display_id} | Sender: {sender}")
+            return ticket_id, display_id, False
+
+        # Check if orphan internal email was sent directly to support
+        is_direct_to_support = self.user_email and self.user_email.lower() in email.get('to', '').lower()
+        if is_direct_to_support:
+            ticket_id = f"TKT-{msg_id}"
+            customer_email = self.find_customer_email(email)
+            if self.sql.create_ticket(ticket_id, conv_id, subject, customer_email, actor=sender):
+                display_id = self.sql.get_display_id(ticket_id)
+                logger.info(f"✨ Created new ticket {display_id} from internal support request | Staff: {sender} | Subject: {subject[:50]}")
+                return ticket_id, display_id, True
+            logger.error(f"❌ Failed to create ticket from internal support request | Msg: {msg_id[:20]}... | Sender: {sender}")
+            return None, None, False
+
+        logger.warning(f"⚠️  Orphan internal email skipped (no parent ticket) | Msg: {msg_id[:20]}... | Sender: {sender}")
+        return None, None, False
+
+    def ingest_email(self, email: dict) -> Optional[str]:
+        """
+        Ingest email into support system with structured logging and RAG indexing.
+        
+        Flow:
+        1. Check idempotency (Graph ID & Internet Message ID)
+        2. Redact PII (if RAG enabled)
+        3. Extract attachment summaries
+        4. Route to customer or internal handler to resolve ticket ID
+        5. Log message, flush attachment contexts, update issue state, and persist to vector DB
+        
+        Args:
+            email: Email dict from Graph API
+            
+        Returns:
+            ticket_id if successfully processed, None if skipped or failed
+        """
+        msg_id = email.get('id')
+        sender = email.get('sender', '').lower()
+        subject = email.get('subject', 'No Subject')
+        conv_id = email.get('conversation_id')
+        
+        # 1. Idempotency check
+        internet_msg_id = email.get('internet_message_id')
+        if self.sql.message_exists(msg_id, internet_msg_id):
+            logger.debug(f"ℹ️  Message {msg_id[:20]}... already processed (skipping)")
+            return None
+        
+        # 2. PII Redaction
+        if self.pii_redactor is not None:
+            redacted_email = self.pii_redactor.redact_email_content(email)
+        else:
+            redacted_email = dict(email)
+            redacted_email.setdefault('pii_redacted', False)
+            redacted_email.setdefault('pii_entities_found', 0)
+            redacted_email.setdefault('pii_entity_types', [])
+
+        if redacted_email.get('pii_redacted'):
+            logger.warning(
+                f"🔐 PII redacted | Msg: {msg_id[:20]}... | "
+                f"Entities: {redacted_email.get('pii_entities_found', 0)}"
+            )
+        
+        redacted_email['body_text'] = self._clean_html(redacted_email.get('body', ''))
+
+        # 3. Process attachments
+        attachment_descs, processed_attachments = self._process_attachments(email, msg_id)
+
+        # 4. Route email by sender type
+        is_internal = self._is_internal_email(sender)
+        if not is_internal:
+            ticket_id, display_id = self._find_or_create_customer_ticket(email, conv_id, msg_id, sender, subject)
+            if not ticket_id:
+                return None
+            is_internal_msg = False
+        else:
+            ticket_id, display_id, is_initial_entry = self._route_internal_email(email, conv_id, msg_id, sender, subject)
+            if not ticket_id:
+                return None
+            is_internal_msg = not is_initial_entry
+
+        # 5. Log message & persist downstream context
+        self.sql.log_message(ticket_id, email, is_internal=is_internal_msg)
+        self._flush_attachment_contexts(ticket_id, msg_id, processed_attachments)
+        self._update_issue_state_safe(ticket_id, display_id)
+        self._persist_to_vector_db(ticket_id, display_id, redacted_email, attachment_descs)
+
         return ticket_id
+    # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Ingestion pipeline modularization - end
     
     def generate_ai_response(self, ticket_id: str):
         """
@@ -1022,6 +933,7 @@ class SupportAgent:
     
     # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Helper to touch worker_heartbeat.txt for Docker healthcheck
     def _update_heartbeat(self):
+        """Touch the worker heartbeat file with current timestamp for container liveness probe."""
         try:
             os.makedirs("data", exist_ok=True)
             with open(os.path.join("data", "worker_heartbeat.txt"), "w") as f:
@@ -1189,6 +1101,15 @@ class SupportAgent:
         logger.info(f"📊 AI generation: {ai_success} success, {ai_errors} errors")
         logger.info("=" * 80)
     
+    # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Legacy flag cleanup encapsulation - start
+    def _clear_legacy_regen_flags(self):
+        """Clean up any accidental legacy AI regeneration flags using repository helper."""
+        legacy_regen = self.sql.get_tickets_needing_regeneration()
+        if legacy_regen:
+            logger.info(f"🧹 Clearing {len(legacy_regen)} legacy AI regeneration flags...")
+            self.sql.clear_ai_regeneration_flags(legacy_regen)
+    # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Legacy flag cleanup encapsulation - end
+
     def run_live(self):
         """
         Live polling loop with enhanced error handling.
@@ -1235,14 +1156,7 @@ class SupportAgent:
                         )
                 
                 # Process AI Drafts for new emails only (Regeneration is now handled synchronously by the dashboard)
-                # Cleanup any accidental legacy flags
-                legacy_regen = self.sql.get_tickets_needing_regeneration()
-                if legacy_regen:
-                    logger.info(f"🧹 Clearing {len(legacy_regen)} legacy AI regeneration flags...")
-                    for t_id in legacy_regen:
-                        with self.sql.conn_manager.get_connection() as conn:
-                            with conn.cursor() as cur:
-                                cur.execute("UPDATE tickets SET needs_ai_generation = FALSE WHERE ticket_id = %s", (t_id,))
+                self._clear_legacy_regen_flags()
 
                 # Initial AI processing for new emails
                 for ticket_id in touched:

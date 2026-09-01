@@ -21,7 +21,7 @@ from datetime import datetime
 CONTEXT_WINDOW = 400000
 MAX_COMPLETION_TOKENS = 16384
 
-logging.basicConfig(level=logging.INFO)
+# Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Remove module-level basicConfig in library module
 logger = logging.getLogger(__name__)
 
 

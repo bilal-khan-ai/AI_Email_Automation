@@ -31,8 +31,9 @@ class Config:
     # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_DB fallback to support_db
     POSTGRES_DB = os.getenv('POSTGRES_DB', 'support_db')
     # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_USER and POSTGRES_PASSWORD fallbacks
-    POSTGRES_USER = os.getenv('POSTGRES_USER', 'bilal_k')
-    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', 'India@123')
+    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Remove hardcoded password fallback (read strictly from .env)
+    POSTGRES_USER = os.getenv('POSTGRES_USER', 'postgres')
+    POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
     POSTGRES_MIN_CONN = int(os.getenv('POSTGRES_MIN_CONN', 1))
     POSTGRES_MAX_CONN = int(os.getenv('POSTGRES_MAX_CONN', 10))
 
@@ -49,6 +50,9 @@ class Config:
     TEST_CC = os.getenv('TEST_CC', '')
     TEST_SUBJECT_TAG = os.getenv('TEST_SUBJECT_TAG', '[TEST MODE] ')
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'go_make_a_random_key_to_add_in_env_file')
+    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Add CORS_ALLOWED_ORIGINS configuration - start
+    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '*')
+    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Add CORS_ALLOWED_ORIGINS configuration - end
 
     # Cleanup daemon settings
     ENABLE_TICKET_CLEANUP_DAEMON = os.getenv('ENABLE_TICKET_CLEANUP_DAEMON', 'True').lower() == 'true'
@@ -66,6 +70,15 @@ class Config:
 
     # RAG Settings
     ENABLE_RAG = os.getenv('ENABLE_RAG', 'False').lower() == 'true'
+
+    # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add ENABLE_AI and Azure DevOps settings - start
+    ENABLE_AI = os.getenv('ENABLE_AI', 'False').lower() == 'true'
+
+    # Azure DevOps Settings
+    AZURE_DEVOPS_ORG = os.getenv('AZURE_DEVOPS_ORG', '')
+    AZURE_DEVOPS_PROJECT = os.getenv('AZURE_DEVOPS_PROJECT', '')
+    AZURE_DEVOPS_PAT = os.getenv('AZURE_DEVOPS_PAT', '')
+    # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add ENABLE_AI and Azure DevOps settings - end
 
     @classmethod
     def reload(cls):
@@ -86,5 +99,13 @@ class Config:
         cls.HARD_DELETE_AFTER_DAYS = int(os.getenv('HARD_DELETE_AFTER_DAYS', 6))
         cls.INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'
         cls.ENABLE_RAG = os.getenv('ENABLE_RAG', 'False').lower() == 'true'
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Reload ENABLE_AI and Azure DevOps settings - start
+        cls.ENABLE_AI = os.getenv('ENABLE_AI', 'False').lower() == 'true'
+        cls.AZURE_DEVOPS_ORG = os.getenv('AZURE_DEVOPS_ORG', '')
+        cls.AZURE_DEVOPS_PROJECT = os.getenv('AZURE_DEVOPS_PROJECT', '')
+        cls.AZURE_DEVOPS_PAT = os.getenv('AZURE_DEVOPS_PAT', '')
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Reload ENABLE_AI and Azure DevOps settings - end
         cls.WEB_SEARCH_MODEL = os.getenv('WEB_SEARCH_MODEL', 'gpt-4o-mini-2024-07-18')
+        # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Reload CORS_ALLOWED_ORIGINS
+        cls.CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '*')
         # Add other dynamic settings as needed

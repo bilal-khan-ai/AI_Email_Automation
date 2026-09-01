@@ -36,11 +36,11 @@
                     style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     🔑 My Password
                 </button>
-                <a href="{{ url_for('index', view='staff') }}" class="btn btn-outline-light btn-sm"
+                <a href="{{ url_for('core.index', view='staff') }}" class="btn btn-outline-light btn-sm"
                     style="border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     📊 Staff Dashboard
                 </a>
-                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm"
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm"
                     style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; font-size: 0.8rem;">
                     🚪 Logout
                 </a>
@@ -253,7 +253,7 @@
                                             </td>
                                             <td>
                                                 <form method="POST"
-                                                    action="{{ url_for('admin_toggle_user_assignment', username=user_row.username) }}">
+                                                    action="{{ url_for('auth.admin_toggle_user_assignment', username=user_row.username) }}">
                                                     <button type="submit" class="border-0 bg-transparent p-0"
                                                         title="Toggle Ticket Assignment">
                                                         <div
@@ -264,7 +264,7 @@
                                             </td>
                                             <td>
                                                 <form method="POST"
-                                                    action="{{ url_for('admin_toggle_user_status', username=user_row.username) }}">
+                                                    action="{{ url_for('auth.admin_toggle_user_status', username=user_row.username) }}">
                                                     <button type="submit" class="border-0 bg-transparent p-0"
                                                         title="Toggle Login Access" {{ 'disabled' if
                                                         user_row.username==user.username }}>
@@ -293,7 +293,7 @@
                                                                     onclick="showChangePasswordModal('{{ user_row.username }}')">🔑
                                                                     Reset Password</a></li>
                                                             {% else %}
-                                                            <li><span class="dropdown-item text-secondary small"
+                                                             <li><span class="dropdown-item text-secondary small"
                                                                     title="Admin passwords can only be changed by the user themselves.">🔒
                                                                     Reset Restricted</span></li>
                                                             {% endif %}
@@ -301,7 +301,7 @@
                                                     </div>
                                                     {% if user_row.username != user.username %}
                                                     <form method="POST"
-                                                        action="{{ url_for('admin_delete_user', username=user_row.username) }}"
+                                                        action="{{ url_for('auth.admin_delete_user', username=user_row.username) }}"
                                                         onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
                                                         <button type="submit" class="btn btn-sm btn-outline-danger"
                                                             title="Permanently Delete User">
@@ -326,7 +326,7 @@
                                 <span>➕ Create Staff</span>
                             </div>
                             <div class="card-body">
-                                <form method="POST" action="{{ url_for('admin_create_user') }}">
+                                <form method="POST" action="{{ url_for('auth.admin_create_user') }}">
                                     <div class="mb-3">
                                         <label class="form-label">Username</label>
                                         <input type="text" name="username" class="form-control"

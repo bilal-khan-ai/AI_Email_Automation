@@ -7,12 +7,15 @@ let customFromDate = null;
 let customToDate = null;
 let currentTicketRow = null;
 let currentTicketIdStr = null;
-let quillEditor = null;
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Declare Tiptap editor and DevOps state - start
+let tiptapEditor = null;
+let cachedDevOpsMeta = null;
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Declare Tiptap editor and DevOps state - end
 let attachedFiles = [];
 let currentAssignmentFilter = null;
 let currentCustomerFilter = null;
 let isTicketLocked = false;
-let isRightPanelCollapsed = true;
+let isRightPanelCollapsed = false;
 let currentTicketStatus = null; // Added this as it was used but not declared globally in the snippet (or was it?)
 let currentPage = 1;
 const pageSize = 50;
@@ -277,6 +280,11 @@ async function loadTickets() {
             ...t,
             row_number: t.id
         }));
+
+        // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Update Last Refreshed Timestamp on Load - start
+        lastRefreshedTimestamp = Date.now();
+        updateRefreshTooltip();
+        // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Update Last Refreshed Timestamp on Load - end
 
         displayTickets();
     } catch (error) {
@@ -785,23 +793,31 @@ async function openTicket(ticketId, rowNumber) {
     document.getElementById('modal-assignment').value = ticket.assigned_to || '';
     document.body.classList.add('modal-open');
 
-    /*
-    if (ticket.ai_draft) {
-        const sanitizedDraft = DOMPurify.sanitize(ticket.ai_draft, {
-            ALLOWED_TAGS: [
-                'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li',
-                'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'code', 'pre'
-            ],
-            ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
-            ALLOW_DATA_ATTR: false,
-            ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|cid|xmpp):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i
-        });
-
-        quillEditor.root.innerHTML = sanitizedDraft;
-    } else {
-        quillEditor.root.innerHTML = '';
+    // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Populate Tiptap editor and load DevOps items - start
+    if (!tiptapEditor && typeof initTiptapEditor === 'function') {
+        initTiptapEditor();
     }
-    */
+    if (tiptapEditor) {
+        if (ticket.ai_draft) {
+            const sanitizedDraft = DOMPurify.sanitize(ticket.ai_draft, {
+                ADD_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote', 'img'],
+                ADD_ATTR: ['src', 'alt', 'title', 'href', 'target', 'data-cid', 'class']
+            });
+            tiptapEditor.commands.setContent(sanitizedDraft);
+        } else {
+            tiptapEditor.commands.setContent('');
+        }
+    }
+
+    // Reset email outbound attachments
+    emailPendingAttachments = [];
+    renderEmailAttachmentPreviews();
+
+    // Load linked Azure DevOps work items for this ticket
+    const devopsMenu = document.getElementById('devopsDropdownMenu');
+    if (devopsMenu) devopsMenu.classList.add('d-none');
+    loadLinkedDevOpsItems(ticketId);
+    // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Populate Tiptap editor and load DevOps items - end
 
     const statusSelect = document.getElementById('modal-status');
     if (statusSelect) {
@@ -818,7 +834,7 @@ async function openTicket(ticketId, rowNumber) {
             lockStatus.textContent = `🔒 Locked by ${ticket.locked_by}`;
             lockStatus.classList.add('active');
         }
-        // quillEditor.disable();
+        if (tiptapEditor) tiptapEditor.setEditable(false);
         if (btnSave) btnSave.disabled = true;
         if (btnSend) btnSend.disabled = true;
         if (statusSelect) statusSelect.disabled = true;
@@ -827,7 +843,7 @@ async function openTicket(ticketId, rowNumber) {
         if (lockStatus) {
             lockStatus.classList.remove('active');
         }
-        // quillEditor.enable();
+        if (tiptapEditor) tiptapEditor.setEditable(true);
         if (btnSave) btnSave.disabled = false;
         if (btnSend) btnSend.disabled = false;
         if (statusSelect) statusSelect.disabled = false;
@@ -846,6 +862,7 @@ async function openTicket(ticketId, rowNumber) {
         const messages = data.messages || [];
 
         renderThread(messages);
+        populateEmailTicketChips(messages);
 
         const emailCC = document.getElementById('emailCC');
         const emailBCC = document.getElementById('emailBCC');
@@ -934,6 +951,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix CID image replacement regex and content_type suffix - start
 function processCidImages(body, cidMap) {
     if (!body) return '';
     let newBody = body;
@@ -942,20 +960,27 @@ function processCidImages(body, cidMap) {
 
     const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    Object.keys(cidMap).forEach(cid => {
+    // Sort by longest key first to prevent prefix matching bugs (e.g. image001.png matching before image001.png@01DD...)
+    const sortedCids = Object.keys(cidMap).sort((a, b) => b.length - a.length);
+
+    sortedCids.forEach(cid => {
         const att = cidMap[cid];
-        const viewUrl = `${window.location.origin}/api/view_attachment?message_id=${encodeURIComponent(att.msgId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(att.ct || '')}`;
+        const rawCt = (att.ct || '').split('@')[0].trim();
+        const viewUrl = `${window.location.origin}/api/view_attachment?message_id=${encodeURIComponent(att.msgId)}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(rawCt || 'image/png')}`;
 
         const escapedCid = escapeRegExp(cid);
-        const encodedCid = escapeRegExp(cid.replace('@', '%40'));
+        const encodedCid = escapeRegExp(cid.replace(/@/g, '%40'));
 
-        const pattern = new RegExp(`cid:<?(${escapedCid}|{encodedCid})>?`, 'gi');
+        // Match cid:cid, cid:<cid>, cid:cid@domain, cid:cid%40domain
+        const pattern = new RegExp(`cid:<?(?:${escapedCid}|${encodedCid})(?:@[^"'>\\s]*)?>?`, 'gi');
         newBody = newBody.replace(pattern, viewUrl);
     });
 
     return newBody;
 }
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix CID image replacement regex and content_type suffix - end
 
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Render Gmail style attachment tiles with lazy thumbnails - start
 function renderAttachments(attachments, messageId) {
     let attachmentsHtml = '';
     let attList = [];
@@ -968,42 +993,65 @@ function renderAttachments(attachments, messageId) {
     if (attList.length > 0) {
         attachmentsHtml = '<div class="message-attachments" style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color);">';
         attachmentsHtml += '<div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);">Attachments:</div>';
+        attachmentsHtml += '<div class="attachments-grid">';
+
         attList.forEach((att, idx) => {
             const attName = escapeHtml(att.name || 'file');
-            const isImage = att.content_type && att.content_type.startsWith('image/');
-            const isPDF = att.content_type === 'application/pdf' || attName.toLowerCase().endsWith('.pdf');
+            const isImage = (att.content_type && att.content_type.startsWith('image/')) || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.name || '');
+            const isPDF = att.content_type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+            const isTable = (att.name && /\.(xlsx|xls|csv|tsv)$/i.test(att.name));
+            const isDoc = (att.name && /\.(docx|doc|txt)$/i.test(att.name));
             const isPreviewable = isImage || isPDF;
 
+            let previewContent = '';
+            if (isImage) {
+                const thumbUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId || '')}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(att.content_type || '')}&thumbnail=true`;
+                previewContent = `
+                    <img loading="lazy" src="${thumbUrl}" class="attachment-tile-img" alt="${attName}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
+                    <div class="attachment-tile-icon" style="display: none;">🖼️</div>
+                `;
+            } else if (isPDF) {
+                previewContent = '<div class="attachment-tile-icon">📕</div>';
+            } else if (isTable) {
+                previewContent = '<div class="attachment-tile-icon">📊</div>';
+            } else if (isDoc) {
+                previewContent = '<div class="attachment-tile-icon">📄</div>';
+            } else {
+                previewContent = '<div class="attachment-tile-icon">📁</div>';
+            }
+
             attachmentsHtml += `
-                <div class="attachment-item" style="display: flex; align-items: center; justify-content: space-between; padding: 0.6rem 1rem; background: var(--bg-card); border-radius: 8px; margin-top: 0.4rem; font-size: 0.85rem; border: 1px solid var(--border-color); transition: all 0.2s;">
-                    <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1; overflow: hidden;">
-                        <span style="font-size: 1.2rem;">${isImage ? '🖼️' : (isPDF ? '📕' : '📄')}</span>
-                        <div style="display: flex; flex-direction: column; overflow: hidden;">
-                            <span style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary);" title="${attName}">${attName}</span>
-                            <span style="opacity:0.6; font-size: 0.75rem; color: var(--text-secondary);">${formatFileSize(att.size)} • ${escapeHtml(att.content_type || 'Unknown')}</span>
-                        </div>
-                    </div>
-                    <div class="attachment-actions" style="margin-left: 1rem;">
+                <div class="attachment-tile" 
+                     ${isPreviewable ? `data-att-id="${escapeHtml(att.id)}" data-msg-id="${escapeHtml(messageId || '')}" data-filename="${attName}" data-type="${escapeHtml(att.content_type || '')}" onclick="event.stopPropagation(); handlePreviewClick(this)" title="Click to preview ${attName}"` : `title="${attName}"`}>
+                    <div class="attachment-tile-preview">
+                        ${previewContent}
                         ${isPreviewable ? `
-                        <button 
-                            class="attachment-preview-btn" 
-                            data-att-id="${escapeHtml(att.id)}"
-                            data-msg-id="${escapeHtml(messageId || '')}"
-                            data-filename="${attName}"
-                            data-type="${escapeHtml(att.content_type || '')}"
-                            onclick="event.stopPropagation(); handlePreviewClick(this)">Preview</button>
-                        ` : ''}
-                        <button 
-                            class="attachment-download-btn" 
-                            onclick="event.stopPropagation(); downloadAttachment('${escapeHtml(att.id)}', '${escapeHtml(messageId || '')}', '${attName}')">Download</button>
+                        <div class="attachment-tile-overlay">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <span>Preview</span>
+                        </div>` : ''}
+                    </div>
+                    <div class="attachment-tile-info">
+                        <div class="attachment-tile-name" title="${attName}">${attName}</div>
+                        <div class="attachment-tile-footer">
+                            <span>${formatFileSize(att.size)}</span>
+                            <button type="button" 
+                                    class="attachment-tile-download-btn" 
+                                    title="Download ${attName}" 
+                                    onclick="event.stopPropagation(); downloadAttachment('${escapeHtml(att.id)}', '${escapeHtml(messageId || '')}', '${attName}')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
         });
-        attachmentsHtml += '</div>';
+
+        attachmentsHtml += '</div></div>';
     }
     return attachmentsHtml;
 }
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Render Gmail style attachment tiles with lazy thumbnails - end
 
 function toggleMessage(card, e) {
     if (window.getSelection().toString()) return;
@@ -1033,10 +1081,21 @@ function toggleMessage(card, e) {
     }
 }
 
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Upgraded Email Chain UI with Avatars and Time-Gap Dividers - start
+function getSenderInitials(sender) {
+    if (!sender) return '?';
+    const clean = sender.replace(/<.*?>/g, '').replace(/["']/g, '').trim();
+    const parts = clean.split(/[\s.@_]+/).filter(p => p.length > 0 && !['com', 'net', 'org', 'io', 'in'].includes(p.toLowerCase()));
+    if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return (clean[0] || '?').toUpperCase();
+}
+
 function renderThread(messages) {
     const container = document.getElementById('emailChainContainer');
     if (!messages || messages.length === 0) {
-        container.innerHTML = '<p>No conversation history found.</p>';
+        container.innerHTML = '<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><span style="font-size: 2rem; display:block; margin-bottom: 0.5rem;">📭</span>No conversation history found.</div>';
         return;
     }
 
@@ -1063,11 +1122,39 @@ function renderThread(messages) {
     });
 
     sortedMessages.forEach((msg, index) => {
+        // Calculate time gap with previous message in timeline (which is index + 1 in descending list)
+        if (index > 0) {
+            const prevMsg = sortedMessages[index - 1];
+            const prevTime = new Date(prevMsg.timestamp).getTime();
+            const currTime = new Date(msg.timestamp).getTime();
+            const diffMs = prevTime - currTime;
+            if (diffMs > 3600000) { // > 1 hour gap
+                const hours = Math.round(diffMs / 3600000);
+                const gapText = hours < 24 ? `⏱️ ${hours} hours later` : `📅 ${Math.round(hours / 24)} days later`;
+                const divider = document.createElement('div');
+                divider.className = 'time-gap-divider';
+                divider.innerHTML = `<span class="time-gap-badge">${gapText}</span>`;
+                container.appendChild(divider);
+            }
+        }
+
         const messageCard = document.createElement('div');
         messageCard.className = `message-card ${msg.is_internal ? 'internal-note' : 'customer-message'}`;
         if (index === 0) messageCard.classList.add('expanded');
 
-        const sender = escapeHtml(msg.sender || 'Unknown');
+        let rawSender = (msg.sender || '').trim();
+        const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        if (!rawSender || rawSender.toLowerCase() === 'unknown') {
+            if (msg.is_internal) {
+                rawSender = globalConfig.USER_EMAIL || 'support@greenwaresolutions.com';
+            } else if (activeTicket && activeTicket.customer_email) {
+                rawSender = activeTicket.customer_email;
+            } else {
+                rawSender = 'Customer';
+            }
+        }
+        const sender = escapeHtml(rawSender);
+        const initials = getSenderInitials(rawSender);
         const timestamp = formatDate(msg.timestamp);
         const processedBody = processCidImages(msg.body_html || msg.body || msg.body_text || '', globalCidMap);
         const rawBody = (processedBody || '').trim();
@@ -1117,10 +1204,15 @@ function renderThread(messages) {
         messageCard.innerHTML = `
             <div class="message-header">
                 <div class="msg-header-top">
-                    <span class="badge ${msg.is_internal ? 'bg-primary' : 'bg-warning text-dark'}">
-                        ${msg.is_internal ? 'Staff Note / Reply' : 'Customer Message'}
-                    </span>
-                    <span class="message-time">${timestamp}</span>
+                    <div class="msg-speaker-info">
+                        <div class="sender-avatar ${msg.is_internal ? 'staff' : 'customer'}">${initials}</div>
+                        <div>
+                            <span class="badge ${msg.is_internal ? 'bg-primary' : 'bg-warning text-dark'}" style="font-size: 0.75rem;">
+                                ${msg.is_internal ? '🛡️ Staff Note / Reply' : '👤 Customer Message'}
+                            </span>
+                        </div>
+                    </div>
+                    <span class="msg-time-badge"><i class="far fa-clock"></i> ${timestamp}</span>
                 </div>
                 <div class="msg-header-cols">
                     <div class="msg-header-col">
@@ -1144,7 +1236,7 @@ function renderThread(messages) {
                 
                 ${sanitizedThread ? `
                 <div class="thread-toggle-container" style="padding: 0 16px;">
-                    <button class="quoted-text-btn" onclick="event.stopPropagation(); const container = this.nextElementSibling; const isHiding = container.style.display === 'none'; container.style.display = isHiding ? 'block' : 'none'; this.textContent = isHiding ? 'Hide Thread ▲' : 'Show Full Thread ▼'; if (isHiding) { const ifr = container.querySelector('iframe'); ifr.contentWindow.postMessage('trigger-resize', '*'); }">Show Full Thread ▼</button>
+                    <button type="button" class="quoted-text-btn" onclick="event.stopPropagation(); const container = this.nextElementSibling; const isHiding = container.style.display === 'none'; container.style.display = isHiding ? 'block' : 'none'; this.innerHTML = isHiding ? '📋 Hide Quoted Thread ▲' : '📋 Show Quoted Thread ▼'; if (isHiding) { const ifr = container.querySelector('iframe'); ifr.contentWindow.postMessage('trigger-resize', '*'); }">📋 Show Quoted Thread ▼</button>
                     <div class="email-iframe-container" style="display: none; border-top: none; border-radius: 0 0 8px 8px; opacity: 0.9;">
                         <iframe id="iframe-thread-${msg.message_id || index}" sandbox="allow-same-origin allow-scripts allow-popups allow-popups-to-escape-sandbox" scrolling="no"></iframe>
                     </div>
@@ -1156,6 +1248,7 @@ function renderThread(messages) {
                 </div>
             </div>
         `;
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Upgraded Email Chain UI with Avatars and Time-Gap Dividers - end
 
         messageCard.addEventListener('click', function (e) {
             toggleMessage(this, e);
@@ -1494,11 +1587,205 @@ async function takeTicket() {
     }
 }
 
-/*
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor and Azure DevOps Integration Logic - start
+async function uploadInlineImageFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+        const resp = await fetch('/api/upload_inline_image', {
+            method: 'POST',
+            body: formData
+        });
+        if (resp.ok) {
+            return await resp.json();
+        }
+    } catch (err) {
+        console.error('Failed to upload inline image:', err);
+    }
+    return null;
+}
+
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Instances for Email, DevOps Description and Repro Steps - start
+let devopsDescEditor = null;
+let devopsReproEditor = null;
+
+function setupTiptapEditorHelper(elementId, toolbarId, imageInputId, placeholder = '') {
+    const editorElem = document.getElementById(elementId);
+    if (!editorElem || !window.TiptapModules) return null;
+
+    const { Editor, StarterKit, Image, Link, Underline } = window.TiptapModules;
+    const extensions = [
+        StarterKit.configure({
+            history: { depth: 50 }
+        }),
+        Image.configure({
+            inline: true,
+            allowBase64: true
+        }),
+        Link.configure({
+            openOnClick: false
+        }),
+        Underline
+    ];
+
+    const editorInstance = new Editor({
+        element: editorElem,
+        extensions: extensions,
+        content: '',
+        editorProps: {
+            attributes: {
+                class: 'tiptap-prosemirror-content',
+                spellcheck: 'true'
+            },
+            handlePaste: (view, event) => {
+                const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+                for (const item of items) {
+                    if (item.type && item.type.indexOf('image') === 0) {
+                        const blob = item.getAsFile();
+                        if (blob) {
+                            uploadInlineImageFile(blob).then(res => {
+                                if (res && res.url && editorInstance) {
+                                    editorInstance.chain().focus().setImage({ src: res.url, alt: res.name || 'image', title: res.cid }).run();
+                                }
+                            });
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            },
+            handleDrop: (view, event, slice, moved) => {
+                if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]) {
+                    const file = event.dataTransfer.files[0];
+                    if (file.type && file.type.startsWith('image/')) {
+                        uploadInlineImageFile(file).then(res => {
+                            if (res && res.url && editorInstance) {
+                                editorInstance.chain().focus().setImage({ src: res.url, alt: res.name || 'image', title: res.cid }).run();
+                            }
+                        });
+                        return true;
+                    }
+                }
+                return false;
+            }
+        },
+        onTransaction: () => {
+            updateGenericTiptapToolbar(editorInstance, toolbarId);
+        }
+    });
+
+    editorElem.onclick = (e) => {
+        if (editorInstance && !editorInstance.isFocused && e.target === editorElem) {
+            editorInstance.commands.focus('end');
+        }
+    };
+
+    const toolbar = document.getElementById(toolbarId);
+    if (toolbar) {
+        toolbar.querySelectorAll('.toolbar-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.preventDefault();
+                const action = btn.getAttribute('data-action');
+                if (!editorInstance) return;
+
+                if (action === 'bold') editorInstance.chain().focus().toggleBold().run();
+                else if (action === 'italic') editorInstance.chain().focus().toggleItalic().run();
+                else if (action === 'underline') editorInstance.chain().focus().toggleUnderline().run();
+                else if (action === 'strike') editorInstance.chain().focus().toggleStrike().run();
+                else if (action === 'bulletList') editorInstance.chain().focus().toggleBulletList().run();
+                else if (action === 'orderedList') editorInstance.chain().focus().toggleOrderedList().run();
+                else if (action === 'blockquote') editorInstance.chain().focus().toggleBlockquote().run();
+                else if (action === 'undo') editorInstance.chain().focus().undo().run();
+                else if (action === 'redo') editorInstance.chain().focus().redo().run();
+                else if (action === 'link') {
+                    const prevUrl = editorInstance.getAttributes('link').href || '';
+                    const url = prompt('Enter link URL:', prevUrl);
+                    if (url === null) return;
+                    if (url === '') {
+                        editorInstance.chain().focus().extendMarkRange('link').unsetLink().run();
+                    } else {
+                        editorInstance.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+                    }
+                } else if (action === 'image') {
+                    const imgInput = document.getElementById(imageInputId);
+                    if (imgInput) imgInput.click();
+                }
+            };
+        });
+    }
+
+    const imgInput = document.getElementById(imageInputId);
+    if (imgInput) {
+        imgInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const res = await uploadInlineImageFile(file);
+                if (res && res.url && editorInstance) {
+                    editorInstance.chain().focus().setImage({ src: res.url, alt: res.name || 'image', title: res.cid }).run();
+                }
+            }
+            imgInput.value = '';
+        };
+    }
+
+    return editorInstance;
+}
+
+function updateGenericTiptapToolbar(editorInstance, toolbarId) {
+    if (!editorInstance) return;
+    const toolbar = document.getElementById(toolbarId);
+    if (!toolbar) return;
+
+    toolbar.querySelectorAll('.toolbar-btn').forEach(btn => {
+        const action = btn.getAttribute('data-action');
+        if (action === 'bold') btn.classList.toggle('is-active', editorInstance.isActive('bold'));
+        else if (action === 'italic') btn.classList.toggle('is-active', editorInstance.isActive('italic'));
+        else if (action === 'underline') btn.classList.toggle('is-active', editorInstance.isActive('underline'));
+        else if (action === 'strike') btn.classList.toggle('is-active', editorInstance.isActive('strike'));
+        else if (action === 'bulletList') btn.classList.toggle('is-active', editorInstance.isActive('bulletList'));
+        else if (action === 'orderedList') btn.classList.toggle('is-active', editorInstance.isActive('orderedList'));
+        else if (action === 'blockquote') btn.classList.toggle('is-active', editorInstance.isActive('blockquote'));
+        else if (action === 'link') btn.classList.toggle('is-active', editorInstance.isActive('link'));
+    });
+}
+
+function initTiptapEditor() {
+    // 1. Reply Composer Editor
+    if (tiptapEditor) {
+        tiptapEditor.destroy();
+        tiptapEditor = null;
+    }
+    tiptapEditor = setupTiptapEditorHelper('tiptapEditor', 'tiptapToolbar', 'tiptapImageInput');
+
+    // 2. DevOps Description Editor
+    if (devopsDescEditor) {
+        devopsDescEditor.destroy();
+        devopsDescEditor = null;
+    }
+    devopsDescEditor = setupTiptapEditorHelper('devopsDescEditor', 'devopsDescToolbar', 'devopsDescImageInput');
+
+    // 3. DevOps Repro Steps Editor
+    if (devopsReproEditor) {
+        devopsReproEditor.destroy();
+        devopsReproEditor = null;
+    }
+    devopsReproEditor = setupTiptapEditorHelper('devopsReproEditor', 'devopsReproToolbar', 'devopsReproImageInput');
+}
+
+// Listen for ESM ready event in case module loads asynchronously
+window.addEventListener('tiptap-ready', () => {
+    initTiptapEditor();
+});
+
+function updateTiptapToolbar() {
+    updateGenericTiptapToolbar(tiptapEditor, 'tiptapToolbar');
+}
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Instances for Email, DevOps Description and Repro Steps - end
+
 async function saveTicket() {
     if (isTicketLocked) return;
 
-    const emailContent = quillEditor.root.innerHTML;
+    const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
     const assignedTo = document.getElementById('modal-assignment').value;
 
     try {
@@ -1516,60 +1803,14 @@ async function saveTicket() {
         const data = await response.json();
 
         if (response.ok && data.success) {
-            showToast('✓ Ticket saved successfully');
+            showToast('✓ Draft saved successfully');
             loadTickets();
         } else {
-            const errorMsg = data.error || 'Failed to save ticket';
-            showToast(errorMsg, true);
+            showToast(data.error || 'Failed to save ticket', true);
         }
     } catch (error) {
-        console.error('Error saving:', error);
-        showToast('Network error while saving', true);
-    }
-}
-
-async function regenerateAI() {
-    if (isTicketLocked || !currentTicketIdStr) return;
-
-    const userInstructions = prompt("Any specific instructions for the AI? (e.g. 'Make it more formal', 'Address the error code specifically', or leave blank for a standard regen)");
-
-    if (userInstructions === null) return;
-
-    const btn = document.getElementById('btnRegenerateAI');
-    const originalHTML = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>Generating...';
-
-    try {
-        const currentDraft = quillEditor ? quillEditor.root.innerHTML : '';
-
-        const response = await fetch('/api/regenerate_ai_sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ticket_id: currentTicketIdStr,
-                user_instructions: userInstructions,
-                current_draft: currentDraft
-            })
-        });
-
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-            showToast('✅ AI Draft regenerated successfully!', false);
-            if (quillEditor && data.draft) {
-                quillEditor.root.innerHTML = data.draft;
-                quillEditor.setSelection(0, 0);
-            }
-        } else {
-            showToast(data.error || 'Failed to regenerate AI draft', true);
-        }
-    } catch (error) {
-        console.error('Error in synchronous regeneration:', error);
-        showToast('Network error while regenerating AI draft', true);
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
+        console.error('Error saving draft:', error);
+        showToast('Network error while saving draft', true);
     }
 }
 
@@ -1579,33 +1820,238 @@ function showSendingOverlay() {
         overlay = document.createElement('div');
         overlay.id = 'sending-overlay';
         overlay.innerHTML = `
-            <div class="sending-overlay-content">
-                <div class="sending-spinner"></div>
-                <h3>Transmitting Message</h3>
-                <p>Uploading inline assets and sending reply via Microsoft Graph...</p>
+            <div class="sending-overlay-content" style="background: var(--bg-card); padding: 2rem; border-radius: 12px; border: 1px solid var(--border-color); text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.3); max-width: 380px;">
+                <div class="sending-spinner" style="width: 40px; height: 40px; border: 4px solid var(--border-color); border-top: 4px solid #3A5A24; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+                <h3 style="font-size: 1.1rem; color: var(--text-primary); margin-bottom: 0.5rem;">Transmitting Message</h3>
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin: 0;">Uploading inline assets and sending reply via Microsoft Graph...</p>
             </div>
         `;
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.background = 'rgba(0,0,0,0.5)';
+        overlay.style.display = 'none';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.zIndex = '3000';
         document.body.appendChild(overlay);
     }
-    overlay.classList.add('active');
+    overlay.style.display = 'flex';
 }
 
 function hideSendingOverlay() {
     const overlay = document.getElementById('sending-overlay');
-    if (overlay) {
-        overlay.classList.remove('active');
+    if (overlay) overlay.style.display = 'none';
+}
+
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Outbound Email Attachments Logic with Deduplication and Lightbox - start
+let emailPendingAttachments = [];
+
+function handleEmailFileSelect(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (let i = 0; i < files.length; i++) {
+        addEmailAttachment(files[i]);
+    }
+    e.target.value = '';
+}
+
+function addEmailAttachment(file) {
+    if (!file) return;
+    // Deduplication check
+    if (emailPendingAttachments.some(a => a.name === file.name)) {
+        showToast(`"${file.name}" is already attached.`, true);
+        return;
+    }
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
+    const previewUrl = URL.createObjectURL(file);
+    emailPendingAttachments.push({
+        file: file,
+        name: file.name || 'attachment',
+        size: file.size || 0,
+        type: file.type || (isImage ? 'image/png' : 'application/octet-stream'),
+        previewUrl: previewUrl
+    });
+    renderEmailAttachmentPreviews();
+}
+
+function removeEmailAttachment(index) {
+    if (index >= 0 && index < emailPendingAttachments.length) {
+        const item = emailPendingAttachments[index];
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        emailPendingAttachments.splice(index, 1);
+        renderEmailAttachmentPreviews();
     }
 }
+
+function previewPendingAttachment(index, source = 'email') {
+    const list = source === 'email' ? emailPendingAttachments : devopsPendingAttachments;
+    if (index < 0 || index >= list.length) return;
+    const att = list[index];
+    if (!att) return;
+
+    const previewModal = document.getElementById('previewModal');
+    const previewTitle = document.getElementById('previewTitle');
+    const previewBody = document.getElementById('previewBody');
+    const btnDownloadPreview = document.getElementById('btnDownloadPreview');
+    if (!previewModal || !previewBody) return;
+
+    previewTitle.textContent = att.name;
+    previewModal.classList.add('active');
+
+    btnDownloadPreview.onclick = (e) => {
+        e.stopPropagation();
+        if (att.file) {
+            const a = document.createElement('a');
+            a.href = att.previewUrl || URL.createObjectURL(att.file);
+            a.download = att.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    };
+
+    const isImage = att.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(att.name);
+    const isPDF = att.type === 'application/pdf' || att.name.toLowerCase().endsWith('.pdf');
+
+    if (isImage && att.previewUrl) {
+        previewBody.innerHTML = `<img src="${att.previewUrl}" alt="${escapeHtml(att.name)}" style="max-width: 100%; max-height: 80vh; object-fit: contain;">`;
+    } else if (isPDF && att.previewUrl) {
+        previewBody.innerHTML = `<iframe src="${att.previewUrl}" style="border:none; width:100%; height:75vh;" title="PDF Preview"></iframe>`;
+    } else {
+        previewBody.innerHTML = `
+            <div style="text-align: center; padding: 2rem; color: var(--text-primary);">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem;">📄</div>
+                <h5>${escapeHtml(att.name)}</h5>
+                <p style="color: var(--text-secondary); font-size: 0.9rem;">${formatFileSize(att.size)}</p>
+                <p style="color: var(--text-secondary); font-size: 0.85rem;">Preview not available for this file type. Click download to view.</p>
+            </div>
+        `;
+    }
+}
+
+function renderEmailAttachmentPreviews() {
+    const container = document.getElementById('emailAttachmentPreviewList');
+    if (!container) return;
+
+    if (emailPendingAttachments.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = emailPendingAttachments.map((att, idx) => {
+        const isImage = att.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(att.name);
+        const isVideo = att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(att.name);
+        const isPDF = att.type === 'application/pdf' || att.name.toLowerCase().endsWith('.pdf');
+        const isExcel = /\.(xlsx|xls|csv)$/i.test(att.name);
+        const isDoc = /\.(docx|doc|txt)$/i.test(att.name);
+
+        let icon = '📁';
+        if (isVideo) icon = '🎬';
+        else if (isPDF) icon = '📕';
+        else if (isExcel) icon = '📊';
+        else if (isDoc) icon = '📄';
+        else if (isImage) icon = '🖼️';
+
+        const previewEl = (isImage && att.previewUrl)
+            ? `<img src="${att.previewUrl}" class="devops-tile-img" alt="${escapeHtml(att.name)}">`
+            : `<div class="devops-tile-icon">${icon}</div>`;
+
+        return `
+            <div class="devops-tile-card">
+                <div class="devops-tile-preview" onclick="previewPendingAttachment(${idx}, 'email')" style="cursor: pointer;" title="Click to view ${escapeHtml(att.name)}">
+                    ${previewEl}
+                </div>
+                <div class="devops-tile-footer">
+                    <div class="devops-tile-info">
+                        <div class="devops-tile-name" title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</div>
+                        <div class="devops-tile-size">${formatFileSize(att.size)}</div>
+                    </div>
+                    <button type="button" class="devops-tile-remove" onclick="removeEmailAttachment(${idx})" title="Remove attachment">&times;</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function populateEmailTicketChips(messages) {
+    const chipsWrapper = document.getElementById('emailTicketAttachmentChips');
+    const container = document.getElementById('emailTicketChipsContainer');
+    if (!chipsWrapper || !container) return;
+
+    const allAttachments = [];
+
+    (messages || []).forEach(msg => {
+        if (msg.attachments) {
+            let atts = msg.attachments;
+            if (typeof atts === 'string') {
+                try { atts = JSON.parse(atts); } catch(e) { atts = []; }
+            }
+            if (Array.isArray(atts)) {
+                atts.forEach(a => {
+                    const name = a.name || a.filename || 'attachment';
+                    const cType = a.content_type || a.contentType || '';
+                    if (!allAttachments.some(existing => existing.name === name)) {
+                        allAttachments.push({ ...a, msgId: msg.message_id || msg.id, name: name, contentType: cType });
+                    }
+                });
+            }
+        }
+    });
+
+    if (allAttachments.length === 0) {
+        chipsWrapper.classList.add('d-none');
+        container.innerHTML = '';
+        return;
+    }
+
+    chipsWrapper.classList.remove('d-none');
+    container.innerHTML = allAttachments.map(att => `
+        <button type="button" class="devops-ticket-chip" onclick="importTicketAttachmentToEmail('${escapeHtml(att.name)}', '${encodeURIComponent(att.msgId || '')}', '${encodeURIComponent(att.id || '')}', '${encodeURIComponent(att.contentType || '')}')" title="Attach ${escapeHtml(att.name)} to reply">
+            <span>📎 ${escapeHtml(att.name)}</span>
+            <i class="fa fa-plus ms-1" style="font-size: 0.65rem;"></i>
+        </button>
+    `).join('');
+}
+
+async function importTicketAttachmentToEmail(filename, msgId, attId, contentType) {
+    if (!msgId || !attId) return;
+    if (emailPendingAttachments.some(a => a.name === filename)) {
+        showToast(`"${filename}" is already attached.`, true);
+        return;
+    }
+    try {
+        const downloadUrl = `/api/view_attachment?message_id=${msgId}&attachment_id=${attId}&filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType || '')}`;
+        const resp = await fetch(downloadUrl);
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const isImg = (contentType && contentType.startsWith('image/')) || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(filename);
+            const mimeType = (blob.type && blob.type !== 'application/octet-stream') ? blob.type : (contentType || (isImg ? 'image/png' : 'application/octet-stream'));
+            const file = new File([blob], filename, { type: mimeType });
+            addEmailAttachment(file);
+            showToast(`Attached ${filename}`, false);
+        } else {
+            showToast(`Could not download ${filename}`, true);
+        }
+    } catch(err) {
+        console.error('Error importing ticket attachment:', err);
+    }
+}
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Outbound Email Attachments Logic with Deduplication and Lightbox - end
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Outbound Email Attachments Logic - end
 
 async function sendToCustomer() {
     if (isTicketLocked) return;
 
-    const emailContent = quillEditor.root.innerHTML;
+    const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
     const assignedTo = document.getElementById('modal-assignment').value;
     const sendTo = document.getElementById('emailTo').value;
 
-    if (!emailContent.trim() || emailContent === '<p><br></p>') {
-        alert('Please add a response.');
+    const isEditorEmpty = !emailContent || emailContent.trim() === '' || emailContent === '<p></p>' || emailContent === '<p><br></p>';
+    if (isEditorEmpty) {
+        alert('Please write a reply response before sending.');
         return;
     }
 
@@ -1619,13 +2065,13 @@ async function sendToCustomer() {
     formData.append('ai_response', emailContent);
     formData.append('assigned_to', assignedTo);
     formData.append('send_to', sendTo);
-    formData.append('cc', document.getElementById('emailCC').value);
-    formData.append('bcc', document.getElementById('emailBCC').value);
+    formData.append('cc', document.getElementById('emailCC') ? document.getElementById('emailCC').value : '');
+    formData.append('bcc', document.getElementById('emailBCC') ? document.getElementById('emailBCC').value : '');
 
-    attachedFiles.forEach((file, index) => {
-        formData.append(`attachment_${index}`, file);
+    emailPendingAttachments.forEach((att, index) => {
+        formData.append(`attachment_${index}`, att.file);
     });
-    formData.append('attachment_count', attachedFiles.length);
+    formData.append('attachment_count', emailPendingAttachments.length);
 
     showSendingOverlay();
 
@@ -1642,16 +2088,961 @@ async function sendToCustomer() {
             return;
         }
 
-        alert('Email sent successfully! Ticket remains open.');
+        showToast('Email sent successfully! Ticket remains open.', false);
+        emailPendingAttachments = [];
+        renderEmailAttachmentPreviews();
         loadTickets();
+        
+        // Refresh conversation thread in modal
+        if (currentTicketIdStr) {
+            const res = await fetch(`/api/ticket_messages/${currentTicketIdStr}`);
+            if (res.ok) {
+                const d = await res.json();
+                renderThread(d.messages || []);
+                populateEmailTicketChips(d.messages || []);
+            }
+        }
     } catch (error) {
-        console.error('Error sending:', error);
-        alert('Error sending email.');
+        console.error('Error sending email:', error);
+        alert('Error sending email. Please try again.');
     } finally {
         hideSendingOverlay();
     }
 }
-*/
+
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Floating Dropdown Menu Logic - start
+let currentLinkedDevOpsItems = [];
+
+function toggleDevOpsDropdown(e, forceState = null) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const menu = document.getElementById('devopsDropdownMenu');
+    if (!menu) return;
+    if (forceState !== null) {
+        menu.classList.toggle('d-none', !forceState);
+    } else {
+        menu.classList.toggle('d-none');
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    const wrapper = document.querySelector('.devops-dropdown-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        const menu = document.getElementById('devopsDropdownMenu');
+        if (menu && !menu.classList.contains('d-none')) {
+            menu.classList.add('d-none');
+        }
+    }
+});
+
+function toggleDevOpsSection(forceOpen = false) {
+    toggleDevOpsDropdown(null, forceOpen ? true : null);
+}
+
+function toggleDevOpsLinkInput() {
+    const row = document.getElementById('devopsLinkRow');
+    if (row) {
+        row.classList.toggle('d-none');
+        if (!row.classList.contains('d-none')) {
+            const input = document.getElementById('devopsLinkIdInput');
+            if (input) input.focus();
+        }
+    }
+}
+
+async function loadLinkedDevOpsItems(ticketId) {
+    if (!ticketId) return;
+    const listContainer = document.getElementById('devopsItemsList');
+    const badge = document.getElementById('devopsCountBadge');
+    const headerBadge = document.getElementById('headerDevOpsBadge');
+    const refreshIcon = document.getElementById('devopsRefreshIcon');
+    const unlinkHeaderBtn = document.getElementById('devopsUnlinkHeaderBtn');
+    if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+    try {
+        const resp = await fetch(`/api/devops/linked/${encodeURIComponent(ticketId)}`);
+        if (resp.ok) {
+            const data = await resp.json();
+            const items = data.work_items || [];
+            currentLinkedDevOpsItems = items;
+            const count = items.length;
+            if (badge) badge.textContent = count;
+            if (headerBadge) headerBadge.textContent = count;
+
+            // Show 3 buttons (Create New, Link, Unlink) when count > 0; 2 buttons when count == 0
+            if (unlinkHeaderBtn) {
+                if (count > 0) {
+                    unlinkHeaderBtn.classList.remove('d-none');
+                } else {
+                    unlinkHeaderBtn.classList.add('d-none');
+                }
+            }
+
+            renderDevOpsCards(items, data.configured);
+        } else {
+            if (listContainer) listContainer.innerHTML = '<div class="devops-empty-state text-danger">Failed to fetch DevOps items</div>';
+        }
+    } catch (err) {
+        console.error('Error fetching DevOps items:', err);
+        if (listContainer) listContainer.innerHTML = '<div class="devops-empty-state text-danger">Network error connecting to Azure DevOps</div>';
+    } finally {
+        if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+    }
+}
+
+function renderDevOpsCards(items, configured) {
+    const listContainer = document.getElementById('devopsItemsList');
+    if (!listContainer) return;
+
+    if (!items || items.length === 0) {
+        listContainer.innerHTML = `
+            <div class="devops-zero-page">
+                <div class="devops-zero-icon">📋</div>
+                <div class="devops-zero-title">No Azure DevOps Work Items Linked</div>
+                <div class="devops-zero-desc">
+                    ${configured ? 'Link an existing Azure DevOps work item or create a new one directly for this ticket.' : 'Azure DevOps is not configured in .env.'}
+                </div>
+                <div class="devops-zero-actions">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="openDevOpsCreateDrawer(this)">
+                        <i class="fa fa-plus"></i> Create New
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleDevOpsLinkInput()">
+                        <i class="fa fa-link"></i> Link Ticket
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    items.forEach(item => {
+        const typeIcon = item.type === 'Bug' ? '🪲' : (item.type === 'User Story' ? '📖' : '📋');
+        const stateClass = `devops-state-${(item.state || 'new').toLowerCase().replace(/\s+/g, '')}`;
+        const tagsHtml = (item.tags || []).map(t => `<span class="devops-tag-pill">🏷️ ${escapeHtml(t)}</span>`).join('');
+
+        html += `
+            <div class="devops-card">
+                <div class="devops-card-title-row">
+                    <div class="devops-card-title">${escapeHtml(item.title)}</div>
+                    <button type="button" class="devops-card-unlink-btn" onclick="unlinkDevOpsItem(${item.id})" title="Unlink Work Item #${item.id}">✕</button>
+                </div>
+                <div class="devops-card-meta">
+                    <span class="devops-badge devops-badge-id">#${item.id}</span>
+                    <span class="devops-badge devops-badge-type">${typeIcon} ${escapeHtml(item.type)}</span>
+                    <span>👤 ${escapeHtml(item.assigned_to)}</span>
+                    <span class="devops-state-pill ${stateClass}">${escapeHtml(item.state)}</span>
+                </div>
+                ${tagsHtml ? `<div class="devops-card-tags">${tagsHtml}</div>` : ''}
+                <div class="devops-card-actions">
+                    <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="devops-open-link" onclick="event.stopPropagation()">
+                        <span>Open in Azure DevOps</span> ↗
+                    </a>
+                </div>
+            </div>
+        `;
+    });
+
+    listContainer.innerHTML = html;
+}
+
+async function promptUnlinkDevOpsItem() {
+    if (!currentLinkedDevOpsItems || currentLinkedDevOpsItems.length === 0) {
+        showToast('No linked items to unlink', true);
+        return;
+    }
+
+    if (currentLinkedDevOpsItems.length === 1) {
+        const item = currentLinkedDevOpsItems[0];
+        unlinkDevOpsItem(item.id);
+        return;
+    }
+
+    const idStr = prompt(`Enter the Work Item #ID to unlink (Available: ${currentLinkedDevOpsItems.map(i => '#' + i.id).join(', ')}):`);
+    if (idStr && idStr.trim()) {
+        const cleanId = idStr.replace('#', '').trim();
+        unlinkDevOpsItem(cleanId);
+    }
+}
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Zero Page & Dynamic 2/3 Action Buttons - end
+
+async function submitDevOpsLink() {
+    const input = document.getElementById('devopsLinkIdInput');
+    if (!input || !input.value.trim() || !currentTicketIdStr) return;
+
+    const rawId = input.value.trim();
+    try {
+        const resp = await fetch('/api/devops/link', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: currentTicketIdStr,
+                work_item_id: rawId
+            })
+        });
+
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast(`Linked Work Item #${rawId}`, false);
+            input.value = '';
+            toggleDevOpsLinkInput();
+            loadLinkedDevOpsItems(currentTicketIdStr);
+        } else {
+            alert(data.error || 'Failed to link work item');
+        }
+    } catch (err) {
+        console.error('Error linking DevOps item:', err);
+        alert('Network error while linking work item');
+    }
+}
+
+async function unlinkDevOpsItem(workItemId) {
+    if (!confirm(`Are you sure you want to unlink Work Item #${workItemId} from this ticket?`)) return;
+    if (!currentTicketIdStr) return;
+
+    try {
+        const resp = await fetch('/api/devops/unlink', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: currentTicketIdStr,
+                work_item_id: workItemId
+            })
+        });
+
+        if (resp.ok) {
+            showToast(`Unlinked Work Item #${workItemId}`, false);
+            loadLinkedDevOpsItems(currentTicketIdStr);
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Failed to unlink work item');
+        }
+    } catch (err) {
+        console.error('Error unlinking DevOps item:', err);
+        alert('Network error while unlinking work item');
+    }
+}
+
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Inline Image Resizer Logic - start
+let devopsPendingAttachments = [];
+let activeTiptapImage = null;
+
+function handleDevOpsFileSelect(e) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    for (let i = 0; i < files.length; i++) {
+        addDevOpsAttachment(files[i]);
+    }
+    e.target.value = '';
+}
+
+function addDevOpsAttachment(file, uploadedUrl = null) {
+    if (!file) return;
+    // Deduplication check
+    if (devopsPendingAttachments.some(a => a.name === file.name)) {
+        showToast(`"${file.name}" is already attached.`, true);
+        return;
+    }
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
+    const previewUrl = URL.createObjectURL(file);
+    devopsPendingAttachments.push({
+        file: file,
+        name: file.name || 'attachment.png',
+        size: file.size || 0,
+        type: file.type || (isImage ? 'image/png' : 'application/octet-stream'),
+        previewUrl: previewUrl,
+        uploadedUrl: uploadedUrl
+    });
+    renderDevOpsAttachmentPreviews();
+}
+
+function removeDevOpsAttachment(index) {
+    if (index >= 0 && index < devopsPendingAttachments.length) {
+        const item = devopsPendingAttachments[index];
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        devopsPendingAttachments.splice(index, 1);
+        renderDevOpsAttachmentPreviews();
+    }
+}
+
+function renderDevOpsAttachmentPreviews() {
+    const container = document.getElementById('devopsAttachmentPreviewList');
+    if (!container) return;
+
+    if (devopsPendingAttachments.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = devopsPendingAttachments.map((att, idx) => {
+        const isImage = att.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(att.name);
+        const isVideo = att.type.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(att.name);
+        const isPDF = att.type === 'application/pdf' || att.name.toLowerCase().endsWith('.pdf');
+        const isExcel = /\.(xlsx|xls|csv)$/i.test(att.name);
+        const isDoc = /\.(docx|doc|txt)$/i.test(att.name);
+
+        let icon = '📁';
+        if (isVideo) icon = '🎬';
+        else if (isPDF) icon = '📕';
+        else if (isExcel) icon = '📊';
+        else if (isDoc) icon = '📄';
+        else if (isImage) icon = '🖼️';
+
+        const previewEl = (isImage && att.previewUrl)
+            ? `<img src="${att.previewUrl}" class="devops-tile-img" alt="${escapeHtml(att.name)}">`
+            : `<div class="devops-tile-icon">${icon}</div>`;
+
+        return `
+            <div class="devops-tile-card">
+                <div class="devops-tile-preview" onclick="previewPendingAttachment(${idx}, 'devops')" style="cursor: pointer;" title="Click to view ${escapeHtml(att.name)}">
+                    ${previewEl}
+                </div>
+                <div class="devops-tile-footer">
+                    <div class="devops-tile-info">
+                        <div class="devops-tile-name" title="${escapeHtml(att.name)}">${escapeHtml(att.name)}</div>
+                        <div class="devops-tile-size">${formatFileSize(att.size)}</div>
+                    </div>
+                    <button type="button" class="devops-tile-remove" onclick="removeDevOpsAttachment(${idx})" title="Remove attachment">&times;</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function populateDevOpsTicketChips() {
+    const chipsWrapper = document.getElementById('devopsTicketAttachmentChips');
+    const container = document.getElementById('devopsTicketChipsContainer');
+    if (!chipsWrapper || !container) return;
+
+    const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+    const messages = (activeTicket && activeTicket.messages) ? activeTicket.messages : [];
+    const allAttachments = [];
+
+    messages.forEach(msg => {
+        if (msg.attachments) {
+            let atts = msg.attachments;
+            if (typeof atts === 'string') {
+                try { atts = JSON.parse(atts); } catch(e) { atts = []; }
+            }
+            if (Array.isArray(atts)) {
+                atts.forEach(a => {
+                    const name = a.name || a.filename || 'attachment';
+                    const cType = a.content_type || a.contentType || '';
+                    if (!allAttachments.some(existing => existing.name === name)) {
+                        allAttachments.push({ ...a, msgId: msg.message_id || msg.id, name: name, contentType: cType });
+                    }
+                });
+            }
+        }
+    });
+
+    if (allAttachments.length === 0) {
+        chipsWrapper.classList.add('d-none');
+        container.innerHTML = '';
+        return;
+    }
+
+    chipsWrapper.classList.remove('d-none');
+    container.innerHTML = allAttachments.map(att => `
+        <button type="button" class="devops-ticket-chip" onclick="importTicketAttachmentToDevOps('${escapeHtml(att.name)}', '${encodeURIComponent(att.msgId || '')}', '${encodeURIComponent(att.id || '')}', '${encodeURIComponent(att.contentType || '')}')" title="Attach ${escapeHtml(att.name)} to Azure DevOps">
+            <span>📎 ${escapeHtml(att.name)}</span>
+            <i class="fa fa-plus ms-1" style="font-size: 0.65rem;"></i>
+        </button>
+    `).join('');
+}
+
+async function importTicketAttachmentToDevOps(filename, msgId, attId, contentType) {
+    if (!msgId || !attId) return;
+    if (devopsPendingAttachments.some(a => a.name === filename)) {
+        showToast(`"${filename}" is already attached.`, true);
+        return;
+    }
+    try {
+        const downloadUrl = `/api/view_attachment?message_id=${msgId}&attachment_id=${attId}&filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType || '')}`;
+        const resp = await fetch(downloadUrl);
+        if (resp.ok) {
+            const blob = await resp.blob();
+            const isImg = (contentType && contentType.startsWith('image/')) || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(filename);
+            const mimeType = (blob.type && blob.type !== 'application/octet-stream') ? blob.type : (contentType || (isImg ? 'image/png' : 'application/octet-stream'));
+            const file = new File([blob], filename, { type: mimeType });
+            addDevOpsAttachment(file);
+            showToast(`Attached ${filename}`, false);
+        } else {
+            showToast(`Could not download ${filename}`, true);
+        }
+    } catch(err) {
+        console.error('Error importing ticket attachment:', err);
+    }
+}
+
+// Global Paste & Drag/Drop listener for DevOps Drawer
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.TiptapModules && !tiptapEditor) {
+        initTiptapEditor();
+    }
+
+    // 1. Drag & Drop on DevOps Drawer Dropzone
+    const dropzone = document.getElementById('devopsAttachmentDropzone');
+    if (dropzone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            });
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt ? dt.files : null;
+            if (files && files.length > 0) {
+                for (let i = 0; i < files.length; i++) {
+                    addDevOpsAttachment(files[i]);
+                }
+            }
+        });
+    }
+
+    // 1b. Drag & Drop on Email Composer Dropzone
+    const emailDropzone = document.getElementById('emailAttachmentDropzone');
+    if (emailDropzone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            emailDropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                emailDropzone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            emailDropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                emailDropzone.classList.remove('dragover');
+            });
+        });
+
+        emailDropzone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const files = dt ? dt.files : null;
+            if (files && files.length > 0) {
+                for (let i = 0; i < files.length; i++) {
+                    addEmailAttachment(files[i]);
+                }
+            }
+        });
+    }
+
+    // 2. Global Clipboard Paste Listener for Attachments (Ctrl+V) - Excludes Rich Text Editors to prevent duplication
+    window.addEventListener('paste', (e) => {
+        const drawer = document.getElementById('devopsCreateDrawer');
+        if (!drawer || !drawer.classList.contains('open')) return;
+
+        // If user is pasting inside an input, textarea, or contenteditable editor (Tiptap), let the editor handle it
+        const target = e.target;
+        if (target.closest('.tiptap-editor-element') || target.closest('.tiptap-wrapper') || target.isContentEditable || ['input', 'textarea'].includes(target.tagName?.toLowerCase())) {
+            return;
+        }
+
+        const items = (e.clipboardData || window.clipboardData).items;
+        if (!items) return;
+
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                const blob = items[i].getAsFile();
+                if (blob) {
+                    const nowStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                    const file = new File([blob], `screenshot_${nowStr}.png`, { type: blob.type });
+                    addDevOpsAttachment(file);
+                    showToast('📷 Screenshot attached to work item files', false);
+                    e.preventDefault();
+                    return;
+                }
+            }
+        }
+    });
+
+    // 3. Setup Draggable Left Resize Handle for DevOps Drawer
+    setupDevOpsDrawerResizer();
+
+    // 4. Tiptap Image Interaction Click Handler
+    document.addEventListener('click', (e) => {
+        const toolbar = document.getElementById('tiptapImageToolbar');
+        if (!toolbar) return;
+
+        if (e.target && e.target.tagName === 'IMG' && e.target.closest('.tiptap-editor-element')) {
+            const img = e.target;
+            activeTiptapImage = img;
+            
+            // Remove active class from all other images
+            document.querySelectorAll('.tiptap-editor-element img.tiptap-image-active').forEach(el => el.classList.remove('tiptap-image-active'));
+            img.classList.add('tiptap-image-active');
+
+            // Position toolbar directly above the clicked image
+            const rect = img.getBoundingClientRect();
+            toolbar.style.top = `${rect.top + window.scrollY - 10}px`;
+            toolbar.style.left = `${rect.left + window.scrollX + (rect.width / 2)}px`;
+            toolbar.classList.remove('d-none');
+            
+            // Highlight active width preset if any
+            const curWidth = img.style.width || '100%';
+            toolbar.querySelectorAll('.tiptap-img-btn[data-width]').forEach(btn => {
+                if (btn.getAttribute('data-width') === curWidth) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        } else if (!e.target.closest('#tiptapImageToolbar')) {
+            toolbar.classList.add('d-none');
+            if (activeTiptapImage) {
+                activeTiptapImage.classList.remove('tiptap-image-active');
+                activeTiptapImage = null;
+            }
+        }
+    });
+});
+
+// Draggable Sidebar Drawer Resizer
+function setupDevOpsDrawerResizer() {
+    const resizer = document.getElementById('devopsDrawerResizer');
+    const drawer = document.getElementById('devopsCreateDrawer');
+    if (!resizer || !drawer) return;
+
+    let isDragging = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        resizer.classList.add('is-resizing');
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const viewportWidth = window.innerWidth;
+        let newWidth = viewportWidth - e.clientX;
+        const minWidth = 440;
+        const maxWidth = Math.floor(viewportWidth * 0.92);
+
+        if (newWidth < minWidth) newWidth = minWidth;
+        if (newWidth > maxWidth) newWidth = maxWidth;
+
+        drawer.style.width = `${newWidth}px`;
+        localStorage.setItem('devopsDrawerWidth', newWidth);
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            resizer.classList.remove('is-resizing');
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        }
+    });
+}
+
+// Inline Image Resizing & Alignment Toolbar Actions
+function setTiptapImageWidth(width) {
+    if (!activeTiptapImage) return;
+    if (width === 'auto') {
+        activeTiptapImage.style.width = 'auto';
+        activeTiptapImage.style.maxWidth = '100%';
+    } else {
+        activeTiptapImage.style.width = width;
+        activeTiptapImage.style.maxWidth = '100%';
+        activeTiptapImage.style.height = 'auto';
+    }
+    
+    const toolbar = document.getElementById('tiptapImageToolbar');
+    if (toolbar) {
+        toolbar.querySelectorAll('.tiptap-img-btn[data-width]').forEach(btn => {
+            if (btn.getAttribute('data-width') === width) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        // Reposition toolbar to match new dimensions
+        const rect = activeTiptapImage.getBoundingClientRect();
+        toolbar.style.top = `${rect.top + window.scrollY - 10}px`;
+        toolbar.style.left = `${rect.left + window.scrollX + (rect.width / 2)}px`;
+    }
+}
+
+function setTiptapImageAlign(align) {
+    if (!activeTiptapImage) return;
+    if (align === 'center') {
+        activeTiptapImage.style.display = 'block';
+        activeTiptapImage.style.marginLeft = 'auto';
+        activeTiptapImage.style.marginRight = 'auto';
+    } else if (align === 'right') {
+        activeTiptapImage.style.display = 'block';
+        activeTiptapImage.style.marginLeft = 'auto';
+        activeTiptapImage.style.marginRight = '0';
+    } else {
+        activeTiptapImage.style.display = 'block';
+        activeTiptapImage.style.marginLeft = '0';
+        activeTiptapImage.style.marginRight = 'auto';
+    }
+}
+
+function deleteTiptapActiveImage() {
+    if (!activeTiptapImage) return;
+    const toolbar = document.getElementById('tiptapImageToolbar');
+    if (toolbar) toolbar.classList.add('d-none');
+    activeTiptapImage.remove();
+    activeTiptapImage = null;
+    showToast('Image removed', false);
+}
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Inline Image Resizer Logic - end
+
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Standardized DevOps Create Drawer Opening and Dropdown Closing - start
+async function openDevOpsCreateDrawer(btn = null) {
+    // 1. Always close the DevOps dropdown menu immediately
+    toggleDevOpsDropdown(null, false);
+
+    const drawer = document.getElementById('devopsCreateDrawer');
+    if (!drawer) return;
+
+    // 2. Immediate Button Visual Feedback
+    let origBtnContent = '';
+    if (btn) {
+        origBtnContent = btn.innerHTML;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Opening...';
+        btn.disabled = true;
+    }
+
+    // 3. Restore user preferred drawer width if previously resized
+    const savedWidth = localStorage.getItem('devopsDrawerWidth');
+    if (savedWidth) {
+        drawer.style.width = `${savedWidth}px`;
+    }
+
+    // 4. Pre-fill Title from ticket subject
+    const subjectEl = document.getElementById('modal-subject');
+    const titleInput = document.getElementById('devopsTitleInput');
+    if (titleInput && subjectEl) {
+        titleInput.value = subjectEl.textContent.trim();
+    }
+
+    // 5. Pre-fill Description into Tiptap
+    const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+    const descHtml = activeTicket ? `
+        <p><strong>Customer Reported:</strong></p>
+        <p><strong>Ticket ID:</strong> ${escapeHtml(activeTicket.display_id || activeTicket.ticket_id)}<br>
+        <strong>Customer:</strong> ${escapeHtml(activeTicket.customer_email || '')}<br>
+        <strong>Subject:</strong> ${escapeHtml(activeTicket.subject || '')}</p>
+        <p></p>
+    ` : '';
+    if (devopsDescEditor) {
+        devopsDescEditor.commands.setContent(descHtml);
+    }
+    if (devopsReproEditor) {
+        devopsReproEditor.commands.setContent('');
+    }
+
+    // 6. Pre-fill Tags
+    const tagsInput = document.getElementById('devopsTagsInput');
+    if (tagsInput) {
+        tagsInput.value = 'support, customer-reported';
+    }
+
+    // 7. Reset attachments
+    devopsPendingAttachments = [];
+    renderDevOpsAttachmentPreviews();
+    populateDevOpsTicketChips();
+
+    // 8. Placeholders for Selects while loading
+    const projSelect = document.getElementById('devopsProjectSelect');
+    const userSelect = document.getElementById('devopsAssignedSelect');
+    const iterSelect = document.getElementById('devopsIterationSelect');
+    if (projSelect && !projSelect.value) projSelect.innerHTML = '<option value="">⏳ Loading projects...</option>';
+    if (userSelect && !userSelect.value) userSelect.innerHTML = '<option value="">⏳ Loading team...</option>';
+    if (iterSelect && !iterSelect.value) iterSelect.innerHTML = '<option value="">⏳ Loading sprints...</option>';
+
+    // 9. INSTANT DRAWER OPENING (0ms perceived lag)
+    onDevOpsTypeChange();
+    drawer.classList.add('open');
+
+    // 10. Fetch and populate Projects & Metadata asynchronously
+    try {
+        const pResp = await fetch('/api/devops/projects');
+        if (pResp.ok) {
+            const pData = await pResp.json();
+            if (projSelect) {
+                const projects = pData.projects || [];
+                const defProj = pData.default_project || (projects[0] ? projects[0].name : '');
+                
+                if (projects.length > 0) {
+                    projSelect.innerHTML = projects.map(p => 
+                        `<option value="${escapeHtml(p.name)}" ${p.name === defProj ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
+                    ).join('');
+                } else if (defProj) {
+                    projSelect.innerHTML = `<option value="${escapeHtml(defProj)}" selected>${escapeHtml(defProj)}</option>`;
+                }
+                await onDevOpsProjectChange(projSelect.value);
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load DevOps projects:', e);
+    } finally {
+        if (btn) {
+            btn.innerHTML = origBtnContent;
+            btn.disabled = false;
+        }
+    }
+}
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Standardized DevOps Create Drawer Opening and Dropdown Closing - end
+
+async function onDevOpsProjectChange(projectName) {
+    const project = projectName || (document.getElementById('devopsProjectSelect') ? document.getElementById('devopsProjectSelect').value : '');
+    let metaUrl = '/api/devops/meta';
+    if (project) {
+        metaUrl = `/api/devops/meta/${encodeURIComponent(project)}`;
+    }
+
+    try {
+        const resp = await fetch(metaUrl);
+        if (resp.ok) {
+            const meta = await resp.json();
+            
+            // Types
+            const typeSelect = document.getElementById('devopsTypeSelect');
+            if (typeSelect && meta.work_item_types && meta.work_item_types.length > 0) {
+                const curVal = typeSelect.value || 'Bug';
+                typeSelect.innerHTML = meta.work_item_types.map(t => {
+                    const icon = t === 'Bug' ? '🪲' : (t === 'User Story' ? '📖' : '📋');
+                    return `<option value="${t}" ${t === curVal ? 'selected' : ''}>${icon} ${t}</option>`;
+                }).join('');
+            }
+
+            // Users
+            const userSelect = document.getElementById('devopsAssignedSelect');
+            if (userSelect && meta.users) {
+                userSelect.innerHTML = '<option value="">Unassigned</option>' + meta.users.map(u => 
+                    `<option value="${escapeHtml(u.uniqueName || u.displayName)}">${escapeHtml(u.displayName)}</option>`
+                ).join('');
+            }
+
+            // Area Paths
+            const areaSelect = document.getElementById('devopsAreaSelect');
+            if (areaSelect) {
+                areaSelect.innerHTML = '<option value="">Default Area</option>' + (meta.area_paths || []).map(a => 
+                    `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`
+                ).join('');
+            }
+
+            // Iteration Paths (Auto-select active sprint as suggestive default)
+            const iterSelect = document.getElementById('devopsIterationSelect');
+            if (iterSelect) {
+                const activeIter = meta.active_iteration || '';
+                iterSelect.innerHTML = '<option value="">Default Iteration</option>' + (meta.iteration_paths || []).map(i => {
+                    const isSelected = activeIter && (i === activeIter || i.endsWith('\\' + activeIter) || activeIter.endsWith('\\' + i));
+                    return `<option value="${escapeHtml(i)}" ${isSelected ? 'selected' : ''}>${escapeHtml(i)}</option>`;
+                }).join('');
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load project metadata:', e);
+    }
+}
+
+function closeDevOpsCreateDrawer() {
+    const drawer = document.getElementById('devopsCreateDrawer');
+    if (drawer) drawer.classList.remove('open');
+    devopsPendingAttachments = [];
+    renderDevOpsAttachmentPreviews();
+    if (devopsDescEditor) devopsDescEditor.commands.setContent('');
+    if (devopsReproEditor) devopsReproEditor.commands.setContent('');
+}
+
+function onDevOpsTypeChange() {
+    const typeSelect = document.getElementById('devopsTypeSelect');
+    const bugFields = document.getElementById('devopsBugFields');
+    if (!typeSelect || !bugFields) return;
+
+    const isBug = typeSelect.value.toLowerCase() === 'bug';
+    bugFields.style.display = isBug ? 'block' : 'none';
+}
+
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - start
+let devopsUserSearchTimer = null;
+
+async function onDevOpsUserSearch(query) {
+    const suggestions = document.getElementById('devopsAssignedSuggestions');
+    if (!suggestions) return;
+
+    if (devopsUserSearchTimer) clearTimeout(devopsUserSearchTimer);
+
+    devopsUserSearchTimer = setTimeout(async () => {
+        try {
+            const resp = await fetch(`/api/devops/users?q=${encodeURIComponent(query || '')}`);
+            if (resp.ok) {
+                const data = await resp.json();
+                const users = data.users || [];
+                
+                let html = `
+                    <div class="autocomplete-item p-2" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onclick="selectDevOpsAssignedUser('', 'Unassigned')">
+                        <span class="text-muted">👤 Unassigned</span>
+                    </div>
+                `;
+
+                if (users.length > 0) {
+                    html += users.map(u => `
+                        <div class="autocomplete-item p-2 d-flex flex-column" style="cursor: pointer; border-bottom: 1px solid var(--border-color);" onclick="selectDevOpsAssignedUser('${escapeHtml(u.uniqueName || u.displayName)}', '${escapeHtml(u.displayName)}')">
+                            <span class="fw-bold small" style="color: var(--text-primary);">👤 ${escapeHtml(u.displayName)}</span>
+                            <span class="text-muted" style="font-size: 0.72rem;">${escapeHtml(u.mailAddress || u.uniqueName || '')}</span>
+                        </div>
+                    `).join('');
+                } else if (query) {
+                    html += `<div class="p-2 text-muted small">No matching team members found</div>`;
+                }
+
+                suggestions.innerHTML = html;
+                suggestions.classList.remove('d-none');
+            }
+        } catch (e) {
+            console.error('Error searching DevOps users:', e);
+        }
+    }, 200);
+}
+
+function selectDevOpsAssignedUser(val, display) {
+    const input = document.getElementById('devopsAssignedInput');
+    const hiddenVal = document.getElementById('devopsAssignedValue');
+    const suggestions = document.getElementById('devopsAssignedSuggestions');
+
+    if (input) input.value = display === 'Unassigned' ? '' : display;
+    if (hiddenVal) hiddenVal.value = val;
+    if (suggestions) suggestions.classList.add('d-none');
+}
+
+// Close DevOps user suggestions when clicking outside
+document.addEventListener('click', (e) => {
+    const input = document.getElementById('devopsAssignedInput');
+    const suggestions = document.getElementById('devopsAssignedSuggestions');
+    if (suggestions && input && !input.contains(e.target) && !suggestions.contains(e.target)) {
+        suggestions.classList.add('d-none');
+    }
+});
+// Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Dynamic DevOps User Typeahead Autocomplete - end
+
+async function submitDevOpsCreate(e) {
+    e.preventDefault();
+    if (!currentTicketIdStr) return;
+
+    const btn = document.getElementById('btnSubmitDevOpsCreate');
+    const originalText = btn ? btn.innerHTML : 'Create';
+    const projSelect = document.getElementById('devopsProjectSelect');
+    const targetProject = projSelect ? projSelect.value : '';
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating...';
+    }
+
+    try {
+        // 1. Upload Pending Attachments directly to Azure DevOps
+        const uploadedAttachmentUrls = [];
+        if (devopsPendingAttachments.length > 0) {
+            if (btn) btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Uploading Media (${devopsPendingAttachments.length})...`;
+
+            for (let i = 0; i < devopsPendingAttachments.length; i++) {
+                const att = devopsPendingAttachments[i];
+                if (att.uploadedUrl) {
+                    uploadedAttachmentUrls.push(att.uploadedUrl);
+                } else if (att.file) {
+                    const formData = new FormData();
+                    formData.append('file', att.file);
+                    formData.append('project', targetProject);
+
+                    const upResp = await fetch('/api/devops/upload_attachment', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (upResp.ok) {
+                        const upData = await upResp.json();
+                        if (upData.url) {
+                            uploadedAttachmentUrls.push(upData.url);
+                        }
+                    } else {
+                        console.warn(`Failed to upload attachment ${att.name} to DevOps`);
+                    }
+                }
+            }
+        }
+
+        if (btn) btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating Work Item...';
+
+        // 2. Extract HTML contents from Tiptap editors
+        const descContent = devopsDescEditor ? devopsDescEditor.getHTML() : '';
+        const reproContent = devopsReproEditor ? devopsReproEditor.getHTML() : '';
+
+        // 3. Extract Assigned User value
+        const assignedVal = document.getElementById('devopsAssignedValue') ? document.getElementById('devopsAssignedValue').value : '';
+        const assignedInput = document.getElementById('devopsAssignedInput') ? document.getElementById('devopsAssignedInput').value.trim() : '';
+        const finalAssigned = assignedVal || assignedInput;
+
+        // 4. Create the Work Item with linked attachment URLs
+        const payload = {
+            ticket_id: currentTicketIdStr,
+            project: targetProject,
+            type: document.getElementById('devopsTypeSelect').value,
+            title: document.getElementById('devopsTitleInput').value.trim(),
+            description: descContent,
+            assigned_to: finalAssigned,
+            area_path: document.getElementById('devopsAreaSelect').value,
+            iteration_path: document.getElementById('devopsIterationSelect').value,
+            priority: document.getElementById('devopsPrioritySelect').value,
+            tags: document.getElementById('devopsTagsInput').value.trim(),
+            attachment_urls: uploadedAttachmentUrls
+        };
+
+        if (payload.type.toLowerCase() === 'bug') {
+            payload.severity = document.getElementById('devopsSeveritySelect').value;
+            payload.repro_steps = reproContent;
+            payload.system_info = document.getElementById('devopsSystemInfoInput').value.trim();
+        }
+
+        const resp = await fetch('/api/devops/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast(`Created & Linked Work Item #${data.work_item.id} with ${uploadedAttachmentUrls.length} attachment(s)`, false);
+            closeDevOpsCreateDrawer();
+            loadLinkedDevOpsItems(currentTicketIdStr);
+        } else {
+            alert(data.error || 'Failed to create work item in Azure DevOps');
+        }
+    } catch (err) {
+        console.error('Error creating DevOps item:', err);
+        alert('Network error while creating work item in Azure DevOps');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Multi-Project and Active Sprint Logic - end
 
 async function closeTicketDialog() {
     if (!currentTicketRow) return;
@@ -1746,6 +3137,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Initialize Tiptap v2 Editor - start
+    initTiptapEditor();
+    // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Initialize Tiptap v2 Editor - end
+
     await fetchContacts();
     setupAutocomplete('emailTo', 'suggestionsTo');
     setupAutocomplete('emailCC', 'suggestionsCC');
@@ -1836,7 +3231,68 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// Auto-refresh
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Refresh Button and Relative Time Tooltip Logic - start
+let lastRefreshedTimestamp = Date.now();
+
+function getRelativeRefreshTimeString() {
+    if (!lastRefreshedTimestamp) return 'Refreshed just now';
+    const diffSeconds = Math.max(0, Math.floor((Date.now() - lastRefreshedTimestamp) / 1000));
+    
+    if (diffSeconds < 5) {
+        return 'Refreshed just now';
+    } else if (diffSeconds < 60) {
+        return `Refreshed ${diffSeconds} second${diffSeconds === 1 ? '' : 's'} ago`;
+    }
+    
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) {
+        return `Refreshed ${diffMinutes} min${diffMinutes === 1 ? '' : 's'} ago`;
+    }
+    
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+        return `Refreshed ${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
+    }
+    
+    const diffDays = Math.floor(diffHours / 24);
+    return `Refreshed ${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
+}
+
+function updateRefreshTooltip() {
+    const btn = document.getElementById('btnRefreshTickets');
+    if (btn) {
+        btn.setAttribute('title', getRelativeRefreshTimeString());
+    }
+}
+
+async function manualRefreshTickets() {
+    const icon = document.getElementById('refreshIcon');
+    const indicator = document.getElementById('refreshIndicator');
+    
+    if (icon) icon.classList.add('fa-spin');
+    if (indicator) indicator.classList.add('show');
+    
+    try {
+        await loadTickets();
+        lastRefreshedTimestamp = Date.now();
+        updateRefreshTooltip();
+    } finally {
+        setTimeout(() => {
+            if (icon) icon.classList.remove('fa-spin');
+            if (indicator) indicator.classList.remove('show');
+        }, 600);
+    }
+}
+
+// Bind hover event listener to dynamically refresh relative time on hover
+document.addEventListener('DOMContentLoaded', () => {
+    const refreshBtn = document.getElementById('btnRefreshTickets');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('mouseenter', updateRefreshTooltip);
+    }
+});
+
+// Auto-refresh (every 30 seconds)
 setInterval(() => {
     const indicator = document.getElementById('refreshIndicator');
     if (indicator) {
@@ -1845,6 +3301,7 @@ setInterval(() => {
         setTimeout(() => indicator.classList.remove('show'), 2000);
     }
 }, 30000);
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Refresh Button and Relative Time Tooltip Logic - end
 
 // Socket events
 socket.on('connect', () => {
@@ -1859,6 +3316,20 @@ socket.on('stats_update', (stats) => {
 socket.on('ticket_updated', () => loadTickets());
 socket.on('ticket_status_toggled', () => loadTickets());
 socket.on('email_sent', () => loadTickets());
+
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Real-time State Update Socket Listener - start
+socket.on('devops_item_updated', (data) => {
+    if (!data) return;
+    const { ticket_id, work_item_id, old_state, new_state } = data;
+    
+    // If ticket modal is open for this ticket, refresh linked items
+    if (currentTicketIdStr && String(currentTicketIdStr) === String(ticket_id)) {
+        loadLinkedDevOpsItems(currentTicketIdStr);
+    }
+    
+    showToast(`DevOps #${work_item_id}: ${old_state} ➔ ${new_state}`, false);
+});
+// Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Real-time State Update Socket Listener - end
 
 // Global state for audit logs
 let cachedAuditLogs = [];

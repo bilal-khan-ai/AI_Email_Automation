@@ -187,7 +187,8 @@ class PIIRedactor:
         try:
             lang = detect(text)
             return lang if lang in self.supported_languages else "en"
-        except:
+        # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on language detection
+        except Exception:
             return "en"
 
     def _redact_text_with_metadata(self, text: str) -> Tuple[str, int, List[str]]:

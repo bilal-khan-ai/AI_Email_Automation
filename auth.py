@@ -577,7 +577,7 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
             flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('login', next=request.url))
+            return redirect(url_for('auth.login', next=request.url))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -596,11 +596,11 @@ def admin_required(f):
     def decorated_function(*args, **kwargs):
         if 'user' not in session:
             flash('Please log in to access this page.', 'warning')
-            return redirect(url_for('login', next=request.url))
+            return redirect(url_for('auth.login', next=request.url))
         
         if session['user'].get('role') != 'admin':
             flash('You do not have permission to access this page.', 'danger')
-            return redirect(url_for('index'))
+            return redirect(url_for('core.index'))
         
         return f(*args, **kwargs)
     return decorated_function

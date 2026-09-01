@@ -13,7 +13,6 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-    <!-- <link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.css" rel="stylesheet"> -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
 </head>
@@ -44,12 +43,12 @@
                     🔑 Change Password
                 </button>
                 {% if user.role == 'admin' %}
-                <a href="{{ url_for('management') }}" class="btn btn-outline-light"
+                <a href="{{ url_for('auth.management') }}" class="btn btn-outline-light"
                     style="color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem; background: rgba(255,255,255,0.1);">
                     🛡️ Management
                 </a>
                 {% endif %}
-                <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm"
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-danger btn-sm"
                     style="background: rgba(231, 76, 60, 0.8); border-radius: 20px; padding: 0.4rem 1.2rem; text-decoration: none; font-size: 0.8rem;">
                     🚪 Logout
                 </a>
@@ -125,6 +124,12 @@
                         style="border-radius: 8px; font-weight: 600; background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%); border: none;">Apply</button>
                 </div>
             </div>
+
+            <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Manual Refresh Button with Hover Relative Time - start -->
+            <button type="button" class="filter-dropdown-btn refresh-btn-icon" id="btnRefreshTickets" onclick="manualRefreshTickets()" title="Refreshed just now">
+                <i class="fa fa-sync-alt" id="refreshIcon"></i>
+            </button>
+            <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Manual Refresh Button with Hover Relative Time - end -->
         </div>
     </div>
 
@@ -146,6 +151,50 @@
 
                 <!-- New Take/Close Buttons in Header -->
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Floating Azure DevOps Header Dropdown Menu - start -->
+                    <div class="devops-dropdown-wrapper" style="position: relative;">
+                        <button type="button" class="btn btn-outline-primary btn-sm devops-header-btn" id="btnHeaderDevOps" onclick="toggleDevOpsDropdown(event)"
+                            title="Azure DevOps Menu" style="display: flex; align-items: center; gap: 0.35rem; font-weight: 600;">
+                            <span>🔵</span> Azure DevOps <span class="badge bg-secondary ms-1" id="headerDevOpsBadge" style="font-size: 0.72rem; padding: 0.2rem 0.45rem;">0</span> <span style="font-size: 0.65rem; margin-left: 2px;">▼</span>
+                        </button>
+
+                        <div class="devops-dropdown-menu d-none" id="devopsDropdownMenu" onclick="event.stopPropagation()">
+                            <div class="devops-dropdown-header">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span style="font-size: 1rem;">🔵</span>
+                                    <strong style="font-size: 0.88rem; color: var(--text-primary);">Azure DevOps</strong>
+                                    <span class="badge bg-secondary" id="devopsCountBadge">0</span>
+                                </div>
+                                <div class="devops-header-actions" id="devopsHeaderActions">
+                                    <button type="button" class="btn btn-sm btn-outline-primary devops-action-btn" onclick="openDevOpsCreateDrawer(this)" title="Create new Work Item">
+                                        <i class="fa fa-plus"></i> Create New
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary devops-action-btn" onclick="toggleDevOpsLinkInput()" title="Link existing Work Item ID">
+                                        <i class="fa fa-link"></i> Link
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger devops-action-btn d-none" id="devopsUnlinkHeaderBtn" onclick="promptUnlinkDevOpsItem()" title="Unlink work items">
+                                        <i class="fa fa-unlink"></i> Unlink
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary devops-action-btn" onclick="loadLinkedDevOpsItems(currentTicketIdStr)" title="Refresh">
+                                        <i class="fa fa-sync-alt" id="devopsRefreshIcon"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="devops-dropdown-body" id="devopsDropdownBody">
+                                <!-- Inline Link ID Row -->
+                                <div class="devops-link-row d-none" id="devopsLinkRow">
+                                    <input type="text" id="devopsLinkIdInput" placeholder="Work Item #ID (e.g. 1234)" class="form-control form-control-sm">
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="submitDevOpsLink()">Link</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleDevOpsLinkInput()">Cancel</button>
+                                </div>
+                                <div class="devops-items-list" id="devopsItemsList">
+                                    <!-- Dynamic Zero Page or Cards -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Floating Azure DevOps Header Dropdown Menu - end -->
+
                     <button class="btn btn-primary btn-sm" id="btnTakeTicket" onclick="takeTicket()"
                         title="Assign this ticket to yourself">
                         Take Ticket
@@ -171,7 +220,7 @@
                     </div>
 
                     <button type="button" class="close-btn" onclick="closeModal()" title="Close (ESC)"
-                        style="position:static; margin-left: 0.5rem;">&times;</button>
+                        style="position:static; margin-left: 0.5rem;"><i class="fa fa-times"></i></button>
                 </div>
             </div>
 
@@ -194,6 +243,8 @@
                         </div>
                     </div>
 
+
+
                     <h3 style="margin-bottom: 0.5rem; color: var(--text-primary); font-size: 1.1rem;">Conversation
                         History</h3>
                     <div id="threadLoading" style="display:none; text-align:center; padding: 20px;">
@@ -202,22 +253,20 @@
                     <div id="emailChainContainer" class="message-thread"></div>
                 </div>
 
-                <!-- 
-                <div class="modal-right-panel collapsed" id="rightPanel">
-                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Expand Draft Panel">◀</button>
+                <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Rebuilt Reply Panel with Quill 2.0 Editor - start -->
+                <div class="modal-right-panel" id="rightPanel">
+                    <button class="panel-toggle-btn" onclick="toggleRightPanel()" title="Toggle Reply Panel">◀</button>
 
                     <div class="email-composer">
                         <div class="email-composer-header">
-                            <h4 style="display:inline-block; margin:0;">Draft Response</h4>
-                            <button class="btn btn-outline-primary btn-sm" onclick="regenerateAI()" id="btnRegenerateAI"
-                                style="margin-left: 1rem; padding: 2px 8px; font-size: 0.8rem;"
-                                title="Regenerate AI Draft">🔄 Regenerate AI</button>
-                            <button class="header-collapse-btn" onclick="toggleRightPanel()"
-                                title="Collapse Panel">▶</button>
+                            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-primary);">📧 Reply Composer</h4>
+                                <button class="header-collapse-btn" onclick="toggleRightPanel()" title="Collapse Panel">▶</button>
+                            </div>
 
-                            <div class="composer-field" style="margin-top:1rem;">
+                            <div class="composer-field" style="margin-top: 0.75rem;">
                                 <label>To:</label>
-                                <input type="email" id="emailTo">
+                                <input type="email" id="emailTo" placeholder="recipient@example.com">
                                 <div id="suggestionsTo" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="composer-field hidden" id="ccField">
@@ -231,39 +280,260 @@
                                 <div id="suggestionsBCC" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="toggle-cc-bcc">
-                                <button onclick="toggleField('ccField')">+ CC</button>
-                                <button onclick="toggleField('bccField')">+ BCC</button>
+                                <button type="button" onclick="toggleField('ccField')">+ CC</button>
+                                <button type="button" onclick="toggleField('bccField')">+ BCC</button>
                             </div>
                         </div>
 
-                        <div id="editor" class="editor-container"></div>
-
-                        <div class="attachments-composer">
-                            <h4>📎 Attachments</h4>
-                            <div class="attachment-input-wrapper">
-                                <label for="attachmentInput" class="file-input-label">
-                                    <span>📁</span> Choose Files
-                                </label>
-                                <input type="file" id="attachmentInput" multiple>
-                                <span id="fileCount" style="font-size: 0.85rem; color: var(--text-secondary);">No files
-                                    selected</span>
+                        <!-- Tiptap v2 Rich Text Editor with Visual Icon Toolbar -->
+                        <div class="tiptap-wrapper" style="border: 1.5px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--input-bg); margin-top: 0.75rem;">
+                            <div class="tiptap-toolbar" id="tiptapToolbar" style="background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: 0.35rem 0.5rem; display: flex; flex-wrap: wrap; gap: 0.3rem;">
+                                <button type="button" class="toolbar-btn" data-action="bold" title="Bold (Ctrl+B)"><i class="fa fa-bold"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="italic" title="Italic (Ctrl+I)"><i class="fa fa-italic"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="underline" title="Underline (Ctrl+U)"><i class="fa fa-underline"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="strike" title="Strikethrough"><i class="fa fa-strikethrough"></i></button>
+                                <span class="toolbar-divider" style="width: 1px; height: 18px; background: var(--border-color); margin: 0 0.25rem;"></span>
+                                <button type="button" class="toolbar-btn" data-action="bulletList" title="Bullet List"><i class="fa fa-list-ul"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="orderedList" title="Numbered List"><i class="fa fa-list-ol"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="blockquote" title="Quote"><i class="fa fa-quote-left"></i></button>
+                                <span class="toolbar-divider" style="width: 1px; height: 18px; background: var(--border-color); margin: 0 0.25rem;"></span>
+                                <button type="button" class="toolbar-btn" data-action="link" title="Insert Link"><i class="fa fa-link"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="image" title="Insert/Paste Image"><i class="fa fa-image"></i></button>
+                                <input type="file" id="tiptapImageInput" accept="image/*" style="display: none;">
+                                <span class="toolbar-divider" style="width: 1px; height: 18px; background: var(--border-color); margin: 0 0.25rem;"></span>
+                                <button type="button" class="toolbar-btn" data-action="undo" title="Undo (Ctrl+Z)"><i class="fa fa-undo"></i></button>
+                                <button type="button" class="toolbar-btn" data-action="redo" title="Redo (Ctrl+Y)"><i class="fa fa-redo"></i></button>
                             </div>
-                            <div class="attached-files" id="attachedFiles"></div>
+                            <div id="tiptapEditor" class="tiptap-editor-element" style="min-height: 180px; overflow-y: auto; color: var(--text-primary); font-size: 0.92rem;"></div>
                         </div>
-                    </div>
 
-                    <div class="modal-actions">
-                        <div style="display: flex; gap: 0.75rem;">
-                            <button class="btn btn-primary" id="btnSave" onclick="saveTicket()">
-                                <span>💾</span> Save
-                            </button>
-                            <button class="btn btn-success" id="btnSend" onclick="sendToCustomer()">
-                                <span>📧</span> Send
-                            </button>
+                        <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Email Attachments & Dropzone - start -->
+                        <div class="mb-3 mt-3">
+                            <label class="form-label small fw-bold d-flex justify-content-between align-items-center mb-1">
+                                <span>📎 Outbound Email Attachments</span>
+                                <span class="text-muted fw-normal" style="font-size: 0.75rem;">Drag & drop or browse</span>
+                            </label>
+                            
+                            <!-- Quick Ticket Attachments Chips for Reply -->
+                            <div id="emailTicketAttachmentChips" class="devops-ticket-chips mb-2 d-none">
+                                <span class="text-muted small me-1">From Thread:</span>
+                                <div id="emailTicketChipsContainer" class="d-inline-flex flex-wrap gap-1"></div>
+                            </div>
+
+                            <!-- Drag & Drop Zone -->
+                            <div class="devops-dropzone" id="emailAttachmentDropzone" onclick="document.getElementById('emailAttachmentFileInput').click()">
+                                <input type="file" id="emailAttachmentFileInput" multiple class="d-none" onchange="handleEmailFileSelect(event)">
+                                <div class="devops-dropzone-content">
+                                    <i class="fa fa-cloud-upload-alt devops-dropzone-icon"></i>
+                                    <span class="devops-dropzone-text"><strong>Click to browse</strong> or drag & drop files here</span>
+                                    <span class="devops-dropzone-sub">PDFs, Images, Excel, Logs, Documents</span>
+                                </div>
+                            </div>
+
+                            <!-- Attachment Previews -->
+                            <div id="emailAttachmentPreviewList" class="devops-attachment-preview-list mt-2"></div>
+                        </div>
+                        <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Modern Email Attachments & Dropzone - end -->
+
+                        <div class="modal-actions" style="margin-top: 0.75rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+                            <div style="display: flex; gap: 0.75rem; justify-content: flex-end; width: 100%;">
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnSave" onclick="saveTicket()">
+                                    <span>💾</span> Save Draft
+                                </button>
+                                <button type="button" class="btn btn-success btn-sm" id="btnSend" onclick="sendToCustomer()">
+                                    <span>📧</span> Send Reply
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-                -->
+                <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Rebuilt Reply Panel with Quill 2.0 Editor - end -->
+
+                <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Create Work Item Drawer - start -->
+                <div class="devops-drawer" id="devopsCreateDrawer">
+                    <!-- Draggable Left Resize Handle -->
+                    <div class="devops-drawer-resizer" id="devopsDrawerResizer" title="Drag left/right to resize drawer width"></div>
+                    <div class="devops-drawer-header">
+                        <div class="d-flex align-items-center gap-2">
+                            <span style="font-size: 1.2rem;">🔵</span>
+                            <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary); font-weight: 700;">Create Azure DevOps Work Item</h3>
+                        </div>
+                        <button type="button" class="close-btn" onclick="closeDevOpsCreateDrawer()"><i class="fa fa-times"></i></button>
+                    </div>
+                    <div class="devops-drawer-body">
+                        <form id="devopsCreateForm" onsubmit="submitDevOpsCreate(event)">
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Project</label>
+                                <select class="form-select form-select-sm" id="devopsProjectSelect" onchange="onDevOpsProjectChange(this.value)">
+                                    <option value="">Default Project</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Work Item Type *</label>
+                                <select class="form-select form-select-sm" id="devopsTypeSelect" onchange="onDevOpsTypeChange()" required>
+                                    <option value="Bug" selected>🪲 Bug</option>
+                                    <option value="Task">📋 Task</option>
+                                    <option value="User Story">📖 User Story</option>
+                                    <option value="Issue">⚠️ Issue</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Title *</label>
+                                <input type="text" class="form-control form-control-sm" id="devopsTitleInput" required placeholder="Concise title">
+                            </div>
+                            <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Rich Text Editor for Description and Repro Steps - start -->
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Description</label>
+                                <div class="tiptap-wrapper" style="border: 1.5px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--input-bg);">
+                                    <div class="tiptap-toolbar" id="devopsDescToolbar" style="background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: 0.3rem 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                                        <button type="button" class="toolbar-btn" data-action="bold" title="Bold (Ctrl+B)"><i class="fa fa-bold"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="italic" title="Italic (Ctrl+I)"><i class="fa fa-italic"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="underline" title="Underline (Ctrl+U)"><i class="fa fa-underline"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="strike" title="Strikethrough"><i class="fa fa-strikethrough"></i></button>
+                                        <span class="toolbar-divider" style="width: 1px; height: 16px; background: var(--border-color); margin: 0 0.2rem;"></span>
+                                        <button type="button" class="toolbar-btn" data-action="bulletList" title="Bullet List"><i class="fa fa-list-ul"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="orderedList" title="Numbered List"><i class="fa fa-list-ol"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="blockquote" title="Quote"><i class="fa fa-quote-left"></i></button>
+                                        <span class="toolbar-divider" style="width: 1px; height: 16px; background: var(--border-color); margin: 0 0.2rem;"></span>
+                                        <button type="button" class="toolbar-btn" data-action="link" title="Insert Link"><i class="fa fa-link"></i></button>
+                                        <button type="button" class="toolbar-btn" data-action="image" title="Insert/Paste Image"><i class="fa fa-image"></i></button>
+                                        <input type="file" id="devopsDescImageInput" accept="image/*" style="display: none;">
+                                    </div>
+                                    <div id="devopsDescEditor" class="tiptap-editor-element" style="min-height: 140px; overflow-y: auto;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Bug-specific fields -->
+                            <div id="devopsBugFields">
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">Repro Steps (Bug)</label>
+                                    <div class="tiptap-wrapper" style="border: 1.5px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--input-bg);">
+                                        <div class="tiptap-toolbar" id="devopsReproToolbar" style="background: var(--bg-primary); border-bottom: 1px solid var(--border-color); padding: 0.3rem 0.5rem; display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                                            <button type="button" class="toolbar-btn" data-action="bold" title="Bold (Ctrl+B)"><i class="fa fa-bold"></i></button>
+                                            <button type="button" class="toolbar-btn" data-action="italic" title="Italic (Ctrl+I)"><i class="fa fa-italic"></i></button>
+                                            <button type="button" class="toolbar-btn" data-action="orderedList" title="Numbered Steps (1, 2, 3...)"><i class="fa fa-list-ol"></i></button>
+                                            <button type="button" class="toolbar-btn" data-action="bulletList" title="Bullet List"><i class="fa fa-list-ul"></i></button>
+                                            <span class="toolbar-divider" style="width: 1px; height: 16px; background: var(--border-color); margin: 0 0.2rem;"></span>
+                                            <button type="button" class="toolbar-btn" data-action="link" title="Insert Link"><i class="fa fa-link"></i></button>
+                                            <button type="button" class="toolbar-btn" data-action="image" title="Insert/Paste Screenshot"><i class="fa fa-image"></i></button>
+                                            <input type="file" id="devopsReproImageInput" accept="image/*" style="display: none;">
+                                        </div>
+                                        <div id="devopsReproEditor" class="tiptap-editor-element" style="min-height: 140px; overflow-y: auto;"></div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">System Info / Environment</label>
+                                    <input type="text" class="form-control form-control-sm" id="devopsSystemInfoInput" placeholder="OS, Browser, App version...">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label small fw-bold">Severity</label>
+                                    <select class="form-select form-select-sm" id="devopsSeveritySelect">
+                                        <option value="1 - Critical">1 - Critical</option>
+                                        <option value="2 - High" selected>2 - High</option>
+                                        <option value="3 - Medium">3 - Medium</option>
+                                        <option value="4 - Low">4 - Low</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Rich Text Editor for Description and Repro Steps - end -->
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Priority</label>
+                                    <select class="form-select form-select-sm" id="devopsPrioritySelect">
+                                        <option value="1">1 - Critical</option>
+                                        <option value="2" selected>2 - High</option>
+                                        <option value="3">3 - Medium</option>
+                                        <option value="4">4 - Low</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 position-relative">
+                                    <label class="form-label small fw-bold">Assigned To</label>
+                                    <input type="text" class="form-control form-control-sm" id="devopsAssignedInput" placeholder="Search team member..." autocomplete="off" oninput="onDevOpsUserSearch(this.value)" onfocus="onDevOpsUserSearch(this.value)">
+                                    <input type="hidden" id="devopsAssignedValue" value="">
+                                    <div id="devopsAssignedSuggestions" class="autocomplete-suggestions d-none" style="position: absolute; width: 100%; z-index: 1050; max-height: 180px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);"></div>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Area Path</label>
+                                    <select class="form-select form-select-sm" id="devopsAreaSelect">
+                                        <option value="">Default Area</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-bold">Iteration Path</label>
+                                    <select class="form-select form-select-sm" id="devopsIterationSelect">
+                                        <option value="">Default Iteration</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold">Tags (comma separated)</label>
+                                <input type="text" class="form-control form-control-sm" id="devopsTagsInput" placeholder="support, customer-reported">
+                            </div>
+
+                            <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Dropzone - start -->
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold d-flex justify-content-between align-items-center">
+                                    <span>📎 Attachments & Media (Screenshots / Videos)</span>
+                                    <span class="text-muted fw-normal" style="font-size: 0.75rem;">Paste (Ctrl+V) anywhere</span>
+                                </label>
+                                
+                                <!-- Quick Ticket Attachments Chips -->
+                                <div id="devopsTicketAttachmentChips" class="devops-ticket-chips mb-2 d-none">
+                                    <span class="text-muted small me-1">From Ticket:</span>
+                                    <div id="devopsTicketChipsContainer" class="d-inline-flex flex-wrap gap-1"></div>
+                                </div>
+
+                                <!-- Drag & Drop Zone -->
+                                <div class="devops-dropzone" id="devopsAttachmentDropzone" onclick="document.getElementById('devopsAttachmentFileInput').click()">
+                                    <input type="file" id="devopsAttachmentFileInput" multiple accept="image/*,video/*,.pdf,.log,.txt" class="d-none" onchange="handleDevOpsFileSelect(event)">
+                                    <div class="devops-dropzone-content">
+                                        <i class="fa fa-cloud-upload-alt devops-dropzone-icon"></i>
+                                        <span class="devops-dropzone-text"><strong>Click to browse</strong> or drag & drop files here</span>
+                                        <span class="devops-dropzone-sub">Images (PNG/JPG), Screen Recordings (MP4/WebM), Logs, PDFs</span>
+                                    </div>
+                                </div>
+
+                                <!-- Attachment Previews -->
+                                <div id="devopsAttachmentPreviewList" class="devops-attachment-preview-list mt-2"></div>
+                            </div>
+                            <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Dropzone - end -->
+
+                            <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeDevOpsCreateDrawer()">Cancel</button>
+                                <button type="submit" class="btn btn-sm btn-primary" id="btnSubmitDevOpsCreate">
+                                    <span>✨ Create & Link</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Create Work Item Drawer - end -->
+
+                <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Floating Inline Image Toolbar - start -->
+                <div id="tiptapImageToolbar" class="tiptap-image-toolbar d-none" onclick="event.stopPropagation()">
+                    <div class="tiptap-img-btn-group">
+                        <span class="tiptap-img-label">Width:</span>
+                        <button type="button" class="tiptap-img-btn" data-width="25%" onclick="setTiptapImageWidth('25%')">25%</button>
+                        <button type="button" class="tiptap-img-btn" data-width="50%" onclick="setTiptapImageWidth('50%')">50%</button>
+                        <button type="button" class="tiptap-img-btn" data-width="75%" onclick="setTiptapImageWidth('75%')">75%</button>
+                        <button type="button" class="tiptap-img-btn" data-width="100%" onclick="setTiptapImageWidth('100%')">100%</button>
+                        <button type="button" class="tiptap-img-btn" data-width="auto" onclick="setTiptapImageWidth('auto')">Auto</button>
+                    </div>
+                    <div class="tiptap-img-divider"></div>
+                    <div class="tiptap-img-btn-group">
+                        <button type="button" class="tiptap-img-btn" onclick="setTiptapImageAlign('left')" title="Align Left"><i class="fa fa-align-left"></i></button>
+                        <button type="button" class="tiptap-img-btn" onclick="setTiptapImageAlign('center')" title="Align Center"><i class="fa fa-align-center"></i></button>
+                        <button type="button" class="tiptap-img-btn" onclick="setTiptapImageAlign('right')" title="Align Right"><i class="fa fa-align-right"></i></button>
+                    </div>
+                    <div class="tiptap-img-divider"></div>
+                    <button type="button" class="tiptap-img-btn text-danger" onclick="deleteTiptapActiveImage()" title="Remove Image"><i class="fa fa-trash-alt"></i></button>
+                </div>
+                <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap Floating Inline Image Toolbar - end -->
             </div>
         </div>
     </div>
@@ -279,7 +549,7 @@
     <div class="modal" id="userPasswordModal">
         <div class="modal-content"
             style="max-width: 400px; height: auto; align-self: center; display: block; position: relative;">
-            <button type="button" class="close-btn" onclick="closeUserPasswordModal()">&times;</button>
+            <button type="button" class="close-btn" onclick="closeUserPasswordModal()"><i class="fa fa-times"></i></button>
             <h3 style="margin-bottom: 1.5rem; color: var(--text-primary);">🔑 Change Your Password</h3>
             <div style="margin-bottom: 1.5rem;">
                 <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text-primary);">New
@@ -309,7 +579,7 @@
                         📥 Export Logs
                     </button>
                     <button type="button" class="close-btn" onclick="closeTimeline()" title="Close"
-                        style="color: white; position: static;">&times;</button>
+                        style="color: white; position: static;"><i class="fa fa-times"></i></button>
                 </div>
             </div>
 
@@ -395,6 +665,21 @@
         const testCC = "{{ test_cc }}";
     </script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - start -->
+    <script type="module">
+        import { Editor } from 'https://esm.sh/@tiptap/core@2.6.6';
+        import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.6.6';
+        import Image from 'https://esm.sh/@tiptap/extension-image@2.6.6';
+        import Link from 'https://esm.sh/@tiptap/extension-link@2.6.6';
+        import Underline from 'https://esm.sh/@tiptap/extension-underline@2.6.6';
+
+        window.TiptapModules = { Editor, StarterKit, Image, Link, Underline };
+        window.dispatchEvent(new CustomEvent('tiptap-ready'));
+        if (typeof initTiptapEditor === 'function') {
+            initTiptapEditor();
+        }
+    </script>
+    <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - end -->
     <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}"></script>
 </body>
 

@@ -15,10 +15,10 @@
                 Admin Panel - User Management
             </span>
             <div>
-                <a href="{{ url_for('index') }}" class="btn btn-outline-light btn-sm me-2">
+                <a href="{{ url_for('core.index') }}" class="btn btn-outline-light btn-sm me-2">
                     📊 Dashboard
                 </a>
-                <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
+                <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm">
                     🚪 Logout
                 </a>
             </div>
@@ -68,7 +68,7 @@
                 ➕ Create New User
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('admin_create_user') }}" id="createUserForm">
+                <form method="POST" action="{{ url_for('auth.admin_create_user') }}" id="createUserForm">
                     <div class="row">
                         <div class="col-md-4">
                             <label class="form-label">Username</label>
@@ -159,7 +159,7 @@
                                         
                                         <!-- Delete Button -->
                                         <form method="POST" 
-                                              action="{{ url_for('admin_delete_user', username=user.username) }}" 
+                                              action="{{ url_for('auth.admin_delete_user', username=user.username) }}" 
                                               style="display: inline;">
                                             <button type="submit" 
                                                     class="btn btn-sm btn-danger" 

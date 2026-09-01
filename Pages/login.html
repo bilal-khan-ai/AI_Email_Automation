@@ -30,7 +30,7 @@
                 {% endif %}
             {% endwith %}
 
-            <form method="POST" action="{{ url_for('login') }}" id="loginForm">
+            <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm">
                 <div class="mb-3">
                     <label for="username" class="form-label">Username</label>
                     <input type="text" 

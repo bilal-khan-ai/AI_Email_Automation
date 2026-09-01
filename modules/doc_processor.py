@@ -45,10 +45,21 @@ if TYPE_CHECKING:
     from modules.image_processor import ImageProcessor
     from modules.tables_processor import TablesProcessor
 
+# Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Hoist PdfReader import with graceful fallback - start
+try:
+    from pypdf import PdfReader as _PdfReader  # type: ignore
+except ImportError:
+    try:
+        from PyPDF2 import PdfReader as _PdfReader  # type: ignore
+    except ImportError:
+        _PdfReader = None
+# Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Hoist PdfReader import with graceful fallback - end
+
 logger = logging.getLogger(__name__)
 
 
 def _clip_text(text: str, max_chars: int) -> str:
+    """Clip text to maximum character length with a truncation indicator."""
     if not text:
         return ""
     if len(text) <= max_chars:
@@ -57,10 +68,12 @@ def _clip_text(text: str, max_chars: int) -> str:
 
 
 def _norm(s: str) -> str:
+    """Normalize whitespace in a string."""
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
 def _df_like_to_markdown(rows: List[List[str]], headers: List[str], max_rows: int = 15, max_cols: int = 10) -> str:
+    """Render a 2D table structure to formatted markdown table syntax."""
     # very small markdown builder to avoid pandas dependency here
     headers = (headers or [])[:max_cols]
     out_rows = [r[:max_cols] for r in (rows or [])[:max_rows]]
@@ -119,10 +132,34 @@ class DocProcessor:
         self.config = config or DocProcessorConfig()
 
     def process_path(self, path: str) -> Dict[str, Any]:
-        with open(path, "rb") as f:
-            return self.process_bytes(f.read(), filename=path)
+        """Read a document from disk and process its contents."""
+        try:
+            with open(path, "rb") as f:
+                return self.process_bytes(f.read(), filename=path)
+        except Exception as e:
+            logger.error(f"Failed to read file from path {path}: {e}")
+            return {
+                "ok": False,
+                "filename": path,
+                "kind": "unknown",
+                "warnings": [f"File read error: {e}"],
+                "text": "",
+                "tables_markdown": [],
+                "images": [],
+                "combined_text": "",
+            }
 
     def process_bytes(self, file_bytes: bytes, filename: str = "") -> Dict[str, Any]:
+        """
+        Process raw document bytes (.docx or .pdf) and extract text, tables, and images.
+        
+        Args:
+            file_bytes: Raw file content in bytes
+            filename: Original attachment filename
+            
+        Returns:
+            dict: Structured result containing extracted text, tables, images, and combined summary.
+        """
         filename = filename or "document_attachment"
         lower = filename.lower()
 
@@ -142,6 +179,7 @@ class DocProcessor:
     # -------------------------
 
     def _process_docx(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """Extract text paragraphs, tables, and embedded images from a Word (.docx) document."""
         warnings: List[str] = []
         text_lines: List[str] = []
         tables_md: List[str] = []
@@ -236,35 +274,19 @@ class DocProcessor:
     # -------------------------
 
     def _process_pdf(self, file_bytes: bytes, filename: str) -> Dict[str, Any]:
+        """Extract text, tables, and rendered OCR images from a PDF document."""
         warnings: List[str] = []
         text_pages: List[str] = []
         tables_md: List[str] = []
         images: List[Dict[str, Any]] = []
 
-        # 1) Extract text per page via pypdf
-        try:
-            from pypdf import PdfReader  # type: ignore
-            reader = PdfReader(io.BytesIO(file_bytes))
-            total_pages = len(reader.pages)
-            pages_to_process = min(total_pages, self.config.max_pdf_pages)
-            
-            if total_pages > self.config.max_pdf_pages:
-                warnings.append(f"PDF has {total_pages} pages; only processing first {self.config.max_pdf_pages}.")
-            
-            for i, page in enumerate(reader.pages[:pages_to_process]):
-                try:
-                    page_text = page.extract_text() or ""
-                    page_text = page_text.strip()
-                    if page_text:
-                        text_pages.append(f"[Page {i+1}]\n{page_text}")
-                except Exception:
-                    continue
-                    
-        except Exception as e1:
-            # fallback PyPDF2
+        # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Streamlined PDF extraction via hoisted reader - start
+        # 1) Extract text per page via hoisted PdfReader
+        if _PdfReader is None:
+            warnings.append("No PDF reader available (install pypdf or PyPDF2).")
+        else:
             try:
-                from PyPDF2 import PdfReader  # type: ignore
-                reader = PdfReader(io.BytesIO(file_bytes))
+                reader = _PdfReader(io.BytesIO(file_bytes))
                 total_pages = len(reader.pages)
                 pages_to_process = min(total_pages, self.config.max_pdf_pages)
                 
@@ -277,11 +299,12 @@ class DocProcessor:
                         page_text = page_text.strip()
                         if page_text:
                             text_pages.append(f"[Page {i+1}]\n{page_text}")
-                    except Exception:
+                    except Exception as page_err:
+                        warnings.append(f"Failed extracting text from page {i+1}: {page_err}")
                         continue
-                        
-            except Exception as e2:
-                warnings.append(f"No PDF reader available or failed to parse PDF: {e1} / {e2}")
+            except Exception as e:
+                warnings.append(f"Failed to parse PDF document: {e}")
+        # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Streamlined PDF extraction via hoisted reader - end
 
         extracted_text = "\n\n".join(text_pages)
         extracted_text = _clip_text(_norm(extracted_text), self.config.max_text_chars)
@@ -521,6 +544,7 @@ class DocProcessor:
         tables_md: List[str],
         images: List[Dict[str, Any]],
     ) -> str:
+        """Format extracted document content, tables, and image descriptions into prompt-ready context."""
         parts: List[str] = []
         parts.append(f"[Attachment: {filename}] ({kind})")
 
@@ -546,3 +570,11 @@ class DocProcessor:
                     parts.append(f"- {name} ({size}): [no text detected]")
         combined = "\n".join(parts).strip() + "\n"
         return _clip_text(combined, self.config.max_combined_chars)
+
+
+# Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Export public symbols - start
+__all__ = [
+    'DocProcessor',
+    'DocProcessorConfig',
+]
+# Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Export public symbols - end

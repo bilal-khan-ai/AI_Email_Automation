@@ -757,6 +757,63 @@ body.dark-mode .message-header {
     border-color: #2d6a4f;
 }
 
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Refresh Button & Indicator Styles - start */
+.refresh-btn-icon {
+    min-width: 38px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    transition: all 0.25s ease;
+    box-sizing: border-box;
+}
+
+.refresh-btn-icon:hover {
+    border-color: #2d6a4f;
+    color: #2d6a4f;
+    background: rgba(45, 106, 79, 0.08);
+}
+
+body.dark-mode .refresh-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #4ade80;
+    border-color: #4ade80;
+}
+
+.refresh-indicator {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 4px 12px var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.refresh-indicator.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Refresh Button & Indicator Styles - end */
+
 .filter-dropdown-content {
     display: none;
     position: absolute;
@@ -1364,39 +1421,60 @@ body.dark-mode .email-iframe-container {
     position: relative;
 }
 
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized Centered Close Buttons with Subtle Glow - start */
 .close-btn {
     position: absolute;
     top: 1rem;
     right: 1.5rem;
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(0, 0, 0, 0.04);
     border: 1px solid var(--border-color);
     border-radius: 50%;
     width: 32px;
     height: 32px;
-    font-size: 1.2rem;
     cursor: pointer;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     z-index: 1100;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+.close-btn i {
+    font-size: 0.95rem;
+    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
-    line-height: 0;
+    margin: 0;
     padding: 0;
 }
 
 .close-btn:hover {
-    background: #ff5252;
-    color: white;
-    border-color: #ff5252;
-    transform: rotate(90deg);
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.25);
+    transform: none;
 }
 
 body.dark-mode .close-btn {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
-    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.7);
+    border-color: rgba(255, 255, 255, 0.15);
 }
+
+body.dark-mode .close-btn:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ff6b6b;
+    border-color: rgba(239, 68, 68, 0.5);
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+    transform: none;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized Centered Close Buttons with Subtle Glow - end */
 
 .modal-header-actions {
     display: flex;
@@ -1528,6 +1606,7 @@ body.dark-mode .close-btn {
     color: var(--text-primary);
 }
 
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Gmail style attachment tiles with thumbnail compression - start */
 .attachment-item {
     display: flex;
     align-items: center;
@@ -1551,14 +1630,147 @@ body.dark-mode .close-btn {
     border: none;
 }
 
+.attachments-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.attachment-tile {
+    display: flex;
+    flex-direction: column;
+    width: 175px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
+    cursor: pointer;
+    position: relative;
+    user-select: none;
+}
+
+.attachment-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
+}
+
+body.dark-mode .attachment-tile:hover {
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.attachment-tile-preview {
+    height: 105px;
+    width: 100%;
+    background-color: var(--bg-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.attachment-tile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.attachment-tile:hover .attachment-tile-img {
+    transform: scale(1.04);
+}
+
+.attachment-tile-icon {
+    font-size: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+.attachment-tile-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    color: #ffffff;
+    font-size: 0.85rem;
+    font-weight: 500;
+    gap: 0.35rem;
+}
+
+.attachment-tile:hover .attachment-tile-overlay {
+    opacity: 1;
+}
+
+.attachment-tile-info {
+    padding: 0.55rem 0.65rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    background: var(--bg-card);
+    flex: 1;
+}
+
+.attachment-tile-name {
+    font-weight: 500;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attachment-tile-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.attachment-tile-download-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0.25rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.attachment-tile-download-btn:hover {
+    color: var(--primary-color);
+    background-color: var(--bg-hover);
+}
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Gmail style attachment tiles with thumbnail compression - end */
+
 .email-composer {
     background: var(--bg-card);
     border: 2px solid var(--border-color);
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
+    flex: 1 0 auto;
+    min-height: auto;
+    overflow: visible;
 }
 
 .email-composer-header {
@@ -2254,3 +2466,1016 @@ body.dark-mode {
     min-width: 120px;
     background: var(--input-bg);
 }
+
+/* ==========================================================================
+   Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Section & Drawer Styles - start
+   ========================================================================== */
+.devops-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.devops-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 1rem;
+    background: rgba(0, 120, 212, 0.06);
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    user-select: none;
+}
+
+body.dark-mode .devops-header {
+    background: rgba(0, 120, 212, 0.15);
+}
+
+.devops-header-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.devops-logo {
+    font-size: 1.1rem;
+}
+
+.devops-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.devops-action-btn {
+    padding: 0.2rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.devops-toggle-icon {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s ease;
+    margin-left: 0.25rem;
+}
+
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Floating Dropdown Menu Styles - start */
+.devops-dropdown-wrapper {
+    position: relative;
+    z-index: 1200;
+}
+
+.devops-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 390px;
+    max-width: 90vw;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+    z-index: 1300;
+    overflow: hidden;
+    animation: devopsFadeIn 0.16s ease-out;
+}
+
+@keyframes devopsFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.devops-dropdown-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 0.85rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.devops-dropdown-body {
+    padding: 0.75rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Floating Dropdown Menu Styles - end */
+
+.devops-link-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.devops-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Zero Page Styles - start */
+.devops-empty-state {
+    text-align: center;
+    padding: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-style: italic;
+}
+
+.devops-zero-page {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    background: var(--bg-primary);
+    border: 1.5px dashed var(--border-color);
+    border-radius: 8px;
+    margin: 0.25rem 0;
+}
+
+.devops-zero-icon {
+    font-size: 2rem;
+    margin-bottom: 0.4rem;
+    opacity: 0.85;
+}
+
+.devops-zero-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.35rem;
+}
+
+.devops-zero-desc {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    max-width: 320px;
+    margin: 0 auto 1.1rem;
+    line-height: 1.4;
+}
+
+.devops-zero-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Zero Page Styles - end */
+
+/* Individual DevOps Work Item Card */
+.devops-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem 0.9rem;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+}
+
+.devops-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: #0078d4;
+}
+
+.devops-card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.35rem;
+}
+
+.devops-card-title {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    line-height: 1.3;
+    word-break: break-word;
+    flex: 1;
+}
+
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized DevOps Unlink Button - start */
+.devops-card-unlink-btn {
+    opacity: 0.6;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.82rem;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    padding: 0;
+    line-height: 1;
+}
+
+.devops-card:hover .devops-card-unlink-btn {
+    opacity: 1;
+}
+
+.devops-card-unlink-btn:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+    transform: none;
+}
+
+body.dark-mode .devops-card-unlink-btn {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+body.dark-mode .devops-card-unlink-btn:hover {
+    background: rgba(239, 68, 68, 0.22);
+    color: #ff6b6b;
+    border-color: rgba(239, 68, 68, 0.45);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+    transform: none;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized DevOps Unlink Button - end */
+
+.devops-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.devops-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.devops-badge-id {
+    background: rgba(0, 120, 212, 0.1);
+    color: #0078d4;
+}
+
+body.dark-mode .devops-badge-id {
+    background: rgba(0, 120, 212, 0.25);
+    color: #4daafc;
+}
+
+.devops-badge-type {
+    background: rgba(100, 116, 139, 0.12);
+    color: var(--text-primary);
+}
+
+/* State Pills */
+.devops-state-pill {
+    padding: 0.15rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.devops-state-new { background: #e0f2fe; color: #0284c7; }
+.devops-state-active { background: #ffedd5; color: #ea580c; }
+.devops-state-resolved { background: #dcfce7; color: #16a34a; }
+.devops-state-closed { background: #f1f5f9; color: #64748b; }
+.devops-state-other { background: #f3f4f6; color: #4b5563; }
+
+body.dark-mode .devops-state-new { background: #082f49; color: #38bdf8; }
+body.dark-mode .devops-state-active { background: #431407; color: #fb923c; }
+body.dark-mode .devops-state-resolved { background: #052e16; color: #4ade80; }
+body.dark-mode .devops-state-closed { background: #1e293b; color: #94a3b8; }
+
+.devops-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+    margin-top: 0.25rem;
+}
+
+.devops-tag-pill {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-secondary);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+}
+
+body.dark-mode .devops-tag-pill {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.devops-card-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.4rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+body.dark-mode .devops-card-actions {
+    border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+.devops-open-link {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #0078d4;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.devops-open-link:hover {
+    text-decoration: underline;
+    color: #005a9e;
+}
+
+body.dark-mode .devops-open-link {
+    color: #4daafc;
+}
+
+/* Azure DevOps Slide-in Drawer */
+.devops-drawer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 440px;
+    max-width: 95vw;
+    height: 100%;
+    background: var(--bg-card);
+    border-left: 2px solid var(--border-color);
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+    z-index: 1250;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.devops-drawer.open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.devops-drawer-header {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.85rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-primary);
+}
+
+.devops-drawer-header .close-btn {
+    position: static;
+}
+
+.devops-drawer-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    flex: 1;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Section & Drawer Styles - end */
+
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - DevOps Header Button Styles - start */
+.devops-header-btn {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    border: 1.5px solid #0078d4;
+    color: #0078d4;
+    background: transparent;
+    transition: all 0.2s ease;
+}
+
+.devops-header-btn:hover {
+    background: #0078d4;
+    color: white;
+}
+
+body.dark-mode .devops-header-btn {
+    border-color: #4daafc;
+    color: #4daafc;
+}
+
+body.dark-mode .devops-header-btn:hover {
+    background: #4daafc;
+    color: #111;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - DevOps Header Button Styles - end */
+
+/* ==========================================================================
+   Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor Styles - start
+   ========================================================================== */
+.tiptap-wrapper {
+    border: 1.5px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--input-bg);
+    margin-top: 0.75rem;
+    transition: border-color 0.2s ease;
+    flex-shrink: 0 !important;
+    min-height: 220px !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.tiptap-wrapper:focus-within {
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0, 120, 212, 0.15);
+}
+
+.tiptap-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.toolbar-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    transition: all 0.15s ease;
+}
+
+.toolbar-btn:hover {
+    background: rgba(0, 0, 0, 0.06);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .toolbar-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.toolbar-btn.is-active {
+    background: #0078d4;
+    color: white !important;
+    border-color: #0078d4;
+}
+
+.toolbar-divider {
+    width: 1px;
+    height: 18px;
+    background: var(--border-color);
+    margin: 0 0.25rem;
+}
+
+.tiptap-editor-element {
+    padding: 0;
+    flex: 1 1 auto !important;
+    min-height: 160px !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    line-height: 1.5;
+    outline: none;
+    cursor: text;
+}
+
+.tiptap-editor-element .ProseMirror,
+.tiptap-prosemirror-content {
+    min-height: 180px;
+    height: 100%;
+    padding: 0.75rem 1rem;
+    outline: none;
+    cursor: text;
+    box-sizing: border-box;
+}
+
+.tiptap-editor-element .ProseMirror:focus {
+    outline: none;
+}
+
+.tiptap-editor-element p {
+    margin-bottom: 0.5rem;
+}
+
+.tiptap-editor-element p:last-child {
+    margin-bottom: 0;
+}
+
+.tiptap-editor-element img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 0.5rem 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+}
+
+.tiptap-editor-element blockquote {
+    border-left: 3px solid #0078d4;
+    padding-left: 0.75rem;
+    margin: 0.5rem 0;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.tiptap-editor-element ul, .tiptap-editor-element ol {
+    padding-left: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.tiptap-editor-element a {
+    color: #0078d4;
+    text-decoration: underline;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor Styles - end */
+
+/* ==========================================================================
+   Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Email Chain UI/UX Overhaul Styles - start
+   ========================================================================== */
+.message-card {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-card);
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    transition: box-shadow 0.2s ease;
+}
+
+.message-card:hover {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.message-card.internal-note {
+    border-left: 4px solid #3A5A24;
+}
+
+.message-card.customer-message {
+    border-left: 4px solid #0078d4;
+}
+
+.msg-header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.msg-speaker-info {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* Sender Avatar Initials Circle */
+.sender-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: white;
+    text-transform: uppercase;
+    flex-shrink: 0;
+}
+
+.sender-avatar.staff {
+    background: linear-gradient(135deg, #3A5A24 0%, #5c8d3d 100%);
+}
+
+.sender-avatar.customer {
+    background: linear-gradient(135deg, #0078d4 0%, #4daafc 100%);
+}
+
+.msg-time-badge {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Multi-line wrap for full visibility of recipients - start */
+.msg-header-cols {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) minmax(220px, 1.5fr);
+    gap: 0.6rem 1.25rem;
+    padding: 0.6rem 1rem;
+    font-size: 0.82rem;
+    background: rgba(0, 0, 0, 0.015);
+    border-bottom: 1px solid var(--border-color);
+}
+
+@media (max-width: 900px) {
+    .msg-header-cols {
+        grid-template-columns: 1fr;
+    }
+}
+
+body.dark-mode .msg-header-cols {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.msg-header-col {
+    display: flex;
+    flex-direction: column;
+}
+
+.msg-header-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--text-secondary);
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.msg-header-val {
+    font-weight: 500;
+    color: var(--text-primary);
+    word-break: break-word;
+    white-space: normal;
+    line-height: 1.35;
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Multi-line wrap for full visibility of recipients - end */
+
+/* Time Gap Divider */
+.time-gap-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 1rem 0;
+    position: relative;
+}
+
+.time-gap-divider::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: var(--border-color);
+}
+
+.time-gap-badge {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    padding: 0.2rem 0.8rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+/* Quoted Text Button */
+.quoted-text-btn {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    margin: 0.5rem 0;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.quoted-text-btn:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+/* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Email Chain UI/UX Overhaul Styles - end */
+
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Inline Image Resizer Styles - start */
+.devops-dropzone {
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    text-align: center;
+    cursor: pointer;
+    background: var(--input-bg);
+    transition: all 0.2s ease;
+}
+
+.devops-dropzone:hover,
+.devops-dropzone.dragover {
+    border-color: #2d6a4f;
+    background: rgba(45, 106, 79, 0.05);
+}
+
+body.dark-mode .devops-dropzone:hover,
+body.dark-mode .devops-dropzone.dragover {
+    border-color: #4ade80;
+    background: rgba(74, 222, 128, 0.08);
+}
+
+.devops-dropzone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.devops-dropzone-icon {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.1rem;
+}
+
+.devops-dropzone-text {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.devops-dropzone-sub {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+}
+
+.devops-ticket-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    max-height: 60px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.devops-ticket-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    font-size: 0.72rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.devops-ticket-chip:hover {
+    border-color: #2d6a4f;
+    background: rgba(45, 106, 79, 0.1);
+}
+
+.devops-attachment-preview-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.5rem;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 2px;
+}
+
+.devops-tile-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.devops-tile-card:hover {
+    border-color: #2d6a4f;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .devops-tile-card:hover {
+    border-color: #4ade80;
+    box-shadow: 0 4px 12px rgba(74, 222, 128, 0.2);
+}
+
+.devops-tile-preview {
+    height: 66px;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.03);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+}
+
+.devops-tile-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.devops-tile-icon {
+    font-size: 1.6rem;
+}
+
+.devops-tile-footer {
+    padding: 0.35rem 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border-color);
+    min-width: 0;
+}
+
+.devops-tile-info {
+    min-width: 0;
+    flex: 1;
+    margin-right: 0.25rem;
+}
+
+.devops-tile-name {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.devops-tile-size {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+}
+
+.devops-tile-remove {
+    background: transparent;
+    border: none;
+    color: #e63946;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+.devops-tile-remove:hover {
+    background: rgba(230, 57, 70, 0.15);
+}
+
+/* Floating Inline Image Resize Toolbar */
+.tiptap-image-toolbar {
+    position: absolute;
+    z-index: 1050;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(8px);
+    transform: translate(-50%, -100%);
+    margin-top: -8px;
+    pointer-events: auto;
+}
+
+.tiptap-img-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+.tiptap-img-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-right: 0.15rem;
+}
+
+.tiptap-img-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tiptap-img-btn:hover {
+    background: var(--border-color);
+}
+
+.tiptap-img-btn.active {
+    background: #2d6a4f;
+    color: white;
+}
+
+body.dark-mode .tiptap-img-btn.active {
+    background: #4ade80;
+    color: #0d1117;
+}
+
+.tiptap-img-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--border-color);
+    margin: 0 0.15rem;
+}
+
+/* Selected Tiptap Image State */
+.tiptap-editor-element img.tiptap-image-active {
+    outline: 2px solid #2d6a4f;
+    outline-offset: 2px;
+    box-shadow: 0 0 12px rgba(45, 106, 79, 0.3);
+}
+
+body.dark-mode .tiptap-editor-element img.tiptap-image-active {
+    outline-color: #4ade80;
+    box-shadow: 0 0 12px rgba(74, 222, 128, 0.4);
+}
+
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Resizable Drawer and Vertical Editor Resize - start */
+.tiptap-editor-element {
+    resize: vertical !important;
+    overflow-y: auto !important;
+}
+
+.devops-drawer-resizer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 8px;
+    height: 100%;
+    cursor: ew-resize;
+    background: transparent;
+    z-index: 100;
+    transition: background 0.15s ease;
+}
+
+.devops-drawer-resizer:hover,
+.devops-drawer-resizer.is-resizing {
+    background: #2d6a4f;
+    box-shadow: 0 0 10px rgba(45, 106, 79, 0.5);
+}
+
+body.dark-mode .devops-drawer-resizer:hover,
+body.dark-mode .devops-drawer-resizer.is-resizing {
+    background: #4ade80;
+    box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+}
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Resizable Drawer and Vertical Editor Resize - end */
+/* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Inline Image Resizer Styles - end */

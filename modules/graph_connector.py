@@ -24,10 +24,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from enum import Enum
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - [%(funcName)s] %(message)s'
-)
+# Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Remove module-level basicConfig in library module
 logger = logging.getLogger(__name__)
 
 
@@ -514,9 +511,13 @@ class AsyncioWorker:
                     'content_id': getattr(att, 'content_id', None)
                 })
         
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Robust sender email extraction - start
         sender_email = "unknown"
-        if hasattr(msg, 'from_') and msg.from_ and msg.from_.email_address:
-            sender_email = msg.from_.email_address.address
+        if hasattr(msg, 'from_') and msg.from_ and getattr(msg.from_, 'email_address', None):
+            sender_email = getattr(msg.from_.email_address, 'address', '') or getattr(msg.from_.email_address, 'name', 'unknown')
+        elif hasattr(msg, 'sender') and msg.sender and getattr(msg.sender, 'email_address', None):
+            sender_email = getattr(msg.sender.email_address, 'address', '') or getattr(msg.sender.email_address, 'name', 'unknown')
+        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Robust sender email extraction - end
         
         # Use uniqueBody for a cleaner body if available, otherwise fallback to full body
         primary_html = msg.unique_body.content if (hasattr(msg, 'unique_body') and msg.unique_body) else None
