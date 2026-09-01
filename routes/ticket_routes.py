@@ -318,37 +318,25 @@ def send_to_customer():
             intended_msg += "</p>"
             ai_response += intended_msg
 
-        if last_message_id:
-            logger.info(f"📤 Replying to last message {last_message_id[:10]}... for ticket {ticket_id}")
-            success = graph_connector.reply_to_email(
-                user_email=Config.USER_EMAIL,
-                parent_message_id=last_message_id,
-                to_email=final_recipient,
-                body=ai_response,
-                cc=final_cc,
-                bcc=final_bcc,
-                attachments=attachments
-            )
-        else:
-            logger.warning(f"⚠️ No messages found for ticket {ticket_id}. Falling back to standard send_email.")
-            final_subject = f"Re: {ticket.get('subject', 'Support Request')}"
-            if Config.TEST_MODE:
-                final_subject = f"{Config.TEST_SUBJECT_TAG}{final_subject}"
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Enforce reply-only communication - start
+        if not last_message_id:
+            logger.error(f"❌ Cannot reply to ticket {ticket_id}: No valid inbound Graph API message ID found in thread.")
+            return jsonify({'error': 'Cannot reply: No original inbound email found for this ticket in Microsoft Graph.'}), 400
 
-            success = graph_connector.send_email(
-                user_email=Config.USER_EMAIL,
-                recipient=final_recipient,
-                subject=final_subject,
-                body=ai_response,
-                conversation_id=ticket.get('conversation_id'),
-                cc=final_cc,
-                bcc=final_bcc,
-                attachments=attachments
-            )
+        logger.info(f"📤 Replying to message {last_message_id[:10]}... for ticket {ticket_id}")
+        success = graph_connector.reply_to_email(
+            user_email=Config.USER_EMAIL,
+            parent_message_id=last_message_id,
+            to_email=final_recipient,
+            body=ai_response,
+            cc=final_cc,
+            bcc=final_bcc,
+            attachments=attachments
+        )
 
         if not success:
-            return jsonify({'error': 'Failed to send email via Graph API'}), 500
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Direct reply and send without automated fallback - end
+            return jsonify({'error': 'Failed to send reply via Microsoft Graph API'}), 500
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Enforce reply-only communication - end
 
         actor_username = session.get('user', {}).get('username', 'system')
         update_payload = {

@@ -1,127 +1,135 @@
-# AI Email Automation - Technical Reference Manual
+# AI Email Automation - Technical Reference Manual & Context
 
-## 📂 Project Architecture Tree
+## 📂 Final Standardized Project Architecture Tree
+
 ```text
 AI_Email_Automation/
 ├── .agents/
-│   └── project_context.md          # Central technical documentation (this file)
-├── data/                           # Local storage for DBs and artifacts
-├── modules/                        # Core functional components
-│   ├── doc_processor.py            # .docx and .pdf parsing engine
-│   ├── env_manager.py              # Atomic .env file transaction handler
-│   ├── graph_connector.py          # Microsoft Graph API resilient interface
-│   ├── image_processor.py          # Vision-based OCR and description
-│   ├── openai_agent.py             # Multi-stage reasoning and RAG engine
-│   ├── pii_redactor.py             # Presidio-based data scrubbing
-│   ├── sql_logger.py               # PostgreSQL persistence and audit system
-│   ├── tables_processor.py         # Tabular data extraction (xlsx/csv)
-│   └── vector_db.py                # ChromaDB manager with VRAM safety
-├── pages/                          # Jinja2 HTML Templates
-│   ├── admin_users.html            # Staff provisioning interface
-│   ├── dashboard.html              # Main support ticket dashboard
-│   ├── login.html                  # Authentication entry point
-│   └── management.html             # Admin console and system settings
-├── static/                         # Frontend assets (JS/CSS)
-│   ├── admin_users/                # Assets for staff management
-│   ├── dashboard/                  # Assets for the main dashboard
-│   ├── login/                      # Assets for authentication
-│   └── management/                 # Assets for admin console
-├── auth.py                         # RBAC and session authentication
-├── config.py                       # Centralized environment configuration
-├── dashboard_socketio.py           # Real-time WebSocket bridge (Backend)
-├── main.py                         # Central ingestion and daemon engine
-├── manage_users.py                 # CLI tool for staff provisioning
-├── ticket_cleanup.py               # Database maintenance and TTL manager
-└── .env                            # Environment secrets (Not in Tree)
+│   ├── project_context.md          # Central architecture & technical reference manual (this file)
+│   └── ui_standardization.md       # Design system, CSS tokens, and UI governance rules
+│
+├── app/                            # 🌐 Core Flask Application Package
+│   ├── __init__.py                 # Application factory (create_app)
+│   └── auth/                       # Authentication & User Management
+│       └── __init__.py             # Auth helpers & decorator exports
+│
+├── routes/                         # 🛣️ Modular HTTP Blueprints
+│   ├── __init__.py                 # Blueprints registration & export
+│   ├── core_routes.py              # Main dashboard index (/) & contacts/config APIs
+│   ├── ticket_routes.py            # Ticket actions, send/reply endpoints & locking
+│   ├── auth_routes.py              # User authentication, login, logout & admin user CRUD
+│   ├── admin_config_routes.py      # Client groups, exchange holidays & settings endpoints
+│   ├── devops_routes.py            # Azure DevOps work item link/sync endpoints
+│   └── attachment_routes.py        # File & inline image attachment serving
+│
+├── services/                       # ⚙️ Business Logic & External Integrations
+│   ├── __init__.py
+│   ├── connectors/                 # 🔌 External API Integration Clients
+│   │   ├── __init__.py             # Exports GraphConnector, AzureDevOpsConnector, OpenAIAgent
+│   │   ├── graph_connector.py      # Microsoft Graph API client & non-retry worker loop
+│   │   ├── devops_connector.py     # Azure DevOps REST client & work item sync
+│   │   └── openai_agent.py         # Multi-stage reasoning, classification & RAG generation
+│   ├── processors/                 # 📄 Content Processing & Extraction
+│   │   ├── __init__.py             # Exports DocProcessor, TablesProcessor, ImageProcessor, redact_pii
+│   │   ├── doc_processor.py        # PDF & Word document parser / OCR engine
+│   │   ├── tables_processor.py     # Tabular data & Excel extraction
+│   │   ├── image_processor.py      # Image optimizer & OCR
+│   │   └── pii_redactor.py         # Sensitive entity scrubbing
+│   └── background/                 # 🔄 Background Tasks & Daemons
+│       ├── __init__.py
+│       └── ticket_cleanup.py       # Automated ticket retention, TTL & purge daemon
+│
+├── data_access/                    # 💾 Database & Persistence Layer
+│   ├── __init__.py                 # Exports PostgreSQLConnectionManager, TicketRepository, TicketAnalytics, VectorDatabase
+│   ├── db_connection.py            # Threaded PostgreSQL connection pool manager & DB enums
+│   ├── ticket_repository.py        # Relational schema management & ticket CRUD operations
+│   ├── ticket_analytics.py         # SLA, FRT, resolution & staff performance metric engine
+│   ├── vector_db.py                # ChromaDB vector store with OpenAI text-embedding-3-small
+│   └── sql_logger.py               # Singleton bridge & backwards-compatible access layer
+│
+├── templates/                      # 📄 Standard Jinja2 HTML Templates
+│   ├── dashboard.html              # Main support ticket dashboard & split panel
+│   ├── management.html             # Administrative console, reports, clients, holidays & settings
+│   ├── login.html                  # User login portal
+│   └── admin_users.html            # User provisioning view
+│
+├── static/                         # 🎨 Frontend Assets
+│   ├── shared/                     # Global styles: theme.css, components.css, theme.js
+│   ├── dashboard/                  # Dashboard logic & styles: dashboard.css, dashboard.js
+│   ├── management/                 # Management console logic & styles: management.css, management.js
+│   └── login/                      # Login portal assets: login.css
+│
+├── scripts/                        # 🛠️ Maintenance, Operations & Ingestion
+│   ├── deployment/                 # safe_deploy_local.sh, safe_deploy.sh, deploy.sh
+│   ├── database/                   # manage_users.py, create_anil_db.sh, backups/
+│   └── ingestion/                  # batch_migrate.py, bookstack_ingest.py, ingest.py, cleanup_vectors.py
+│
+├── modules/                        # 🛡️ Backwards-Compatibility Facade (Lazy __getattr__ proxy)
+├── config.py                       # Centralized environment configuration & dynamic reloader
+├── dashboard_socketio.py           # Web service entry point (Gunicorn / Flask-SocketIO)
+├── dashboard_context.py            # Global context singletons & lazy initialization bridge
+├── main.py                         # Ingestion daemon & Graph API background loop
+├── Dockerfile                      # Web & Worker container definition
+└── docker-compose.yml              # PostgreSQL, Web & Worker container orchestration
 ```
 
 ---
 
-## 🛠️ Module Technical Breakdown
+## 🛠️ Architecture & Service Layer Breakdown
 
-### 🛰️ `main.py` (Core Ingestion Engine)
-Acts as the central lifecycle manager for support tickets, bridging the Graph API and PostgreSQL.
-*   **SupportAgent Class [L33-316]**: The main engine orchestrating the ingestion and processing flow.
-*   **Email Polling Loop [L104-142]**: Periodic background task fetching latest emails from Outlook.
-*   **Ticket Ingestion Pipeline [L144-245]**: Multi-stage process including PII redaction and initial state analysis.
-*   **Subject-based Matching [L247-285]**: Logic for linking new replies to existing tickets via subject heuristics.
-*   **Background Maintenance [L287-316]**: Automatic cleanup of expired tokens and temporary file buffers.
-*   **Application Entry [L319-380]**: Service startup, daemon initialization, and signal handling.
+### 1. Web Layer (`app/`, `routes/`, `dashboard_socketio.py`)
+* **Application Factory (`app/__init__.py`)**: `create_app()` initializes Flask, registers all route blueprints, binds SocketIO in eventlet async mode, and mounts the standard `templates/` directory.
+* **HTTP Blueprints (`routes/`)**:
+  * `core_routes.py`: Dashboard view (`/`), config info (`/api/config`), and contact auto-fill (`/api/contacts`).
+  * `ticket_routes.py`: Ticket detail lookups, thread message listings, drafting replies, and direct sending via Microsoft Graph API.
+  * `auth_routes.py`: Login, logout, session management, and admin user CRUD.
+  * `admin_config_routes.py`: Client groups management, exchange holidays CRUD/NLP import, and runtime system settings REST API.
+  * `devops_routes.py`: Linking, unlinking, and synchronizing Azure DevOps work items.
+  * `attachment_routes.py`: Streaming and downloading inline/file attachments.
+* **WebSocket Handlers (`socketio_handlers.py`)**:
+  * Real-time ticket locking mutexes (`lock_ticket`, `unlock_ticket`).
+  * Real-time re-assignments, status changes, and internal note broadcasts.
+  * Live KPI and staff/client metric pushes (`staff_metrics_update`, `client_stats_update`).
+  * Live system settings persistence (`update_settings` &rarr; `EnvManager.update_vars`).
 
-### 🔌 `dashboard_socketio.py` (Real-time Backend)
-The WebSocket layer providing low-latency updates to the web frontend.
-*   **SocketIO Setup & Auth [L1-54]**: Handshake logic and session validation for real-time connections.
-*   **Ticket Management [L100-350]**: Event handlers for assignment, status changes, and note additions.
-*   **SLA & Performance [L350-450]**: Dynamic calculation and broadcasting of real-time SLA metrics.
-*   **Real-time Broadcasts [L552-602]**: Efficient delta-updates to client-side dashboards to prevent full reloads.
-*   **Backend Poller [L604-648]**: Integration bridge for receiving updates from the `main.py` daemon.
+### 2. Services Layer (`services/`)
+* **`services/connectors/graph_connector.py`**:
+  * Dedicated asynchronous worker managing Microsoft Graph API requests.
+  * Strict duplicate prevention: `SEND_EMAIL` and `REPLY_TO_EMAIL` are single-dispatch operations without automatic multi-retries.
+  * Correct reply format: Uses `request_body.comment = body_html` for Graph `/messages/{id}/reply`.
+* **`services/connectors/devops_connector.py`**:
+  * Interacts with Azure DevOps REST API for querying, creating, and linking work items directly to ticket threads.
+* **`services/connectors/openai_agent.py`**:
+  * Multi-stage reasoning pipeline: Intent classification, Issue State consolidation, RAG retrieval from ChromaDB, and response generation.
+* **`services/processors/`**:
+  * `doc_processor.py`: Text extraction and OCR for `.docx` and `.pdf` files.
+  * `tables_processor.py`: Tabular data extractors for `.csv` and `.xlsx` attachments.
+  * `image_processor.py`: Image optimization and vision description.
+  * `pii_redactor.py`: Entity scrubbing for PII protection.
+* **`services/background/ticket_cleanup.py`**:
+  * Retention manager enforcing soft-delete and permanent purge policies based on `.env` configuration.
 
-### 🧠 `modules/openai_agent.py` (AI Reasoning Engine)
-The brain of the system, responsible for RAG-augmented response generation and intent classification.
-*   **Interpretation Layer [L96-138]**: Classifies intent, urgency, and requirements using `gpt-4.1-nano`.
-*   **Issue State Engine [L140-201]**: Consolidates thread history into technical "Issue States" for precise RAG.
-*   **Response Generation [L326-520]**: Multi-source RAG (Docs + Experience) using `gpt-5-mini` with sendability gates.
-*   **Ticket Summarization [L522-552]**: Brief, high-signal summaries of customer issues for the dashboard.
-*   **Intent Categorization [L554-599]**: Statistical classification of tickets into functional buckets.
-*   **Vision/OCR Analysis [L699-752]**: Direct integration with OpenAI Vision for attachment analysis.
-
----
-
-## 🎨 Frontend Architecture
-
-### 📄 `pages/` (HTML Templates)
-Jinja2 templates providing the structure for the web-based management system.
-*   **`dashboard.html` [L1-366]**: Primary interface featuring real-time ticket cards, modal for conversation history, and AI draft composer.
-*   **`management.html` [L1-579]**: Administrative hub for staff performance analytics, system-wide settings, and ticket re-routing.
-*   **`login.html` [L1-70]**: Secure login interface with robust feedback for authentication failures.
-*   **`admin_users.html` [L1-248]**: Dedicated management page for staff credentialing and role-based access control.
-
-### ⚡ `static/` (Client-side Logic)
-JavaScript and CSS files providing interactivity and premium aesthetics.
-*   **`dashboard.js` [L1-1800+]**: Orchestrates real-time UI synchronization, ticket locking logic, modal state management, and interactive reporting charts with date filtering.
-*   **`management.js` [L1-447]**: Drives administrative dashboards, rendering performance charts and live system-wide activity logs.
-*   **`login.js` [L1-30]**: Client-side validation and secure form handling for the authentication gateway.
-
----
-
-## 🗄️ Core Data & Infrastructure
-
-### `ticket_cleanup.py` (Database Maintenance)
-Standalone daemon/script for TTL and archival management.
-*   **Soft-Delete Archival**: Preserves ticket metadata for reporting integrity while purging heavy payload data (messages and attachments).
-
-### `modules/sql_logger.py` (Persistence Layer)
-Handles the relational schema, audit logs, and high-concurrency connection pooling.
-*   **Connection Management [L41-128]**: Thread-safe PostgreSQL pooling using `ThreadedConnectionPool`.
-*   **Schema Initialization [L153-412]**: Automated table creation (including the `holidays` table) and migrations.
-*   **Ticket Lifecycle Logs [L414-798]**: Idempotent ticket creation and message persistence with `internet_message_id`.
-*   **SLA Business Seconds [L614-650]**: Custom Python business hours/seconds calculation excluding weekends and public holidays (`get_business_seconds`).
-*   **Analytics Engine [L1683-1979]**: Aggregation of staff performance, domain stats, and ticket timelines.
-
-### `modules/vector_db.py` (RAG Backbone)
-Manages semantic storage and retrieval with a focus on memory efficiency.
-*   **VRAM Management [L26-89]**: Context-manager ensuring embedding models are unloaded immediately after use.
-*   **Batch Ingestion [L217-291]**: Optimized multi-document insertion for bulk processing.
-*   **Soft-Delete Enforcement [L362-517]**: Maintains semantic index parity with the SQL persistence layer.
-
-### `modules/graph_connector.py` (Outlook Integration)
-Resilient interface for Microsoft Graph API interactions.
-*   **Retry Config [L59-108]**: Advanced exponential backoff with random jitter for API resilience.
-*   **Asyncio Worker [L165-638]**: Background thread managing all non-blocking API calls to prevent UI stalls.
-*   **Email Threading [L548-614]**: Dedicated logic for preserving conversation integrity using Graph API reply endpoints.
+### 3. Data & Persistence Layer (`data_access/`)
+* **`db_connection.py`**:
+  * Thread-safe connection pool using `psycopg2.pool.ThreadedConnectionPool`.
+  * Standardized `ActionType` and `ActorType` audit enums.
+* **`ticket_repository.py`**:
+  * PostgreSQL schema initializer (Tickets, Messages, Attachments, Notes, Audit Logs, Users, Holidays, Client Groups, DevOps Links).
+  * High-concurrency CRUD operations with idempotent message deduplication (`internet_message_id`).
+* **`ticket_analytics.py`**:
+  * First Response Time (FRT) and Time to Resolution (TTR) analytics.
+  * Business seconds calculations (`get_business_seconds`) accounting for working hours, weekends, and dynamically seeded exchange holidays.
+* **`vector_db.py`**:
+  * ChromaDB vector database manager utilizing OpenAI's `text-embedding-3-small` API.
 
 ---
 
-## 🛡️ Security & Processing
+## 🔐 Environment & Runtime Configuration
 
-### `modules/pii_redactor.py` (Privacy scrubbing)
-*   **Indian PII Suite [L40-123]**: Specialized recognizers for PAN, Aadhaar, GSTIN, and IFSC codes.
-*   **Redaction Operators [L161-175]**: Granular mapping of sensitive entities to masked placeholders.
-
-### `modules/doc_processor.py` (Document Parser)
-*   **Docx Extraction [L144-232]**: Recursive extraction of text, tables, and images from Word attachments.
-*   **PDF Processing [L238-345]**: Hybrid approach using text extraction and vision-based OCR for scanned pages.
-
----
-> [!NOTE]
-> This documentation is dynamically maintained. Line ranges are verified as of April 29, 2026.
+System settings are dynamically managed via `config.py` and `modules/env_manager.py`:
+* **Live Updates**: Updating settings via `/management` writes directly to `.env` and triggers `Config.reload()` in memory without restarting containers.
+* **Separated Polling Intervals**:
+  * `POLLING_INTERVAL`: Microsoft Graph API email ingestion frequency.
+  * `AZURE_DEVOPS_POLLING_INTERVAL`: Background sync frequency for Azure DevOps work items.
+* **Sandbox / Test Mode**:
+  * `TEST_MODE=True`: Redirects all outgoing emails to `TEST_EMAIL` and `TEST_CC` with `TEST_SUBJECT_TAG` prefix.

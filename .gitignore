@@ -20,3 +20,7 @@ tests/
 test_*
 *_test.py
 rag_tester.py
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Ignore local SQL database backups - start
+*.sql
+scripts/database/backups/
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Ignore local SQL database backups - end

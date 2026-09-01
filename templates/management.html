@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Management Console - AI Email Automation</title>
+    <link rel="icon" href="{{ url_for('static', filename='management/gws_logo.png') }}" type="image/png">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Management Header & Vector Icons - start -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='management/management.css') }}?v=20260901_7">
+    <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_7"></script>
+</head>
+
+<body>
+    <div class="app-header">
+        <div class="app-header-container">
+            <div class="app-header-brand">
+                <img src="{{ url_for('static', filename='management/gws_logo.png') }}" alt="GWS Logo">
+                <div>
+                    <h1 class="app-header-title">Management Console</h1>
+                    <div class="app-header-subtitle">
+                        <i class="fa fa-circle-user me-1"></i> Active Admin: <strong style="text-decoration: underline;">{{ user.username }}</strong>
+                    </div>
+                </div>
+            </div>
+            <div class="app-header-actions">
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Light/Dark Mode" aria-label="Toggle Theme">
+                    <i id="theme-icon" class="fa fa-moon"></i>
+                </button>
+                <button onclick="showChangePasswordModal('{{ user.username }}')" class="app-btn-ghost">
+                    <i class="fa fa-key me-1"></i> Change Password
+                </button>
+                <a href="{{ url_for('core.index', view='staff') }}" class="app-btn-ghost">
+                    <i class="fa fa-chart-pie me-1"></i> Staff Dashboard
+                </a>
+                <a href="{{ url_for('auth.logout') }}" class="app-btn-danger-ghost">
+                    <i class="fa fa-arrow-right-from-bracket me-1"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Management Header & Vector Icons - end -->
+
+    <div class="container-main">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        {% if category == 'success' %}
+        <div class="alert alert-success alert-dismissible fade show card" role="alert"
+            style="margin-bottom: 1rem; border-left: 5px solid green;">
+            {% else %}
+            <div class="alert alert-danger alert-dismissible fade show card" role="alert"
+                style="margin-bottom: 1rem; border-left: 5px solid red;">
+                {% endif %}
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Quick Nav & Overview - start -->
+            <!-- Quick Navigation Bar -->
+            <div class="quick-nav">
+                <div class="nav-tab active" onclick="showSection('reports')"><i class="fa fa-chart-column me-1"></i> Reports</div>
+                <div class="nav-tab" onclick="showSection('management')"><i class="fa fa-users-gear me-1"></i> Management</div>
+                <div class="nav-tab" onclick="showSection('holidays')"><i class="fa fa-calendar-days me-1"></i> Holidays</div>
+                <div class="nav-tab" onclick="showSection('settings')"><i class="fa fa-sliders me-1"></i> Settings</div>
+            </div>
+
+            <!-- Unified Reports Section -->
+            <div id="section-reports" class="management-section active">
+                <div class="card mb-4">
+                    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div class="pill-toggle" id="reportViewPill" data-active="client">
+                            <div class="pill-option active" data-view="client">Client</div>
+                            <div class="pill-option" data-view="staff">Staff</div>
+                            <div class="pill-slider"></div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="text-secondary small fw-bold">Time Range:</span>
+                            <select id="timeRangeSelect" class="form-select form-select-sm" style="width: auto;"
+                                onchange="onTimeRangeChange()">
+                                <option value="today">Today</option>
+                                <option value="week">This Week</option>
+                                <option value="month">This Month</option>
+                                <option value="year">This Year</option>
+                                <option value="all" selected>All Time</option>
+                                <option value="custom">Custom Date Range</option>
+                            </select>
+                            <div id="customDateInputs" class="d-none align-items-center gap-2">
+                                <input type="text" id="fromDateInput" class="form-control form-control-sm"
+                                    placeholder="dd-mm-yyyy" style="width: auto;">
+                                <span class="text-secondary small">to</span>
+                                <input type="text" id="toDateInput" class="form-control form-control-sm"
+                                    placeholder="dd-mm-yyyy" style="width: auto;">
+                                <button type="button" class="btn btn-sm btn-primary"
+                                    onclick="applyCustomDates()">Apply</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-light border-bottom">
+                        <div class="card mb-3 border-0 shadow-sm">
+                            <div class="card-header bg-white">
+                                <span class="fw-bold"><i class="fa fa-chart-line me-2 text-primary"></i> Global Overview</span>
+                            </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Quick Nav & Overview - end -->
+                            <div class="card-body">
+                                <div class="metric-stats">
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ global_stats.total }}</span>
+                                        <span class="metric-label">Total Tickets</span>
+                                    </div>
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ global_stats.open }}</span>
+                                        <span class="metric-label">All Open</span>
+                                    </div>
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ global_stats.review }}</span>
+                                        <span class="metric-label">All Review</span>
+                                    </div>
+                                    <div class="metric-item">
+                                        <span class="metric-value">{{ global_stats.closed }}</span>
+                                        <span class="metric-label">All Closed</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="search-box-container">
+                            <input type="text" id="reportSearch" class="form-control"
+                                placeholder="Search by name, username or domain..." oninput="onReportSearch()">
+                        </div>
+                    </div>
+                    <div class="card-body p-4 bg-light">
+                        <!-- Staff View Panel -->
+                        <div id="staffViewPanel" class="d-none">
+                            <div class="metrics-grid" id="staffMetricsGrid">
+                                {% for staff in staff_members %}
+                                <div class="staff-metric-card" id="metric-{{ staff.username }}"
+                                    onclick="openDrilldown('staff', '{{ staff.username }}')">
+                                    <div class="staff-name">
+                                        <span>👤</span> {{ staff.username }}
+                                        {% if not staff.is_assignable %}
+                                        <span class="badge bg-warning text-dark ms-auto"
+                                            style="font-size: 0.6rem;">Opted-out</span>
+                                        {% endif %}
+                                        {% if not staff.is_active %}
+                                        <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">Disabled</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="metric-stats">
+                                        <div class="metric-item">
+                                            <span class="metric-value text-primary"
+                                                id="assigned-{{ staff.username }}">0</span>
+                                            <span class="metric-label">Total</span>
+                                        </div>
+                                        <div class="metric-item">
+                                            <span class="metric-value text-success"
+                                                id="open-{{ staff.username }}">0</span>
+                                            <span class="metric-label">Open</span>
+                                        </div>
+                                        <div class="metric-item">
+                                            <span class="metric-value text-secondary"
+                                                id="closed-{{ staff.username }}">0</span>
+                                            <span class="metric-label">Close</span>
+                                        </div>
+                                        <div class="metric-item">
+                                            <span class="metric-value text-info" id="frt-{{ staff.username }}">0m</span>
+                                            <span class="metric-label">FRT</span>
+                                        </div>
+                                        <div class="metric-item">
+                                            <span class="metric-value text-warning"
+                                                id="res-{{ staff.username }}">0h</span>
+                                            <span class="metric-label">TTR</span>
+                                        </div>
+                                        <div class="metric-item">
+                                            <span class="metric-value text-success"
+                                                id="eff-{{ staff.username }}">0%</span>
+                                            <span class="metric-label">Efficiency</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                                {% if not staff_members %}
+                                <div class="col-12 text-center py-5 text-secondary">
+                                    <p>No staff members found. Create one below to see performance metrics.</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Client View Panel -->
+                        <div id="clientViewPanel">
+                            <div class="metrics-grid" id="clientStatsGrid">
+                                <!-- Populated by SocketIO -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Management Section -->
+            <div id="section-management" class="management-section">
+                <div class="card mb-4 border-0 bg-transparent shadow-none">
+                    <div class="card-header bg-transparent border-0 d-flex justify-content-center">
+                        <div class="pill-toggle" id="managementViewPill" data-active="client">
+                            <div class="pill-option active" data-view="client" onclick="toggleManagementView('client')">Client</div>
+                            <div class="pill-option" data-view="staff" onclick="toggleManagementView('staff')">Staff</div>
+                            <div class="pill-slider"></div>
+                        </div>
+                    </div>
+                </div>
+
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Staff Management - start -->
+                <!-- Staff Management -->
+                <div id="managementStaffView" class="d-none">
+                    <div class="row">
+                    <!-- Left: User List -->
+                    <div class="col-lg-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <span><i class="fa fa-users me-2 text-primary"></i> User Management</span>
+                                <span class="badge bg-primary">{{ users|length }} Total</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Username</th>
+                                            <th>Role</th>
+                                            <th>Assignable</th>
+                                            <th>Login</th>
+                                            <th>Last Active</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for user_row in users %}
+                                        <tr class="{{ 'opacity-50' if not user_row.is_active }}">
+                                            <td>
+                                                <div class="fw-bold">{{ user_row.username }}</div>
+                                                <div class="small text-secondary">ID: {{ user_row.id }}</div>
+                                            </td>
+                                            <td>
+                                                <span
+                                                    class="badge {{ 'badge-admin' if user_row.role == 'admin' else 'badge-staff' }}">
+                                                    {% if user_row.role == 'admin' %}
+                                                    <i class="fa fa-shield-halved me-1"></i> ADMIN
+                                                    {% else %}
+                                                    <i class="fa fa-user me-1"></i> STAFF
+                                                    {% endif %}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <form method="POST"
+                                                    action="{{ url_for('auth.admin_toggle_user_assignment', username=user_row.username) }}">
+                                                    <button type="submit" class="border-0 bg-transparent p-0"
+                                                        title="Toggle Ticket Assignment">
+                                                        <div
+                                                            class="status-toggle {{ 'active' if user_row.is_assignable }}">
+                                                        </div>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                            <td>
+                                                <form method="POST"
+                                                    action="{{ url_for('auth.admin_toggle_user_status', username=user_row.username) }}">
+                                                    <button type="submit" class="border-0 bg-transparent p-0"
+                                                        title="Toggle Login Access" {{ 'disabled' if
+                                                        user_row.username==user.username }}>
+                                                        <div
+                                                            class="status-toggle {{ 'active' if user_row.is_active }} {{ 'opacity-50' if user_row.username == user.username }}">
+                                                        </div>
+                                                    </button>
+                                                </form>
+                                            </td>
+                                            <td>
+                                                <small>{{ user_row.last_login[:16] if user_row.last_login else 'Never'
+                                                    }}</small>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex gap-2">
+                                                    <div class="dropdown">
+                                                        <button class="btn btn-sm btn-light border dropdown-toggle"
+                                                            type="button" data-bs-toggle="dropdown">
+                                                            Actions
+                                                        </button>
+                                                        <ul class="dropdown-menu shadow">
+                                                            {% if user_row.role != 'admin' or user_row.username ==
+                                                            user.username
+                                                            %}
+                                                            <li><a class="dropdown-item" href="#"
+                                                                    onclick="showChangePasswordModal('{{ user_row.username }}')"><i class="fa fa-key me-1 text-warning"></i>
+                                                                    Reset Password</a></li>
+                                                            {% else %}
+                                                             <li><span class="dropdown-item text-secondary small"
+                                                                    title="Admin passwords can only be changed by the user themselves."><i class="fa fa-lock me-1"></i>
+                                                                    Reset Restricted</span></li>
+                                                            {% endif %}
+                                                        </ul>
+                                                    </div>
+                                                    {% if user_row.username != user.username %}
+                                                    <form method="POST"
+                                                        action="{{ url_for('auth.admin_delete_user', username=user_row.username) }}"
+                                                        onsubmit="return confirm('CRITICAL: This will PERMANENTLY delete user \'{{ user_row.username }}\' and unassign all their tickets. Are you sure?')">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                            title="Permanently Delete User">
+                                                            <i class="fa fa-trash-can"></i>
+                                                        </button>
+                                                    </form>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Create New Staff -->
+                    <div class="col-lg-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <span><i class="fa fa-user-plus me-2 text-success"></i> Create Staff</span>
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="{{ url_for('auth.admin_create_user') }}">
+                                    <div class="mb-3">
+                                        <label class="form-label">Username</label>
+                                        <input type="text" name="username" class="form-control"
+                                            placeholder="e.g. john_doe" required pattern="[a-zA-Z0-9_]+">
+                                        <div class="form-text">Letters, numbers, and underscores only.</div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Initial Password</label>
+                                        <input type="password" name="password" class="form-control" required
+                                            minlength="6">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Role</label>
+                                        <select name="role" class="form-select">
+                                            <option value="staff" selected>Support Staff</option>
+                                            <option value="admin">Administrator</option>
+                                        </select>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100"><i class="fa fa-plus me-1"></i> Create Account</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Staff Management - end -->
+
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Clients Settings Holidays & Modals - start -->
+                <!-- Client Management -->
+                <div id="managementClientView">
+                    <div class="row">
+                        <div class="col-lg-8">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <span><i class="fa fa-building me-2 text-primary"></i> Client Management</span>
+                                    <div id="mergeActionContainer" class="d-none d-flex gap-2 align-items-center">
+                                        <input type="text" id="mergeClientNameInput" class="form-control form-control-sm" placeholder="Type new or select existing..." list="existingClientList" style="min-width: 250px;">
+                                        <datalist id="existingClientList"></datalist>
+                                        <button class="btn btn-sm btn-success text-nowrap" onclick="mergeSelectedClients()"><i class="fa fa-code-merge me-1"></i> Merge Selected</button>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-hover" id="clientGroupsTable">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 40px;"><input type="checkbox" id="selectAllClients" class="form-check-input" onclick="toggleAllClientRows(this)"></th>
+                                                <th>Client Name</th>
+                                                <th>Domains (Comma Separated)</th>
+                                                <th>Type</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="clientGroupsTableBody">
+                                            <!-- Dynamically loaded -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <span><i class="fa fa-building-circle-check me-2 text-success"></i> Create Client</span>
+                                </div>
+                                <div class="card-body">
+                                    <form id="createClientForm" onsubmit="submitCreateClient(event)">
+                                        <div class="mb-3">
+                                            <label class="form-label">Client Name</label>
+                                            <input type="text" id="newClientName" class="form-control" required placeholder="e.g. Acme Corp">
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Domains</label>
+                                            <textarea id="newClientDomains" class="form-control" required placeholder="acme.com, acme.org"></textarea>
+                                            <div class="form-text">Comma separated list of domains.</div>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-100"><i class="fa fa-plus me-1"></i> Create Client</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Modernized System Configuration Center - start -->
+            <div id="section-settings" class="management-section">
+                <!-- Settings Top Action Bar -->
+                <div class="card mb-4 border-0 bg-transparent shadow-none">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                        <div>
+                            <h4 class="mb-1 fw-bold"><i class="fa fa-sliders me-2 text-primary"></i> System Configuration</h4>
+                            <p class="text-secondary small mb-0">Manage runtime environment settings, automated daemons, and integrations.</p>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loadSettings()" title="Reload from server">
+                                <i class="fa fa-rotate me-1"></i> Refresh
+                            </button>
+                            <button type="button" class="btn btn-sm btn-primary" onclick="saveSettings()">
+                                <i class="fa fa-floppy-disk me-1"></i> Save All Settings
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="settingsForm" onsubmit="event.preventDefault(); saveSettings();">
+                    <div class="row g-4">
+                        <!-- Card 1: Email & Ticket Polling Engine -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-inbox me-2 text-primary"></i> Email & Ticket Polling Engine</span>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">Microsoft Graph</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Monitored Mailbox</label>
+                                        <input type="email" class="form-control" name="USER_EMAIL" placeholder="support@domain.com">
+                                        <div class="form-text">Primary inbox monitored for incoming support tickets.</div>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Ticket Polling Interval (seconds)</label>
+                                            <input type="number" class="form-control" name="POLLING_INTERVAL" placeholder="600" min="30">
+                                            <div class="form-text">Sync frequency for new incoming emails & tickets.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Lookback Window (days)</label>
+                                            <input type="number" class="form-control" name="PROCESSING_DAYS_BACK" placeholder="2" min="1" max="30">
+                                            <div class="form-text">Scan depth for recent emails.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Test Mode & Safe Sandbox -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-flask-vial me-2 text-warning"></i> Test Mode & Safe Sandbox</span>
+                                    <div class="form-check form-switch m-0">
+                                        <input class="form-check-input" type="checkbox" name="TEST_MODE" id="testModeSwitch">
+                                        <label class="form-check-label fw-bold small" for="testModeSwitch">Enable Sandbox</label>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">Test Destination Email</label>
+                                        <input type="email" class="form-control" name="TEST_EMAIL" placeholder="qa.tester@domain.com">
+                                        <div class="form-text">Outgoing messages redirect to this address when Sandbox is enabled.</div>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Test CC Recipient</label>
+                                            <input type="text" class="form-control" name="TEST_CC" placeholder="optional@domain.com">
+                                            <div class="form-text">Optional copy address in test mode.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Subject Prefix Tag</label>
+                                            <input type="text" class="form-control" name="TEST_SUBJECT_TAG" placeholder="[TEST MODE] ">
+                                            <div class="form-text">Prefix prepended to test emails.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: AI & Automation Controls -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-wand-magic-sparkles me-2 text-info"></i> AI & Automation Engine</span>
+                                    <span class="badge bg-info-subtle text-info border border-info-subtle small">Intelligence</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="d-flex flex-column gap-3 mb-3">
+                                        <div class="form-check form-switch d-flex align-items-center justify-content-between p-0">
+                                            <div>
+                                                <label class="form-check-label fw-semibold d-block" for="enableAiSwitch">Enable AI Suggestions</label>
+                                                <span class="text-secondary small">Activate smart draft generation and email summarization.</span>
+                                            </div>
+                                            <input class="form-check-input ms-3" type="checkbox" name="ENABLE_AI" id="enableAiSwitch">
+                                        </div>
+                                        <div class="form-check form-switch d-flex align-items-center justify-content-between p-0">
+                                            <div>
+                                                <label class="form-check-label fw-semibold d-block" for="enableRagSwitch">Knowledge Base / RAG</label>
+                                                <span class="text-secondary small">Retrieve relevant context from Vector DB / documentation.</span>
+                                            </div>
+                                            <input class="form-check-input ms-3" type="checkbox" name="ENABLE_RAG" id="enableRagSwitch">
+                                        </div>
+                                        <div class="form-check form-switch d-flex align-items-center justify-content-between p-0">
+                                            <div>
+                                                <label class="form-check-label fw-semibold d-block" for="autoGenSwitch">Auto-Draft Responses</label>
+                                                <span class="text-secondary small">Automatically draft suggested replies for new incoming tickets.</span>
+                                            </div>
+                                            <input class="form-check-input ms-3" type="checkbox" name="AUTO_GENERATE_RESPONSES" id="autoGenSwitch">
+                                        </div>
+                                    </div>
+                                    <div class="pt-2 border-top">
+                                        <label class="form-label fw-semibold">RAG Top-K Results</label>
+                                        <input type="number" class="form-control" name="TOP_K_RESULTS" placeholder="5" min="1" max="20">
+                                        <div class="form-text">Number of similar reference items retrieved for context.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 4: Ticket Retention & Cleanup Daemon -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-broom me-2 text-danger"></i> Retention & Cleanup Daemon</span>
+                                    <div class="form-check form-switch m-0">
+                                        <input class="form-check-input" type="checkbox" name="ENABLE_TICKET_CLEANUP_DAEMON" id="cleanupDaemonSwitch">
+                                        <label class="form-check-label fw-bold small" for="cleanupDaemonSwitch">Active</label>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Soft-Delete (days)</label>
+                                            <input type="number" class="form-control" name="SOFT_DELETE_CLOSED_AFTER_DAYS" placeholder="1" min="1">
+                                            <div class="form-text">Days after closing before hiding from view.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Hard-Purge (days)</label>
+                                            <input type="number" class="form-control" name="HARD_DELETE_AFTER_DAYS" placeholder="6" min="1">
+                                            <div class="form-text">Days after closing before permanent removal.</div>
+                                        </div>
+                                    </div>
+                                    <div class="row g-3">
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Daemon Interval (sec)</label>
+                                            <input type="number" class="form-control" name="CLEANUP_DAEMON_INTERVAL_SECONDS" placeholder="3600" min="60">
+                                            <div class="form-text">Execution frequency of the cleanup loop.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Max Retention (days)</label>
+                                            <input type="number" class="form-control" name="DAYS_TO_KEEP_TICKET" placeholder="30" min="7">
+                                            <div class="form-text">Maximum overall ticket retention lifespan.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 5: SLA & Data Formatting -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-chart-line me-2 text-success"></i> SLA & Data Formatting</span>
+                                    <span class="badge bg-success-subtle text-success border border-success-subtle small">Analytics</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="d-flex flex-column gap-3 mb-3">
+                                        <div class="form-check form-switch d-flex align-items-center justify-content-between p-0">
+                                            <div>
+                                                <label class="form-check-label fw-semibold d-block" for="internalNoteResponseSwitch">Internal Notes in SLA</label>
+                                                <span class="text-secondary small">Count internal staff notes as a response for SLA First Response calculations.</span>
+                                            </div>
+                                            <input class="form-check-input ms-3" type="checkbox" name="INTERNAL_NOTE_AS_RESPONSE" id="internalNoteResponseSwitch">
+                                        </div>
+                                        <div class="form-check form-switch d-flex align-items-center justify-content-between p-0">
+                                            <div>
+                                                <label class="form-check-label fw-semibold d-block" for="tablePreviewSwitch">HTML Table Previews</label>
+                                                <span class="text-secondary small">Generate table preview extracts from tabular email content.</span>
+                                            </div>
+                                            <input class="form-check-input ms-3" type="checkbox" name="TABLES_INCLUDE_PREVIEW" id="tablePreviewSwitch">
+                                        </div>
+                                    </div>
+                                    <div class="pt-2 border-top">
+                                        <label class="form-label fw-semibold">Table Preview Rows</label>
+                                        <input type="number" class="form-control" name="TABLES_PREVIEW_ROWS" placeholder="8" min="1" max="50">
+                                        <div class="form-text">Max rows included in formatted table summaries.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 6: Azure DevOps Integration -->
+                        <div class="col-lg-6">
+                            <div class="card h-100 shadow-sm">
+                                <div class="card-header d-flex align-items-center justify-content-between">
+                                    <span><i class="fa fa-code-branch me-2 text-primary"></i> Azure DevOps Integration</span>
+                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">Work Items</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Organization URL / Name</label>
+                                            <input type="text" class="form-control" name="AZURE_DEVOPS_ORG" placeholder="https://dev.azure.com/your-org">
+                                            <div class="form-text">Azure DevOps instance.</div>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label fw-semibold">Default Project</label>
+                                            <input type="text" class="form-control" name="AZURE_DEVOPS_PROJECT" placeholder="Support-Engineering">
+                                            <div class="form-text">Target project board.</div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="form-label fw-semibold">DevOps Polling Interval (seconds)</label>
+                                        <input type="number" class="form-control" name="AZURE_DEVOPS_POLLING_INTERVAL" placeholder="600" min="30">
+                                        <div class="form-text">Frequency for syncing work items and issue statuses with Azure DevOps.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Modernized System Configuration Center - end -->
+
+            <!-- Holidays Section -->
+            <div id="section-holidays" class="management-section">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span><i class="fa fa-calendar-days me-2 text-primary"></i> Exchange Holidays</span>
+                            <span class="badge bg-primary" id="holidaysCountBadge">0 Total</span>
+                        </div>
+                        <div class="d-flex gap-2 align-items-center">
+                            <input type="text" id="holidaySearchInput" class="form-control form-control-sm" placeholder="Search holidays..." style="width: 200px;" oninput="onHolidaySearch()">
+                            <button id="addHolidayBtn" class="btn btn-sm btn-primary" onclick="showAddHolidayModal()" title="Add Holiday"><i class="fa fa-plus"></i></button>
+                            <button id="editHolidayBtn" class="btn btn-sm btn-warning" onclick="showEditHolidayModal()" title="Edit Selected Holiday" style="display:none;"><i class="fa fa-pen-to-square"></i></button>
+                            <button id="deleteHolidayBtn" class="btn btn-sm btn-danger" onclick="deleteSelectedHolidays()" title="Delete Selected Holidays" style="display:none;"><i class="fa fa-trash-can"></i></button>
+                            <button id="importHolidayBtn" class="btn btn-sm btn-info" onclick="showImportHolidayModal()" title="Update / Import Table"><i class="fa fa-file-excel"></i></button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle" id="holidaysTable" style="cursor: pointer;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 80px;">SR No.</th>
+                                    <th style="word-wrap: break-word; min-width: 200px; max-width: 300px; white-space: normal;">Holiday</th>
+                                    <th>Date</th>
+                                    <th>Day</th>
+                                </tr>
+                            </thead>
+                            <tbody id="holidaysTableBody">
+                                <!-- Populated dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="modal fade" id="changePasswordModal" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fa fa-key me-2 text-warning"></i> Change Password</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form method="POST" id="changePasswordForm">
+                        <div class="modal-body">
+                            <p>Updating password for: <strong id="changePasswordUsername"></strong></p>
+                            <div class="mb-3" id="changePasswordOldGroup">
+                                <label class="form-label">Current (Old) Password</label>
+                                <input type="password" class="form-control" id="changePasswordOldInput" name="old_password" placeholder="Enter your current password">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">New Secure Password</label>
+                                <input type="password" class="form-control" id="changePasswordNewInput" name="new_password" required minlength="6" placeholder="Minimum 6 characters">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Confirm New Password</label>
+                                <input type="password" class="form-control" id="changePasswordConfirmInput" name="confirm_password" required minlength="6" placeholder="Re-enter new password">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Update Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Drilldown Modal (Staff/Client) -->
+        <div class="modal fade" id="drilldownModal" tabindex="-1">
+            <div class="modal-dialog modal-xl">
+                <div class="modal-content" style="border-radius: 15px; overflow: hidden;">
+                    <div class="modal-header text-white p-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <div id="drilldownIcon" style="font-size: 2rem;"><i class="fa fa-circle-user"></i></div>
+                            <div>
+                                <h3 class="modal-title mb-0" id="drilldownTitle">Entity Name</h3>
+                                <p class="mb-0 opacity-75" id="drilldownSubtitle">Detailed Performance Analytics</p>
+                            </div>
+                        </div>
+<!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Clients Settings Holidays & Modals - end -->
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-3 bg-light">
+                        <!-- KPI Cards Row -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-2 col-sm-4" id="kpi-fcr-wrapper">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        FCR
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="First Contact Resolution (FCR): Number of tickets that were closed with exactly one staff response and never reopened.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-success" id="drill-kpi-fcr">0</div>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-sm-4" id="kpi-ttr-wrapper">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        TTR
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="Time to Resolution (TTR): Total duration from ticket creation to its final resolution/closed state.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-warning" id="drill-kpi-res">0h</div>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-sm-4">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        FRT
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="First Response Time: Time from ticket ingestion to the first reply sent by staff.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-info" id="drill-kpi-frt">0m</div>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-sm-4">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        CRT
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="Average Client Response Time: Sum of intervals between staff reply and subsequent client reply, divided by total client replies. Measures customer responsiveness.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-primary" id="drill-kpi-client-resp">0m</div>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-sm-4">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        Iterations
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="Average Iterations: Total closed-to-open transitions (reopen count) divided by total tickets. Measures issue resolution complexity.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-danger" id="drill-kpi-iterations">0</div>
+                                </div>
+                            </div>
+                            <div class="col-md-2 col-sm-4" id="kpi-efficiency-wrapper">
+                                <div class="card border-0 shadow-sm text-center p-2 position-relative">
+                                    <div class="text-secondary small text-uppercase d-flex align-items-center justify-content-center gap-1"
+                                        style="font-size: 0.7rem;">
+                                        Efficiency
+                                        <span class="badge rounded-circle bg-secondary text-white cursor-pointer"
+                                            style="cursor: pointer;" tabindex="0" data-bs-toggle="popover"
+                                            data-bs-placement="top" data-bs-trigger="focus"
+                                            data-bs-content="Quality-Adjusted Resolution Efficiency: Calculated as Resolution Rate penalized by the ratio of Reopens to Closed tickets. Reward first-contact resolutions.">?</span>
+                                    </div>
+                                    <div class="h4 mb-0 text-success" id="drill-kpi-efficiency">0%</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Row -->
+                        <div class="row g-4">
+                            <div class="col-lg-8">
+                                <div class="card border-0 shadow-sm p-4 h-100">
+                                    <h5 class="mb-4" id="trendHeader"><span id="trendStatusPrefix"></span>Tickets: <span id="trendTotalCount">0</span></h5>
+                                    <div style="height: 300px;">
+                                        <canvas id="drilldownChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="card border-0 shadow-sm p-4 h-100">
+                                    <h5 class="mb-4">Distribution</h5>
+                                    <div
+                                        style="height: 300px; display: flex; align-items: center; justify-content: center;">
+                                        <canvas id="distributionChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Holiday Modal -->
+        <div class="modal fade" id="addHolidayModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">➕ Add Holiday</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form id="addHolidayForm" onsubmit="submitAddHoliday(event)">
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">Holiday Name</label>
+                                <input type="text" id="addHolidayName" class="form-control" placeholder="e.g. Republic Day" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date</label>
+                                <input type="date" id="addHolidayDate" class="form-control" required onchange="deriveDayName('add')">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Day</label>
+                                <input type="text" id="addHolidayDay" class="form-control" readonly placeholder="Day will be derived automatically">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Table Modal (Paste holidays) -->
+        <div class="modal fade" id="importHolidayModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">📝 Update Holidays Table</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form id="importHolidayForm" onsubmit="submitImportHolidays(event)">
+                        <div class="modal-body">
+                            <p class="text-secondary small">Paste the list of holidays from BSE below in the following format (tab or space separated):</p>
+                            <pre class="bg-light p-2 rounded small" style="font-size: 0.75rem; color: #555;">
+Sr.NO.	Holidays	Date	Day
+1	MCGM Election day	15-Jan-26	Thursday
+2	Republic Day	26-Jan-26	Monday</pre>
+                            <div class="mb-3">
+                                <label class="form-label">Pasted List</label>
+                                <textarea id="importHolidayText" class="form-control" rows="10" placeholder="Paste the holiday list here..." required></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Parse & Update</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Edit Holiday Modal -->
+        <div class="modal fade" id="editHolidayModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">✏️ Edit Holiday</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <form id="editHolidayForm" onsubmit="submitEditHoliday(event)">
+                        <div class="modal-body">
+                            <input type="hidden" id="editHolidayOldDate">
+                            <div class="mb-3">
+                                <label class="form-label">Holiday Name</label>
+                                <input type="text" id="editHolidayName" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date</label>
+                                <input type="date" id="editHolidayDate" class="form-control" required onchange="deriveDayName('edit')">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Day</label>
+                                <input type="text" id="editHolidayDay" class="form-control" readonly>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fetch/Import Summary Modal -->
+        <div class="modal fade" id="importSummaryModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title">📋 Import Summary</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="p-3 bg-light rounded">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Records Added:</span>
+                                <strong class="text-success" id="summaryAdded">0</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Records Updated:</span>
+                                <strong class="text-primary" id="summaryUpdated">0</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Records Merged:</span>
+                                <strong class="text-warning" id="summaryMerged">0</strong>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span>Records Skipped:</span>
+                                <strong class="text-secondary" id="summarySkipped">0</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        
+        <script type="application/json" id="users-data">
+            {{ users | tojson | safe }}
+        </script>
+        <script type="application/json" id="staff-data">
+            {{ staff_members | tojson | safe }}
+        </script>
+
+        <script>
+            const allUsers = JSON.parse(document.getElementById('users-data').textContent);
+            const staffMembers = JSON.parse(document.getElementById('staff-data').textContent);
+        </script>
+        <script src="{{ url_for('static', filename='management/management.js') }}?v=20260901_7"></script>
+
+</body>
+
+</html>

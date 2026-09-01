@@ -168,9 +168,12 @@ def create_devops_work_item():
             'System.Tags': data.get('tags', '')
         }
 
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project creation & priority validation - start
         if data.get('priority'):
             try:
-                fields['Microsoft.VSTS.Common.Priority'] = int(data.get('priority'))
+                p_val = int(data.get('priority'))
+                if 1 <= p_val <= 4:
+                    fields['Microsoft.VSTS.Common.Priority'] = p_val
             except (ValueError, TypeError):
                 pass
 
@@ -182,15 +185,12 @@ def create_devops_work_item():
             if data.get('system_info'):
                 fields['Microsoft.VSTS.TCM.SystemInfo'] = data.get('system_info')
 
-        if target_project and target_project != devops_connector.project:
-            orig_proj = devops_connector.project
-            try:
-                devops_connector.project = target_project
-                created_item = devops_connector.create_work_item(work_item_type, fields, attachment_urls=attachment_urls)
-            finally:
-                devops_connector.project = orig_proj
-        else:
-            created_item = devops_connector.create_work_item(work_item_type, fields, attachment_urls=attachment_urls)
+        created_item = devops_connector.create_work_item(
+            work_item_type=work_item_type,
+            fields=fields,
+            project=target_project,
+            attachment_urls=attachment_urls
+        )
 
         if not created_item:
             return jsonify({'error': 'Failed to create work item in Azure DevOps'}), 500
@@ -205,14 +205,18 @@ def create_devops_work_item():
     except Exception as e:
         logger.error(f"Error creating DevOps work item: {e}")
         return jsonify({'error': str(e)}), 500
+        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project creation & priority validation - end
 
 
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Require login for DevOps user directory enumeration - start
 @devops_bp.route('/api/devops/users')
+@login_required
 def search_devops_users():
     """Search Azure DevOps organization users dynamically with typeahead."""
     query = request.args.get('q', '')
     users = devops_connector.search_users(query=query)
     return jsonify({'users': users, 'configured': devops_connector.is_configured})
+# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Require login for DevOps user directory enumeration - end
 
 
 @devops_bp.route('/api/devops/link', methods=['POST'])
