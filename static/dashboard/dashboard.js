@@ -368,6 +368,24 @@ function getFilterUsersList() {
     return Array.from(userMap.values());
 }
 
+/**
+ * Calculates the number of active/open tickets assigned to or collaborated by a user.
+ * @param {string} username - Target staff username
+ * @param {string} roleField - 'assigned_to' / 'assigned' or 'co_worker' / 'coworker'
+ * @returns {number} Active/open ticket count
+ */
+function getActiveTicketCount(username, roleField) {
+    if (!username || !currentTickets || currentTickets.length === 0) return 0;
+    const target = username.toLowerCase();
+    const isCoworker = (roleField === 'co_worker' || roleField === 'coworker');
+    return currentTickets.filter(t => {
+        const assigned = isCoworker ? t.co_worker : t.assigned_to;
+        if (!assigned || assigned.toLowerCase() !== target) return false;
+        const status = normalizeStatus(t.status);
+        return status === 'Open' || status === 'Review';
+    }).length;
+}
+
 function renderFilterComboboxDropdown(type, query) {
     const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
     const dropdown = document.getElementById(dropdownId);
@@ -379,6 +397,13 @@ function renderFilterComboboxDropdown(type, query) {
     if (type === 'assigned') {
         const users = getFilterUsersList();
         const matches = users.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
+
+        matches.sort((a, b) => {
+            const countA = getActiveTicketCount(a.username, 'assigned');
+            const countB = getActiveTicketCount(b.username, 'assigned');
+            if (countB !== countA) return countB - countA;
+            return a.username.localeCompare(b.username);
+        });
 
         html += `
             <div class="combobox-item ${currentAssignmentFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', null);" onclick="selectFilterCombobox('assigned', null);">
@@ -392,13 +417,14 @@ function renderFilterComboboxDropdown(type, query) {
         if (matches.length > 0) {
             matches.forEach(u => {
                 const isSelected = currentAssignmentFilter === u.username ? 'active' : '';
-                const roleBadge = u.role === 'admin'
-                    ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>'
-                    : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+                const count = getActiveTicketCount(u.username, 'assigned');
+                const ticketBadge = count > 0
+                    ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${count} active ticket${count === 1 ? '' : 's'}">${count} active</span>`
+                    : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
                 html += `
                     <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', '${escapeHtml(u.username)}');" onclick="selectFilterCombobox('assigned', '${escapeHtml(u.username)}');">
                         <span><i class="fa fa-user me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(u.username)}</strong></span>
-                        ${roleBadge}
+                        ${ticketBadge}
                     </div>
                 `;
             });
@@ -413,6 +439,13 @@ function renderFilterComboboxDropdown(type, query) {
         const users = getFilterUsersList();
         const matches = users.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
 
+        matches.sort((a, b) => {
+            const countA = getActiveTicketCount(a.username, 'co_worker');
+            const countB = getActiveTicketCount(b.username, 'co_worker');
+            if (countB !== countA) return countB - countA;
+            return a.username.localeCompare(b.username);
+        });
+
         html += `
             <div class="combobox-item ${currentCoworkerFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', null);" onclick="selectFilterCombobox('coworker', null);">
                 <span><i class="fa fa-users me-2 text-muted"></i> <em>All Co-Workers</em></span>
@@ -425,13 +458,14 @@ function renderFilterComboboxDropdown(type, query) {
         if (matches.length > 0) {
             matches.forEach(u => {
                 const isSelected = currentCoworkerFilter === u.username ? 'active' : '';
-                const roleBadge = u.role === 'admin'
-                    ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>'
-                    : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+                const count = getActiveTicketCount(u.username, 'co_worker');
+                const ticketBadge = count > 0
+                    ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${count} active ticket${count === 1 ? '' : 's'}">${count} active</span>`
+                    : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
                 html += `
                     <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', '${escapeHtml(u.username)}');" onclick="selectFilterCombobox('coworker', '${escapeHtml(u.username)}');">
                         <span><i class="fa fa-user-friends me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(u.username)}</strong></span>
-                        ${roleBadge}
+                        ${ticketBadge}
                     </div>
                 `;
             });
@@ -2156,6 +2190,15 @@ function renderComboboxDropdown(field, query) {
     const lowerQuery = (query || '').toLowerCase();
     const matches = assignableUsersList.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
 
+    matches.sort((a, b) => {
+        const countA = getActiveTicketCount(a.username, field);
+        const countB = getActiveTicketCount(b.username, field);
+        if (countB !== countA) {
+            return countB - countA;
+        }
+        return a.username.localeCompare(b.username);
+    });
+
     let html = '';
     if (field === 'co_worker') {
         html += `
@@ -2173,13 +2216,15 @@ function renderComboboxDropdown(field, query) {
 
     if (matches.length > 0) {
         matches.forEach(u => {
-            const roleBadge = u.role === 'admin' 
-                ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>' 
-                : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+            const count = getActiveTicketCount(u.username, field);
+            const ticketBadge = count > 0
+                ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${count} active ticket${count === 1 ? '' : 's'}">${count} active</span>`
+                : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
+            const iconClass = field === 'co_worker' ? 'fa fa-user-friends' : 'fa fa-user';
             html += `
                 <div class="combobox-item" onmousedown="event.preventDefault(); selectComboboxUser('${field}', '${escapeHtml(u.username)}');" onclick="selectComboboxUser('${field}', '${escapeHtml(u.username)}');">
-                    <span><i class="fa fa-user me-2 text-primary"></i> <strong>${escapeHtml(u.username)}</strong></span>
-                    ${roleBadge}
+                    <span><i class="${iconClass} me-2 text-primary"></i> <strong>${escapeHtml(u.username)}</strong></span>
+                    ${ticketBadge}
                 </div>
             `;
         });

@@ -5,6 +5,7 @@ body.dark-mode .text-secondary,
 body.dark-mode .text-muted {
     color: #cbd5e1 !important;
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Stylesheet Tokens Cleanup - end */
 
 /* Dark mode overrides for Quill's interface */
@@ -368,6 +369,7 @@ body.dark-mode .autocomplete-suggestion.active {
 body.dark-mode .devops-user-suggestion:hover {
     background: rgba(13, 110, 253, 0.25);
 }
+
 /* Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - DevOps Assignee Typeahead Autocomplete Styles - end */
 
 /* Filter button active states */
@@ -891,6 +893,7 @@ body.dark-mode .message-header {
     color: #ffffff;
     border-color: var(--accent);
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Filter Button Theme Tokens - end */
 
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Pill Toggle Shared Tokens - start */
@@ -898,6 +901,7 @@ body.dark-mode .message-header {
     margin-right: 0.25rem;
     flex-shrink: 0;
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Dashboard Pill Toggle Shared Tokens - end */
 
 .filter-dropdown {
@@ -987,6 +991,7 @@ body.dark-mode .refresh-btn-icon:hover {
     opacity: 1;
     transform: translateY(0);
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Refresh Button & Indicator Styles - end */
 
 .filter-dropdown-content {
@@ -1140,9 +1145,11 @@ body.dark-mode .unread-badge {
     0% {
         box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.35);
     }
+
     70% {
         box-shadow: 0 0 0 4px rgba(245, 158, 11, 0);
     }
+
     100% {
         box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
     }
@@ -1454,7 +1461,10 @@ body.dark-mode .assignment-badge.unassigned {
     font-size: 0.9rem;
     color: var(--text-secondary);
     margin-bottom: 1rem;
-    flex-wrap: wrap;/* SLA & Timeline Enhancements */
+    flex-wrap: wrap;
+
+}
+/* SLA & Timeline Enhancements */
 /* Ticket Audit Logs Refinement */
 .sla-dashboard-container {
     background: var(--bg-primary);
@@ -1505,8 +1515,15 @@ body.dark-mode .assignment-badge.unassigned {
     color: var(--text-secondary);
 }
 
-.sla-status-badge.met { background: #dcfce7; color: #166534; }
-.sla-status-badge.breached { background: #fee2e2; color: #991b1b; }
+.sla-status-badge.met {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.sla-status-badge.breached {
+    background: #fee2e2;
+    color: #991b1b;
+}
 
 .audit-logs-table {
     font-size: 0.85rem;
@@ -1562,15 +1579,50 @@ body.dark-mode .assignment-badge.unassigned {
     display: inline-block;
 }
 
-.badge-received { background: #dcfce7; color: #166534; }
-.badge-sent { background: #dbeafe; color: #1e40af; }
-.badge-status { background: #fef3c7; color: #92400e; }
-.badge-assign { background: #f3e8ff; color: #6b21a8; }
-.badge-ai { background: #f1f5f9; color: #475569; }
-.badge-coworker { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-.badge-timer { background: rgba(245, 158, 11, 0.15); color: #d97706; }
-body.dark-mode .badge-coworker { background: rgba(139, 92, 246, 0.25); color: #a78bfa; }
-body.dark-mode .badge-timer { background: rgba(245, 158, 11, 0.25); color: #fbbf24; }
+.badge-received {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-sent {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-status {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-assign {
+    background: #f3e8ff;
+    color: #6b21a8;
+}
+
+.badge-ai {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+.badge-coworker {
+    background: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
+}
+
+.badge-timer {
+    background: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+}
+
+body.dark-mode .badge-coworker {
+    background: rgba(139, 92, 246, 0.25);
+    color: #a78bfa;
+}
+
+body.dark-mode .badge-timer {
+    background: rgba(245, 158, 11, 0.25);
+    color: #fbbf24;
+}
 
 .metadata-block {
     background: #0f172a;
@@ -1593,48 +1645,119 @@ body.dark-mode .badge-timer { background: rgba(245, 158, 11, 0.25); color: #fbbf
 body.dark-mode .sla-metric-card {
     background: var(--bg-card);
     border-color: var(--border-color);
-    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
 }
 
 body.dark-mode .gridjs-container {
     color: var(--text-primary);
 }
 
-body.dark-mode .gridjs-td {
+body.dark-mode .gridjs-wrapper {
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+body.dark-mode th.gridjs-th {
+    background-color: var(--bg-surface-alt) !important;
+    color: var(--text-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode td.gridjs-td {
     background-color: var(--bg-card) !important;
     color: var(--text-primary) !important;
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .gridjs-th {
-    background-color: var(--bg-primary) !important;
+body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
+    background-color: var(--bg-surface-alt) !important;
+}
+
+/* Row Hover / Highlight */
+body.dark-mode .gridjs-tr:hover .gridjs-td,
+body.dark-mode .gridjs-tr.gridjs-tr-selected .gridjs-td,
+body.dark-mode #auditGrid .table-hover tbody tr:hover td,
+body.dark-mode #auditGrid .table-hover tbody tr:hover>* {
+    background-color: rgba(52, 211, 153, 0.12) !important;
     color: var(--text-primary) !important;
+}
+
+/* Search Box Theming */
+body.dark-mode .gridjs-search,
+body.dark-mode .gridjs-head {
+    background-color: transparent !important;
+}
+
+body.dark-mode input.gridjs-input,
+body.dark-mode .gridjs-search-input {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px !important;
+}
+
+body.dark-mode input.gridjs-input::placeholder {
+    color: var(--text-muted) !important;
+}
+
+body.dark-mode input.gridjs-input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.25) !important;
+    outline: none !important;
+}
+
+/* Bottom Columns / Footer & Pagination */
+body.dark-mode .gridjs-footer {
+    background-color: var(--bg-surface-alt) !important;
+    border: 1px solid var(--border-color) !important;
+    border-top: none !important;
+    color: var(--text-secondary) !important;
+    box-shadow: none !important;
+}
+
+body.dark-mode .gridjs-pagination .gridjs-summary {
+    color: var(--text-secondary) !important;
+}
+
+body.dark-mode .gridjs-pagination .gridjs-pages button {
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-primary) !important;
+    border-radius: 4px;
+    margin: 0 2px;
+}
+
+body.dark-mode .gridjs-pagination .gridjs-pages button:hover:not(:disabled) {
+    background-color: var(--accent) !important;
+    color: #ffffff !important;
+    border-color: var(--accent) !important;
+}
+
+body.dark-mode .gridjs-pagination .gridjs-pages button.gridjs-currentPage {
+    background-color: var(--accent) !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border-color: var(--accent) !important;
+}
+
+body.dark-mode .gridjs-pagination .gridjs-pages button:disabled,
+body.dark-mode .gridjs-pagination .gridjs-pages button[disabled] {
+    background-color: var(--bg-surface-alt) !important;
+    color: var(--text-muted) !important;
+    opacity: 0.45 !important;
     border-color: var(--border-color) !important;
 }
 
-body.dark-mode .gridjs-tr:nth-child(even) .gridjs-td {
-    background-color: var(--bg-primary) !important;
-}
-
-.dark-mode .gridjs-footer {
-    background-color: #0f172a !important;
-    border-top-color: #334155 !important;
-    color: #cbd5e1 !important;
-}
-
-.dark-mode .gridjs-search-input {
-    background-color: #1e293b !important;
-    color: white !important;
-    border-color: #334155 !important;
-}
-
-.dark-mode .date-separator {
+body.dark-mode .date-separator {
     background: #1e293b;
     color: #94a3b8;
     border-color: #334155;
 }
 
-.dark-mode .badge-ai { background: #334155; color: #cbd5e1; }
+body.dark-mode .badge-ai {
+    background: #334155;
+    color: #cbd5e1;
 }
 
 .message-card.customer-message {
@@ -1824,6 +1947,7 @@ body.dark-mode .close-btn:hover {
     box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
     transform: none;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized Centered Close Buttons with Subtle Glow - end */
 
 .modal-header-actions {
@@ -1939,6 +2063,7 @@ body.dark-mode .close-btn:hover {
     align-items: center;
     gap: 0.5rem;
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Info Section Theme Tokens - end */
 
 .info-item {
@@ -2112,6 +2237,7 @@ body.dark-mode .attachment-tile:hover {
     color: var(--primary-color);
     background-color: var(--bg-hover);
 }
+
 /* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Gmail style attachment tiles with thumbnail compression - end */
 
 .email-composer {
@@ -2326,6 +2452,7 @@ body.dark-mode .attachment-tile:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 10px rgba(45, 106, 79, 0.25) !important;
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Composer Action Buttons - end */
 
 .btn {
@@ -2548,24 +2675,20 @@ body.dark-mode .sla-card-long-running {
     bottom: 0;
     left: 0;
     transform: translateX(-100%);
-    background-image: linear-gradient(
-        90deg,
-        rgba(255, 255, 255, 0) 0,
-        rgba(255, 255, 255, 0.2) 20%,
-        rgba(255, 255, 255, 0.5) 60%,
-        rgba(255, 255, 255, 0)
-    );
+    background-image: linear-gradient(90deg,
+            rgba(255, 255, 255, 0) 0,
+            rgba(255, 255, 255, 0.2) 20%,
+            rgba(255, 255, 255, 0.5) 60%,
+            rgba(255, 255, 255, 0));
     animation: shimmer 2s infinite;
 }
 
 body.dark-mode .skeleton::after {
-    background-image: linear-gradient(
-        90deg,
-        rgba(0, 0, 0, 0) 0,
-        rgba(255, 255, 255, 0.05) 20%,
-        rgba(255, 255, 255, 0.1) 60%,
-        rgba(0, 0, 0, 0)
-    );
+    background-image: linear-gradient(90deg,
+            rgba(0, 0, 0, 0) 0,
+            rgba(255, 255, 255, 0.05) 20%,
+            rgba(255, 255, 255, 0.1) 60%,
+            rgba(0, 0, 0, 0));
 }
 
 @keyframes shimmer {
@@ -2776,18 +2899,22 @@ body.dark-mode .sending-overlay-content {
     transition: all 0.3s ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
+
 .clear-date-btn:hover {
     border-color: #e74c3c;
     color: #e74c3c;
     transform: translateY(-1px);
 }
+
 #dateFilter {
     cursor: pointer;
 }
+
 #dateFilter::-webkit-calendar-picker-indicator {
     cursor: pointer;
     filter: var(--calendar-icon-filter, none);
 }
+
 body.dark-mode {
     --calendar-icon-filter: invert(1);
 }
@@ -2987,6 +3114,7 @@ body.dark-mode .devops-header {
         opacity: 0;
         transform: translateY(-6px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -3007,6 +3135,7 @@ body.dark-mode .devops-header {
     max-height: 400px;
     overflow-y: auto;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Floating Dropdown Menu Styles - end */
 
 .devops-link-row {
@@ -3068,6 +3197,7 @@ body.dark-mode .devops-header {
     gap: 0.6rem;
     flex-wrap: wrap;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Zero Page Styles - end */
 
 /* Individual DevOps Work Item Card */
@@ -3145,6 +3275,7 @@ body.dark-mode .devops-card-unlink-btn:hover {
     box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
     transform: none;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Standardized DevOps Unlink Button - end */
 
 .devops-card-meta {
@@ -3191,16 +3322,50 @@ body.dark-mode .devops-badge-id {
     text-transform: capitalize;
 }
 
-.devops-state-new { background: #e0f2fe; color: #0284c7; }
-.devops-state-active { background: #ffedd5; color: #ea580c; }
-.devops-state-resolved { background: #dcfce7; color: #16a34a; }
-.devops-state-closed { background: #f1f5f9; color: #64748b; }
-.devops-state-other { background: #f3f4f6; color: #4b5563; }
+.devops-state-new {
+    background: #e0f2fe;
+    color: #0284c7;
+}
 
-body.dark-mode .devops-state-new { background: #082f49; color: #38bdf8; }
-body.dark-mode .devops-state-active { background: #431407; color: #fb923c; }
-body.dark-mode .devops-state-resolved { background: #052e16; color: #4ade80; }
-body.dark-mode .devops-state-closed { background: #1e293b; color: #94a3b8; }
+.devops-state-active {
+    background: #ffedd5;
+    color: #ea580c;
+}
+
+.devops-state-resolved {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.devops-state-closed {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.devops-state-other {
+    background: #f3f4f6;
+    color: #4b5563;
+}
+
+body.dark-mode .devops-state-new {
+    background: #082f49;
+    color: #38bdf8;
+}
+
+body.dark-mode .devops-state-active {
+    background: #431407;
+    color: #fb923c;
+}
+
+body.dark-mode .devops-state-resolved {
+    background: #052e16;
+    color: #4ade80;
+}
+
+body.dark-mode .devops-state-closed {
+    background: #1e293b;
+    color: #94a3b8;
+}
 
 .devops-card-tags {
     display: flex;
@@ -3298,6 +3463,7 @@ body.dark-mode .devops-open-link {
     overflow-y: auto;
     flex: 1;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Section & Drawer Styles - end */
 
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Header Action Buttons Styles - start */
@@ -3453,6 +3619,7 @@ body.dark-mode .modal-action-select:focus {
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(231, 76, 60, 0.25) !important;
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Modal Header Action Buttons Styles - end */
 
 /* ==========================================================================
@@ -3577,7 +3744,8 @@ body.dark-mode .toolbar-btn:hover {
     font-style: italic;
 }
 
-.tiptap-editor-element ul, .tiptap-editor-element ol {
+.tiptap-editor-element ul,
+.tiptap-editor-element ol {
     padding-left: 1.25rem;
     margin-bottom: 0.5rem;
 }
@@ -3586,6 +3754,7 @@ body.dark-mode .toolbar-btn:hover {
     color: #0078d4;
     text-decoration: underline;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor Styles - end */
 
 /* ==========================================================================
@@ -3651,6 +3820,7 @@ body.dark-mode .toolbar-btn:hover {
 .sender-avatar.customer {
     background: linear-gradient(135deg, #0078d4 0%, #4daafc 100%);
 }
+
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Internal Note & Avatar Tokens - end */
 
 .msg-time-badge {
@@ -3703,6 +3873,7 @@ body.dark-mode .msg-header-cols {
     white-space: normal;
     line-height: 1.35;
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Multi-line wrap for full visibility of recipients - end */
 
 /* Time Gap Divider */
@@ -3756,6 +3927,7 @@ body.dark-mode .msg-header-cols {
     background: var(--border-color);
     color: var(--text-primary);
 }
+
 /* Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Email Chain UI/UX Overhaul Styles - end */
 
 /* Bilal Khan (31/08/2026) Issue No  Sheet_Name  - DevOps Media Attachments & Inline Image Resizer Styles - start */
@@ -4357,6 +4529,7 @@ body.dark-mode .flatpickr-am-pm {
         opacity: 0;
         transform: translateY(-6px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -4673,13 +4846,19 @@ body.dark-mode .flatpickr-am-pm {
 }
 
 @keyframes subjectScrollPingPong {
-    0%, 15% {
+
+    0%,
+    15% {
         transform: translateX(0);
     }
-    50%, 65% {
+
+    50%,
+    65% {
         transform: translateX(var(--scroll-distance, -120px));
     }
-    90%, 100% {
+
+    90%,
+    100% {
         transform: translateX(0);
     }
 }
