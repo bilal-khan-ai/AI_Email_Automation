@@ -42,8 +42,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modules.image_processor import ImageProcessor
-    from modules.tables_processor import TablesProcessor
+    from services.processors.image_processor import ImageProcessor
+    from services.processors.tables_processor import TablesProcessor
 
 # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Hoist PdfReader import with graceful fallback - start
 try:

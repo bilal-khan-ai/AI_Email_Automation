@@ -8,6 +8,7 @@ Authentication and user management HTTP routes:
 - User self password change
 """
 
+import re
 import secrets
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for, flash
 import auth
@@ -226,7 +227,66 @@ def user_change_password():
         return jsonify({'success': True, 'message': 'Password updated successfully'})
     else:
         return jsonify({'error': 'Failed to update password'}), 500
-    # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - end
+
+
+@auth_bp.route('/api/users/quick-add', methods=['POST'])
+@login_required
+def quick_add_user():
+    """Quickly register an organization employee and make them assignable. Admin only."""
+    import os
+    current_user_role = session.get('user', {}).get('role', 'staff')
+    if current_user_role != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+
+    data = request.get_json(silent=True) or request.form
+    first_name = (data.get('first_name') or '').strip()
+    last_name = (data.get('last_name') or '').strip()
+    role = (data.get('role') or 'staff').strip().lower()
+    if role not in ['staff', 'admin']:
+        role = 'staff'
+
+    clean_first = re.sub(r'[^a-zA-Z0-9]', '', first_name).lower()
+    clean_last = re.sub(r'[^a-zA-Z0-9]', '', last_name).lower()
+
+    if not clean_first or not clean_last:
+        return jsonify({'error': 'Both first name and last name are required to generate the employee ID.'}), 400
+
+    username = f"{clean_first}_{clean_last}"
+
+    existing = auth.user_manager.get_user(username)
+    if existing:
+        return jsonify({
+            'success': True,
+            'already_existed': True,
+            'user': {
+                'id': existing.get('id'),
+                'username': existing.get('username'),
+                'role': existing.get('role'),
+                'is_assignable': existing.get('is_assignable', True)
+            },
+            'message': f"Employee '{username}' is already registered."
+        })
+
+    default_password = os.environ.get('DEFAULT_USER_PASSWORD') or os.environ.get('QUICK_ADD_PASSWORD')
+    if not default_password:
+        return jsonify({'error': 'DEFAULT_USER_PASSWORD is not configured in environment.'}), 500
+
+    created = auth.user_manager.create_user(username=username, password=default_password, role=role)
+    if created:
+        new_user = auth.user_manager.get_user(username)
+        return jsonify({
+            'success': True,
+            'already_existed': False,
+            'user': {
+                'id': new_user.get('id') if new_user else None,
+                'username': username,
+                'role': role,
+                'is_assignable': True
+            },
+            'message': f"Employee '{username}' registered successfully."
+        })
+    else:
+        return jsonify({'error': f"Failed to register employee '{username}'"}), 500
+
 
 __all__ = ['auth_bp']
-# Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Auth & User Management Blueprint - end

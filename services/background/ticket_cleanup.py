@@ -1,9 +1,9 @@
 import argparse
 import logging
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from config import Config
-from modules.sql_logger import SQLLogger
+from data_access.sql_logger import SQLLogger
 
 # Configure logging
 logging.basicConfig(
@@ -29,7 +29,7 @@ def run_cleanup(mode, date_arg=None):
     # --- 1. DETERMINE RULES ---
     if mode == 'auto':
         days = getattr(Config, 'DAYS_TO_KEEP_TICKET', 30)
-        cutoff_date = datetime.now() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         # Safe Mode: Only Closed tickets, based on last activity
         criteria_sql = "status = 'Closed' AND last_updated < %s"
         date_param = cutoff_date
@@ -66,7 +66,7 @@ def run_cleanup(mode, date_arg=None):
                 logger.info(f"🗑️  Found {count} tickets to clean. Starting purge...")
 
                 # Step B: Mark tickets as soft-deleted (status = 'Deleted') if they aren't already
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 cur.execute(f"""
                     UPDATE tickets 
                     SET deleted_at = COALESCE(deleted_at, %s),

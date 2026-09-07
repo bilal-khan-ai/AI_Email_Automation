@@ -26,10 +26,10 @@ class ActionType:
     AI_DRAFT_UPDATED = "AI_DRAFT_UPDATED"
     TICKET_DELETED = "TICKET_DELETED"
     TICKET_RESTORED = "TICKET_RESTORED"
-    # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add DevOps ActionTypes - start
     DEVOPS_ITEM_LINKED = "DEVOPS_ITEM_LINKED"
     DEVOPS_ITEM_UNLINKED = "DEVOPS_ITEM_UNLINKED"
-    # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add DevOps ActionTypes - end
+    COWORKER_CHANGED = "COWORKER_CHANGED"
+    TIMELIMIT_CHANGED = "TIMELIMIT_CHANGED"
 
 
 class ActorType:
@@ -80,7 +80,7 @@ class PostgreSQLConnectionManager:
                 user=self.user,
                 password=self.password,
                 connect_timeout=10,
-                options='-c statement_timeout=30000'
+                options='-c statement_timeout=30000 -c timezone=Asia/Kolkata'
             )
             logger.info(f"✅ PostgreSQL connection pool initialized: {self.host}:{self.port}/{self.database}")
         except psycopg2.Error as e:
@@ -107,7 +107,7 @@ class PostgreSQLConnectionManager:
                     user=self.user,
                     password=self.password,
                     connect_timeout=10,
-                    options='-c statement_timeout=30000'
+                    options='-c statement_timeout=30000 -c timezone=Asia/Kolkata'
                 )
             
             # Test connection health

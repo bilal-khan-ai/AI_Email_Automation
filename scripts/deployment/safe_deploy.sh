@@ -137,6 +137,11 @@ $SSH_CMD $SSH_USER@$VM_IP << EOF
 
     # Step 3.4: Safe Deployment (ONLY web and worker, db UNTOUCHED)
     if [ "$MODE" == "build" ]; then
+        # Stop existing containers BEFORE build to reclaim RAM on constrained VM.
+        # Docker build + pip resolver peaks at ~700 MB; old containers add +200-400 MB
+        # which pushes a 1 GB VM into deep swap and risks OOM-killing PostgreSQL.
+        echo "🛑 Stopping web and worker to free RAM before build..."
+        eval "\$SUDO \$COMPOSE_CMD stop web worker 2>/dev/null || true"
         eval "\$SUDO \$COMPOSE_CMD up -d --no-deps --build web worker"
     else
         eval "\$SUDO \$COMPOSE_CMD up -d --no-deps web worker"

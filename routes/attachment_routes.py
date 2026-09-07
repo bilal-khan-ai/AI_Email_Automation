@@ -37,13 +37,44 @@ def silent_404():
     return jsonify({'error': 'Not Found'}), 404
 
 
+def compute_image_content_hash(data: bytes, is_image: bool = False) -> str:
+    """
+    Compute deterministic SHA-256 content hash.
+    For images, decodes the raster pixels to strip all EXIF, XMP, IPTC, creation dates,
+    and container metadata.
+    For non-images, hashes the raw binary stream.
+    """
+    if is_image:
+        try:
+            from PIL import Image
+            with Image.open(io.BytesIO(data)) as img:
+                if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                    mode_img = img.convert('RGBA')
+                else:
+                    mode_img = img.convert('RGB')
+                return hashlib.sha256(mode_img.tobytes()).hexdigest()
+        except Exception:
+            pass
+    return hashlib.sha256(data).hexdigest()
+
+
 @attachment_bp.route('/api/upload_inline_image', methods=['POST'])
 @login_required
 def upload_inline_image():
-    """Upload an inline image pasted or dropped into the Tiptap editor."""
+    """Upload an inline image pasted or dropped into the Tiptap editor with content-addressed caching."""
     try:
         file = request.files.get('file') or request.files.get('image')
-        if not file:
+        raw_bytes = None
+        ct = None
+        ext = 'png'
+        original_filename = 'image.png'
+
+        if file:
+            original_filename = secure_filename(file.filename or 'image.png')
+            raw_bytes = file.read()
+            ct = file.content_type
+            ext = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else 'png'
+        else:
             data = request.get_json(silent=True) or {}
             base64_str = data.get('image_base64') or data.get('data')
             if base64_str:
@@ -52,37 +83,26 @@ def upload_inline_image():
                     ct = match.group(1)
                     raw_bytes = base64.b64decode(match.group(2))
                     ext = ct.split('/')[-1].replace('jpeg', 'jpg')
-                    uid = uuid.uuid4().hex
-                    fname = f"{uid}.{ext}"
-                    filepath = os.path.join(INLINE_UPLOAD_FOLDER, fname)
-                    with open(filepath, 'wb') as f:
-                        f.write(raw_bytes)
-                    cid = f"inline_img_{uid[:12]}"
-                    return jsonify({
-                        'url': f"/api/inline_image/{fname}",
-                        'cid': cid,
-                        'filename': fname,
-                        'name': fname,
-                        'contentType': ct
-                    })
+        
+        if not raw_bytes:
             return jsonify({'error': 'No image provided'}), 400
 
-        original_filename = secure_filename(file.filename or 'image.png')
-        ext = original_filename.rsplit('.', 1)[-1].lower() if '.' in original_filename else 'png'
-        uid = uuid.uuid4().hex
-        stored_filename = f"{uid}.{ext}"
+        # Compute content-addressed pixel hash (metadata-free)
+        content_hash = compute_image_content_hash(raw_bytes, is_image=True)
+        stored_filename = f"{content_hash}.{ext}"
         filepath = os.path.join(INLINE_UPLOAD_FOLDER, stored_filename)
-        file.save(filepath)
 
-        content_type = file.content_type or f"image/{ext}"
-        cid = f"inline_img_{uid[:12]}"
+        if not os.path.exists(filepath):
+            with open(filepath, 'wb') as f:
+                f.write(raw_bytes)
 
+        cid = f"inline_img_{content_hash[:12]}"
         return jsonify({
             'url': f"/api/inline_image/{stored_filename}",
             'cid': cid,
             'filename': stored_filename,
             'name': original_filename,
-            'contentType': content_type
+            'contentType': ct or f"image/{ext}"
         })
     except Exception as e:
         logger.error(f"Error uploading inline image: {e}")
@@ -91,10 +111,22 @@ def upload_inline_image():
 
 @attachment_bp.route('/api/inline_image/<filename>')
 def serve_inline_image(filename):
-    """Serve uploaded inline image with caching headers."""
+    """Serve uploaded inline image with immutable caching headers and 304 support."""
     try:
         safe_filename = secure_filename(filename)
-        return send_from_directory(INLINE_UPLOAD_FOLDER, safe_filename, max_age=86400)
+        filepath = os.path.join(INLINE_UPLOAD_FOLDER, safe_filename)
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'Image not found'}), 404
+
+        etag = f'"{safe_filename.rsplit(".", 1)[0]}"'
+        if_none_match = request.headers.get('If-None-Match')
+        if if_none_match and if_none_match.strip() == etag:
+            return '', 304
+
+        resp = make_response(send_from_directory(INLINE_UPLOAD_FOLDER, safe_filename))
+        resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+        resp.headers['ETag'] = etag
+        return resp
     except Exception as e:
         logger.error(f"Error serving inline image {filename}: {e}")
         return jsonify({'error': 'Image not found'}), 404
@@ -104,7 +136,8 @@ def serve_inline_image(filename):
 @login_required
 def view_attachment():
     """
-    Serve attachment for inline viewing or preview with SHA-256 content-addressable deduplication and thumbnail caching.
+    Serve attachment for inline viewing or preview with content-addressed deduplication,
+    metadata-free pixel hashing, and full HTTP caching (304 Not Modified).
     """
     try:
         user_email = request.args.get('user_email') or Config.USER_EMAIL
@@ -117,20 +150,36 @@ def view_attachment():
             return jsonify({'error': 'Missing message_id or attachment_id'}), 400
 
         thumb_dir = os.path.join(DATA_DIR, 'thumbnails')
+        cache_dir = os.path.join(DATA_DIR, 'attachment_cache')
         os.makedirs(thumb_dir, exist_ok=True)
+        os.makedirs(cache_dir, exist_ok=True)
         lookup_key = f"{message_id}_{attachment_id}"
 
-        # 1. Fast Path: Check in-memory hash map for known attachment thumbnail
-        if is_thumbnail and lookup_key in ATTACHMENT_HASH_MAP:
-            cached_hash = ATTACHMENT_HASH_MAP[lookup_key]
-            thumb_path = os.path.join(thumb_dir, f"{cached_hash}.webp")
-            if os.path.exists(thumb_path):
-                resp = make_response(send_file(thumb_path, mimetype='image/webp', as_attachment=False))
-                resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
-                resp.headers['ETag'] = f'"{cached_hash}"'
-                return resp
+        # 1. Fast Path: If client sent If-None-Match and it matches known hash, return 304 immediately
+        cached_hash = ATTACHMENT_HASH_MAP.get(lookup_key)
+        if_none_match = request.headers.get('If-None-Match')
+        if cached_hash and if_none_match and if_none_match.strip('"') == cached_hash:
+            return '', 304
 
-        # 2. Download attachment data from Graph
+        # 2. Fast Path: Check in-memory hash map for known attachment thumbnail or cached full file
+        if cached_hash:
+            if is_thumbnail:
+                thumb_path = os.path.join(thumb_dir, f"{cached_hash}.webp")
+                if os.path.exists(thumb_path):
+                    resp = make_response(send_file(thumb_path, mimetype='image/webp', as_attachment=False))
+                    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+                    resp.headers['ETag'] = f'"{cached_hash}"'
+                    return resp
+            else:
+                full_cached_path = os.path.join(cache_dir, f"{cached_hash}.bin")
+                if os.path.exists(full_cached_path):
+                    mimetype, _ = mimetypes.guess_type(filename)
+                    resp = make_response(send_file(full_cached_path, mimetype=mimetype or 'application/octet-stream', as_attachment=False))
+                    resp.headers['Cache-Control'] = 'private, max-age=86400'
+                    resp.headers['ETag'] = f'"{cached_hash}"'
+                    return resp
+
+        # 3. Download attachment data from Graph
         attachment_data = graph_connector.get_attachment_sync(
             user_email=user_email,
             message_id=message_id,
@@ -141,21 +190,50 @@ def view_attachment():
             logger.error(f"Failed to download attachment data | User: {user_email} | Msg: {message_id[:15]}... | Att: {attachment_id[:15]}...")
             return jsonify({'error': 'Attachment not found or failed to download'}), 404
 
-        # 3. Compute SHA-256 content hash
-        content_hash = hashlib.sha256(attachment_data).hexdigest()
-        ATTACHMENT_HASH_MAP[lookup_key] = content_hash
-
         # Priority: 1. Query parameter, 2. Guess from filename, 3. Default
         mimetype = request.args.get('content_type')
         if mimetype:
             mimetype = mimetype.split('@')[0].strip()
         if not mimetype or '/' not in mimetype:
             mimetype, _ = mimetypes.guess_type(filename)
-        
         if not mimetype:
             mimetype = 'application/octet-stream'
 
-        # 4. Handle Thumbnail request with deduplicated storage
+        # 4. Compute content hash (stripping EXIF/metadata for images)
+        is_img = mimetype.startswith('image/') or any(filename.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
+        content_hash = compute_image_content_hash(attachment_data, is_image=is_img)
+        ATTACHMENT_HASH_MAP[lookup_key] = content_hash
+
+        # Cache full raw attachment on disk with LRU eviction to cap disk usage
+        full_cached_path = os.path.join(cache_dir, f"{content_hash}.bin")
+        if not os.path.exists(full_cached_path):
+            try:
+                max_cache_mb = int(os.environ.get('MAX_ATTACHMENT_CACHE_MB', '512'))
+                # Evict oldest .bin files if cache dir exceeds the configured limit
+                existing_bins = sorted(
+                    [os.path.join(cache_dir, f) for f in os.listdir(cache_dir) if f.endswith('.bin')],
+                    key=lambda p: os.path.getmtime(p)
+                )
+                total_mb = sum(os.path.getsize(p) for p in existing_bins) / (1024 * 1024)
+                while total_mb > max_cache_mb and existing_bins:
+                    oldest = existing_bins.pop(0)
+                    try:
+                        evicted_size = os.path.getsize(oldest) / (1024 * 1024)
+                        os.remove(oldest)
+                        total_mb -= evicted_size
+                        logger.info(f"Cache eviction: removed {os.path.basename(oldest)} ({evicted_size:.1f} MB)")
+                    except OSError:
+                        break
+                with open(full_cached_path, 'wb') as f:
+                    f.write(attachment_data)
+            except Exception as write_err:
+                logger.warning(f"Failed to cache attachment {content_hash}: {write_err}")
+
+        # Check If-None-Match again after hash computation
+        if if_none_match and if_none_match.strip('"') == content_hash:
+            return '', 304
+
+        # 5. Handle Thumbnail request with deduplicated storage
         if is_thumbnail:
             thumb_path = os.path.join(thumb_dir, f"{content_hash}.webp")
 
@@ -178,7 +256,7 @@ def view_attachment():
                 resp.headers['ETag'] = f'"{content_hash}"'
                 return resp
 
-        # 5. Full Attachment Stream
+        # 6. Full Attachment Stream
         resp = make_response(send_file(
             io.BytesIO(attachment_data),
             mimetype=mimetype,

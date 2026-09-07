@@ -16,8 +16,8 @@ from config import Config
 # are imported inside SupportAgent.__init__ under the ENABLE_RAG guard.
 # Importing them at module level forces Python to load their C-extensions (spaCy,
 # chromadb, presidio) even when they are never instantiated.
-from modules.graph_connector import GraphConnector, RetryConfig
-from modules.sql_logger import SQLLogger
+from services.connectors.graph_connector import GraphConnector, RetryConfig
+from data_access.sql_logger import SQLLogger
 # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate OpenAIAgent import behind ENABLE_AI to save RAM - start
 # from modules.openai_agent import OpenAIAgent  # Moved inside SupportAgent.__init__ under ENABLE_AI check
 # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate OpenAIAgent import behind ENABLE_AI to save RAM - end
@@ -232,6 +232,12 @@ class SupportAgent:
         # When ENABLE_RAG=False (current production mode) ChromaDB, spaCy/Presidio,
         # and attachment processors are never called — no reason to pay their startup RAM cost.
         if Config.ENABLE_RAG:
+            from data_access.vector_db import VectorDatabase
+            from services.processors.image_processor import ImageProcessor
+            from services.processors.tables_processor import TablesProcessor
+            from services.processors.doc_processor import DocProcessor
+            from services.processors.pii_redactor import PIIRedactor
+
             logger.info("📚 Initializing documentation vector DB (BookStack)...")
             self.documentation_db = VectorDatabase(
                 Config.BOOKSTACK_DB_PATH,
@@ -253,7 +259,6 @@ class SupportAgent:
             )
 
             # PII redactor: only needed to scrub data before RAG ingestion
-            from modules.pii_redactor import PIIRedactor
             self.pii_redactor = PIIRedactor()
             logger.info("🔐 PII Redactor initialized (RAG mode)")
         else:
@@ -275,7 +280,7 @@ class SupportAgent:
         self.ai = None
         # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Gate AI initialization behind ENABLE_AI - start
         if Config.ENABLE_AI and Config.OPENAI_API_KEY and Config.AUTO_GENERATE_RESPONSES:
-            from modules.openai_agent import OpenAIAgent
+            from services.connectors.openai_agent import OpenAIAgent
             self.ai = OpenAIAgent(Config.OPENAI_API_KEY)
             self.ai.authenticate()
         else:

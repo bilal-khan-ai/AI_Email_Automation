@@ -7,10 +7,10 @@ AI regeneration flags, attachment context, client groups, and Azure DevOps work 
 # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Ticket repository and CRUD operations module - start
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union
 from psycopg2 import extras, sql
-from modules.db_connection import ActionType, ActorType, PostgreSQLConnectionManager
+from data_access.db_connection import ActionType, ActorType, PostgreSQLConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -123,12 +123,20 @@ class TicketRepository:
                                 ALTER TABLE tickets ADD COLUMN has_unread_response BOOLEAN DEFAULT FALSE;
                             END IF;
 
-                            -- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add devops_work_item_ids column migration - start
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='tickets' AND column_name='devops_work_item_ids') THEN 
                                 ALTER TABLE tickets ADD COLUMN devops_work_item_ids JSONB DEFAULT '[]'::jsonb;
                             END IF;
-                            -- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Add devops_work_item_ids column migration - end
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='co_worker') THEN 
+                                ALTER TABLE tickets ADD COLUMN co_worker TEXT DEFAULT NULL;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='co_worker_time_limit') THEN 
+                                ALTER TABLE tickets ADD COLUMN co_worker_time_limit TIMESTAMPTZ DEFAULT NULL;
+                            END IF;
                         END $$;
                     """)
 
@@ -356,7 +364,7 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     
                     parsed_source_time = source_received_at
                     if isinstance(parsed_source_time, str):
@@ -446,7 +454,7 @@ class TicketRepository:
                         UPDATE tickets 
                         SET ai_draft = %s, rag_provenance = %s, last_updated = %s
                         WHERE ticket_id = %s
-                    """, (draft, provenance_json, datetime.now(), ticket_id))
+                    """, (draft, provenance_json, datetime.now(timezone.utc), ticket_id))
                     
                     if cur.rowcount > 0:
                         disp_query = sql.SQL("SELECT display_id FROM tickets WHERE ticket_id = %s")
@@ -478,7 +486,7 @@ class TicketRepository:
                         UPDATE tickets 
                         SET needs_ai_generation = TRUE, last_updated = %s
                         WHERE ticket_id = %s
-                    """, (datetime.now(), ticket_id))
+                    """, (datetime.now(timezone.utc), ticket_id))
                     return cur.rowcount > 0
         except Exception as e:
             logger.error(f"❌ Error flagging ticket {ticket_id} for AI generation: {e}")
@@ -544,7 +552,7 @@ class TicketRepository:
                         UPDATE tickets 
                         SET issue_state = %s, last_updated = %s
                         WHERE ticket_id = %s
-                    """, (json.dumps(issue_state), datetime.now(), ticket_id))
+                    """, (json.dumps(issue_state), datetime.now(timezone.utc), ticket_id))
                     return cur.rowcount > 0
         except Exception as e:
             logger.error(f"❌ Error updating issue state for ticket {ticket_id}: {e}")
@@ -698,7 +706,7 @@ class TicketRepository:
                         UPDATE tickets 
                         SET is_authority = %s, last_updated = %s
                         WHERE ticket_id = %s
-                    """, (is_authority, datetime.now(), ticket_id))
+                    """, (is_authority, datetime.now(timezone.utc), ticket_id))
                     return cur.rowcount > 0
         except Exception as e:
             logger.error(f"❌ Error marking ticket {ticket_id} as authority: {e}")
@@ -709,7 +717,7 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     cur.execute("""
                         UPDATE tickets 
                         SET deleted_at = %s, last_updated = %s
@@ -742,7 +750,7 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    now = datetime.now()
+                    now = datetime.now(timezone.utc)
                     cur.execute("""
                         UPDATE tickets 
                         SET deleted_at = NULL, status = 'Open', reopened = TRUE, 
@@ -780,7 +788,7 @@ class TicketRepository:
                         UPDATE ticket_messages 
                         SET deleted_at = %s
                         WHERE message_id = %s AND deleted_at IS NULL
-                    """, (datetime.now(), message_id))
+                    """, (datetime.now(timezone.utc), message_id))
                     return cur.rowcount > 0
         except Exception as e:
             logger.error(f"❌ Error soft-deleting message {message_id}: {e}")
@@ -1038,7 +1046,7 @@ class TicketRepository:
             
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    fields['last_updated'] = datetime.now()
+                    fields['last_updated'] = datetime.now(timezone.utc)
                     
                     set_parts = []
                     values = []
@@ -1051,17 +1059,21 @@ class TicketRepository:
                             
                     old_assignment = None
                     old_status = None
+                    old_coworker = None
+                    old_timelimit = None
                     t_id = identifier if where_col == "ticket_id" else None
                     
-                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Parameterized SQL identifier formatting - start
-                    if 'assigned_to' in fields or 'status' in fields:
-                        check_query = sql.SQL("SELECT ticket_id, assigned_to, status FROM tickets WHERE {} = %s").format(sql.Identifier(where_col))
+                    audit_fields = {'assigned_to', 'status', 'co_worker', 'co_worker_time_limit'}
+                    if any(k in fields for k in audit_fields):
+                        check_query = sql.SQL("SELECT ticket_id, assigned_to, status, co_worker, co_worker_time_limit FROM tickets WHERE {} = %s").format(sql.Identifier(where_col))
                         cur.execute(check_query, (identifier,))
                         row = cur.fetchone()
                         if row:
                             if not t_id: t_id = row[0]
                             old_assignment = row[1]
                             old_status = row[2]
+                            old_coworker = row[3]
+                            old_timelimit = row[4]
                         
                     query = sql.SQL("UPDATE tickets SET {} WHERE {} = %s").format(
                         sql.SQL(", ").join(
@@ -1079,16 +1091,24 @@ class TicketRepository:
                         cur.execute(disp_query, (identifier,))
                         d_row = cur.fetchone()
                         d_id = d_row[0] if d_row else identifier
-                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Parameterized SQL identifier formatting - end
                         
                         logger.info(f"✅ Updated ticket {d_id} | Fields: {list(fields.keys())} | Actor: {actor}")
                         
                         if 'assigned_to' in fields and t_id:
                             new_assignment = fields['assigned_to']
-                            if str(old_assignment) != str(new_assignment):
+                            def _norm_assignee(val):
+                                if not val or str(val).strip().lower() in ('', 'none', 'unassigned'):
+                                    return 'Unassigned'
+                                return str(val).strip()
+
+                            norm_old = _norm_assignee(old_assignment)
+                            norm_new = _norm_assignee(new_assignment)
+                            if norm_old != norm_new:
+                                desc = f"Ticket assigned to {norm_new}." if norm_new != 'Unassigned' else "Ticket unassigned."
                                 self.log_ticket_event(t_id, 'assigned', actor or 'system', {
-                                    'from': old_assignment, 
-                                    'to': new_assignment
+                                    'from': norm_old if norm_old != 'Unassigned' else None, 
+                                    'to': norm_new if norm_new != 'Unassigned' else None,
+                                    'description': desc
                                 }, cur=cur)
 
                         if 'status' in fields and t_id:
@@ -1097,6 +1117,28 @@ class TicketRepository:
                                 self.log_ticket_event(t_id, 'status_changed', actor or 'system', {
                                     'from': old_status, 
                                     'to': new_status
+                                }, cur=cur)
+
+                        if 'co_worker' in fields and t_id:
+                            new_coworker = fields['co_worker']
+                            if str(old_coworker or '') != str(new_coworker or ''):
+                                desc = f"Co-worker assigned: {new_coworker}." if new_coworker else f"Co-worker {old_coworker or ''} removed."
+                                self.log_ticket_event(t_id, 'coworker_changed', actor or 'system', {
+                                    'from': old_coworker,
+                                    'to': new_coworker,
+                                    'description': desc
+                                }, cur=cur)
+
+                        if 'co_worker_time_limit' in fields and t_id:
+                            new_timelimit = fields['co_worker_time_limit']
+                            old_tl_str = old_timelimit.isoformat() if isinstance(old_timelimit, datetime) else str(old_timelimit or '')
+                            new_tl_str = new_timelimit.isoformat() if isinstance(new_timelimit, datetime) else str(new_timelimit or '')
+                            if old_tl_str != new_tl_str:
+                                desc = f"Time limit set for {new_tl_str}." if new_timelimit else "Time limit stopped / cleared."
+                                self.log_ticket_event(t_id, 'timelimit_changed', actor or 'system', {
+                                    'from': old_tl_str or None,
+                                    'to': new_tl_str or None,
+                                    'description': desc
                                 }, cur=cur)
 
                         return True
@@ -1110,8 +1152,8 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    now = datetime.now()
-                    msg_timestamp = email.get('received_at', now)
+                    now = datetime.now(timezone.utc)
+                    msg_timestamp = email.get('received') or email.get('received_at') or now
                     
                     if isinstance(msg_timestamp, str):
                         try:
@@ -1267,7 +1309,7 @@ class TicketRepository:
                         current_raw.append(item_entry)
                         cur.execute(
                             "UPDATE tickets SET devops_work_item_ids = %s, last_updated = %s WHERE ticket_id = %s",
-                            (json.dumps(current_raw), datetime.now(), actual_ticket_id)
+                            (json.dumps(current_raw), datetime.now(timezone.utc), actual_ticket_id)
                         )
                         self.log_audit_event(
                             ticket_id=actual_ticket_id,
@@ -1310,7 +1352,7 @@ class TicketRepository:
                     if found:
                         cur.execute(
                             "UPDATE tickets SET devops_work_item_ids = %s, last_updated = %s WHERE ticket_id = %s",
-                            (json.dumps(new_list), datetime.now(), actual_ticket_id)
+                            (json.dumps(new_list), datetime.now(timezone.utc), actual_ticket_id)
                         )
                         self.log_audit_event(
                             ticket_id=actual_ticket_id,
@@ -1330,7 +1372,7 @@ class TicketRepository:
         """Convert PostgreSQL ticket row to expected format."""
         if not row:
             return row
-        for field in ['created_at', 'last_updated', 'last_message_at', 'deleted_at']:
+        for field in ['created_at', 'last_updated', 'last_message_at', 'deleted_at', 'source_received_at', 'co_worker_time_limit']:
             if isinstance(row.get(field), datetime):
                 row[field] = row[field].isoformat()
         if row.get('rag_provenance') and isinstance(row['rag_provenance'], str):

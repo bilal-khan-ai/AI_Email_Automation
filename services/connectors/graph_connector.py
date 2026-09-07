@@ -21,7 +21,7 @@ import threading
 import queue
 import time
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from enum import Enum
 
@@ -532,7 +532,7 @@ class AsyncioWorker:
             'body_text': getattr(msg, 'body_preview', primary_html[:255]),
             'body': primary_html, # Deprecated legacy support
             'sender': sender_email,
-            'received': msg.received_date_time.isoformat() if hasattr(msg, 'received_date_time') else datetime.now().isoformat(),
+            'received': msg.received_date_time.isoformat() if hasattr(msg, 'received_date_time') and msg.received_date_time else datetime.now(timezone.utc).isoformat(),
             'attachments': attachments,
             'to': ', '.join([r.email_address.address for r in msg.to_recipients if r.email_address]) if hasattr(msg, 'to_recipients') and msg.to_recipients else '',
             'cc': ', '.join([r.email_address.address for r in msg.cc_recipients if r.email_address]) if hasattr(msg, 'cc_recipients') and msg.cc_recipients else '',

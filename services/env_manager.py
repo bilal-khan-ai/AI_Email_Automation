@@ -74,7 +74,6 @@ class EnvManager:
                 try:
                     import subprocess
                     subprocess.run(['attrib', '-R', '-H', '-S', self.env_path], capture_output=True)
-                # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on attribute update
                 except Exception:
                     pass
 
@@ -111,7 +110,6 @@ class EnvManager:
                 if 'fd' in locals():
                     try:
                         os.close(fd)
-                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on fd close
                     except OSError:
                         pass
                 
@@ -130,7 +128,6 @@ class EnvManager:
                 if p and os.path.exists(p):
                     try:
                         os.remove(p)
-                    # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Fix bare except on cleanup
                     except OSError:
                         pass
             return False

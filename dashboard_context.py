@@ -16,10 +16,10 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, date
 
 from config import Config
-from modules.sql_logger import SQLLogger
-from modules.env_manager import EnvManager
-from modules.graph_connector import GraphConnector
-from modules.devops_connector import AzureDevOpsConnector
+from data_access.sql_logger import SQLLogger
+from services.env_manager import EnvManager
+from services.connectors.graph_connector import GraphConnector
+from services.connectors.devops_connector import AzureDevOpsConnector
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def get_ai_agent():
         with _ai_agent_lock:
             if ai_agent is None:
                 try:
-                    from modules.openai_agent import OpenAIAgent
+                    from services.connectors.openai_agent import OpenAIAgent
                     ai_agent = OpenAIAgent(Config.OPENAI_API_KEY)
                     ai_agent.authenticate()
                 except Exception as e:
@@ -112,7 +112,7 @@ def get_experience_db():
         with _db_lock:
             if _experience_db is None:
                 logger.info("Initializing lazy experience vector DB...")
-                from modules.vector_db import VectorDatabase
+                from data_access.vector_db import VectorDatabase
                 _experience_db = VectorDatabase(Config.CHROMA_DB_PATH, Config.COLLECTION_NAME, force_cpu=True)
     return _experience_db
 
@@ -125,7 +125,7 @@ def get_documentation_db():
         with _db_lock:
             if _documentation_db is None:
                 logger.info("Initializing lazy documentation vector DB...")
-                from modules.vector_db import BookVectorDB
+                from data_access.vector_db import BookVectorDB
                 _documentation_db = BookVectorDB(Config.BOOKSTACK_DB_PATH)
     return _documentation_db
 

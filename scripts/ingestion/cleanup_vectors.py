@@ -19,11 +19,11 @@ import os
 import argparse
 from datetime import datetime, timedelta
 
-# Add parent directory to path to import modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root directory to path to import data_access and services
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from modules.vector_db import VectorDatabase
-from modules.sql_logger import SQLLogger
+from data_access.vector_db import VectorDatabase
+from data_access.sql_logger import SQLLogger
 from config import Config
 import logging
 

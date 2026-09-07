@@ -11,7 +11,7 @@ SocketIO real-time event handlers for the collaborative dashboard:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import session, request
 from flask_socketio import emit
 
@@ -44,7 +44,7 @@ def register_handlers(socketio) -> None:
         connected_users[request.sid] = {
             'user_id': user_id,
             'username': username,
-            'connected_at': datetime.now().isoformat()
+            'connected_at': datetime.now(timezone.utc).isoformat()
         }
         
         emit('connection_established', {
@@ -116,7 +116,7 @@ def register_handlers(socketio) -> None:
         user_locks[ticket_id] = {
             'user_id': user_id,
             'username': username,
-            'locked_at': datetime.now().isoformat()
+            'locked_at': datetime.now(timezone.utc).isoformat()
         }
         
         emit('lock_acquired', {'ticket_id': ticket_id})

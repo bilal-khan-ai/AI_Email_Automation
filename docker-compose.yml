@@ -20,6 +20,7 @@ services:
         max-size: "10m"
         max-file: "3"
     environment:
+      TZ: Asia/Kolkata
       # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_DB to support_db
       POSTGRES_DB: ${POSTGRES_DB:-support_db}
       # Bilal Khan (12/08/2026) Issue No  Sheet_Name  - Updated default POSTGRES_USER and POSTGRES_PASSWORD
@@ -66,6 +67,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=Asia/Kolkata
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
     volumes:
@@ -96,6 +98,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=Asia/Kolkata
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
     volumes:

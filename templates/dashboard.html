@@ -14,7 +14,7 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Dashboard Header & Shared Styles - start -->
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_2">
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20260901_2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20260904_7">
     <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_2"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -72,65 +72,89 @@
         </div>
     </div>
 
-    <div class="controls">
-        <div class="search-box">
-            <input type="search" id="search" name="search" autocomplete="off" role="searchbox"
-                aria-label="Search tickets" placeholder="Search by email, subject, or ticket ID...">
-        </div>
-        <div class="filter-buttons">
-            <div class="pill-toggle" id="visibilityPill" data-active="all">
-                <div class="pill-option" data-visibility="mine">My Tickets</div>
-                <div class="pill-option active" data-visibility="all">All Tickets</div>
-                <div class="pill-slider"></div>
+    <div class="controls-sticky-wrapper">
+        <div class="controls">
+            <div class="search-box">
+                <i class="fa fa-search search-icon"></i>
+                <input type="search" id="search" name="search" autocomplete="off" role="searchbox"
+                    aria-label="Search tickets" placeholder="Search by email, subject, or ticket ID...">
             </div>
-            <span class="filter-separator"
-                style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
-
-            <button class="filter-btn active" data-filter="all">All</button>
-            <button class="filter-btn" data-filter="Open">Open</button>
-            <button class="filter-btn" data-filter="Closed">Closed</button>
-
-            <div class="filter-dropdown" id="assignmentFilterDropdown">
-                <button class="filter-dropdown-btn" id="assignmentFilterBtn"
-                    onclick="toggleFilterDropdown('assignment')">
-                    <span id="assignmentFilterText"><i class="fa fa-user me-1"></i> Assignment</span>
-                    <span class="dropdown-arrow">▼</span>
-                </button>
-                <div class="filter-dropdown-content" id="assignmentFilterContent"></div>
-            </div>
-
-            <div class="filter-dropdown" id="customerFilterDropdown">
-                <button class="filter-dropdown-btn" id="customerFilterBtn" onclick="toggleFilterDropdown('customer')">
-                    <span id="customerFilterText"><i class="fa fa-envelope me-1"></i> Customer</span>
-                    <span class="dropdown-arrow">▼</span>
-                </button>
-                <div class="filter-dropdown-content" id="customerFilterContent"></div>
-            </div>
-
-            <span class="filter-separator"
-                style="border-right: 1px solid var(--border-color); margin: 0 10px; height: 30px;"></span>
-
-            <div class="date-filter-container">
-                <select id="timeRangeSelect" class="filter-dropdown-btn" style="appearance: auto;" onchange="onTimeRangeChange()">
-                    <option value="all" selected>All Time</option>
-                    <option value="today">Today</option>
-                    <option value="week">This Week</option>
-                    <option value="custom">Custom Range</option>
-                </select>
-                <div id="customDateInputs" class="d-none">
-                    <input type="text" id="fromDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
-                    <span style="color: var(--text-secondary); font-size: 0.85rem;">to</span>
-                    <input type="text" id="toDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
-                    <button type="button" class="btn btn-sm btn-primary" onclick="applyCustomDates()"
-                        style="border-radius: 8px; font-weight: 600; background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%); border: none;">Apply</button>
+            <div class="filter-buttons">
+                <div class="pill-toggle" id="visibilityPill" data-active="all">
+                    <div class="pill-option" data-visibility="mine">My Tickets</div>
+                    <div class="pill-option active" data-visibility="all">All Tickets</div>
+                    <div class="pill-slider"></div>
                 </div>
-            </div>
+                <span class="filter-separator"></span>
 
-            <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Manual Refresh Button with Hover Relative Time - start -->
-            <button type="button" class="filter-dropdown-btn refresh-btn-icon" id="btnRefreshTickets" onclick="manualRefreshTickets()" title="Refreshed just now">
-                <i class="fa fa-sync-alt" id="refreshIcon"></i>
-            </button>
-            <!-- Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Manual Refresh Button with Hover Relative Time - end -->
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="Open">Open</button>
+                <button class="filter-btn" data-filter="Closed">Closed</button>
+
+                <div class="combobox-wrapper filter-combobox-wrapper" id="filterAssignedWrapper">
+                    <div class="combobox-input-group" title="Filter by Assignee">
+                        <i class="fa fa-user combobox-icon"></i>
+                        <input type="text" id="filter-assigned-input" class="modal-action-select combobox-input filter-combobox-input" placeholder="Assignee..." autocomplete="off" onfocus="showFilterCombobox('assigned')" onclick="showFilterCombobox('assigned')" oninput="filterFilterCombobox('assigned')" onkeydown="handleFilterComboboxKeydown(event, 'assigned')" onblur="handleFilterComboboxBlur('assigned')">
+                        <button type="button" class="combobox-clear-btn filter-clear-btn" id="filter-assigned-clear" onmousedown="event.preventDefault(); clearFilterCombobox('assigned')" onclick="clearFilterCombobox('assigned')" title="Clear Assignee Filter"><i class="fa fa-times"></i></button>
+                    </div>
+                    <div class="combobox-dropdown filter-combobox-dropdown" id="filterAssignedDropdown" style="display:none;" onmousedown="event.preventDefault()"></div>
+                </div>
+
+                <div class="combobox-wrapper filter-combobox-wrapper" id="filterCoworkerWrapper">
+                    <div class="combobox-input-group" title="Filter by Co-Worker">
+                        <i class="fa fa-user-friends combobox-icon"></i>
+                        <input type="text" id="filter-coworker-input" class="modal-action-select combobox-input filter-combobox-input" placeholder="Co-Worker..." autocomplete="off" onfocus="showFilterCombobox('coworker')" onclick="showFilterCombobox('coworker')" oninput="filterFilterCombobox('coworker')" onkeydown="handleFilterComboboxKeydown(event, 'coworker')" onblur="handleFilterComboboxBlur('coworker')">
+                        <button type="button" class="combobox-clear-btn filter-clear-btn" id="filter-coworker-clear" onmousedown="event.preventDefault(); clearFilterCombobox('coworker')" onclick="clearFilterCombobox('coworker')" title="Clear Co-Worker Filter"><i class="fa fa-times"></i></button>
+                    </div>
+                    <div class="combobox-dropdown filter-combobox-dropdown" id="filterCoworkerDropdown" style="display:none;" onmousedown="event.preventDefault()"></div>
+                </div>
+
+                <div class="combobox-wrapper filter-combobox-wrapper" id="filterCustomerWrapper">
+                    <div class="combobox-input-group" title="Filter by Customer">
+                        <i class="fa fa-envelope combobox-icon"></i>
+                        <input type="text" id="filter-customer-input" class="modal-action-select combobox-input filter-combobox-input" placeholder="Customer..." autocomplete="off" onfocus="showFilterCombobox('customer')" onclick="showFilterCombobox('customer')" oninput="filterFilterCombobox('customer')" onkeydown="handleFilterComboboxKeydown(event, 'customer')" onblur="handleFilterComboboxBlur('customer')">
+                        <button type="button" class="combobox-clear-btn filter-clear-btn" id="filter-customer-clear" onmousedown="event.preventDefault(); clearFilterCombobox('customer')" onclick="clearFilterCombobox('customer')" title="Clear Customer Filter"><i class="fa fa-times"></i></button>
+                    </div>
+                    <div class="combobox-dropdown filter-combobox-dropdown" id="filterCustomerDropdown" style="display:none;" onmousedown="event.preventDefault()"></div>
+                </div>
+
+                <span class="filter-separator"></span>
+
+                <div class="filter-dropdown sort-dropdown-wrapper" id="sortFilterDropdown">
+                    <button type="button" class="filter-dropdown-btn sort-dropdown-btn" id="sortFilterBtn" onclick="toggleSortDropdown(event)" title="Sort Tickets">
+                        <span id="sortFilterText"><i class="fa fa-arrow-down-wide-short me-1"></i> Sort: Recent</span>
+                        <span class="dropdown-arrow">▼</span>
+                    </button>
+                    <div class="filter-dropdown-content sort-dropdown-content" id="sortFilterContent">
+                        <div class="filter-dropdown-item selected" id="sortOptDefault" onclick="setSortMode('default', event)">
+                            <i class="fa fa-arrow-down-wide-short me-2" style="color: var(--accent);"></i> Recent Activity (Default)
+                        </div>
+                        <div class="filter-dropdown-item" id="sortOptDueAsc" onclick="setSortMode('due_asc', event)">
+                            <i class="fa fa-clock me-2 text-warning"></i> Due Time (Urgent First)
+                        </div>
+                    </div>
+                </div>
+
+                <div class="date-filter-container">
+                    <select id="timeRangeSelect" class="filter-dropdown-btn" style="appearance: auto;" onchange="onTimeRangeChange()">
+                        <option value="all" selected>All Time</option>
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                    <div id="customDateInputs" class="d-none">
+                        <input type="text" id="fromDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
+                        <span style="color: var(--text-secondary); font-size: 0.85rem;">to</span>
+                        <input type="text" id="toDateInput" class="filter-dropdown-btn" placeholder="dd-mm-yyyy">
+                        <button type="button" class="btn btn-sm btn-primary" onclick="applyCustomDates()"
+                            style="border-radius: 8px; font-weight: 600; background: linear-gradient(135deg, #3A5A24 0%, #B1D599 100%); border: none;">Apply</button>
+                    </div>
+                </div>
+
+                <button type="button" class="filter-dropdown-btn refresh-btn-icon" id="btnRefreshTickets" onclick="manualRefreshTickets()" title="Refreshed just now">
+                    <i class="fa fa-sync-alt" id="refreshIcon"></i>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -144,9 +168,9 @@
         <div class="modal-content" style="max-height: 95vh; display: flex; flex-direction: column;">
             <div class="modal-header-actions"
                 style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
-                <h2 id="modal-subject"
-                    style="margin: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1rem;">
-                </h2>
+                <div class="modal-subject-wrapper" id="modalSubjectWrapper">
+                    <h2 id="modal-subject" class="modal-subject-text"></h2>
+                </div>
 
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Open Ticket Modal & Composer - start -->
                 <div id="lockStatus" class="lock-status" style="margin-right: 1rem;"><i class="fa fa-lock me-1"></i> Locked by another user</div>
@@ -213,13 +237,63 @@
                         </select>
                     </div>
 
-                    <div class="assignment-dropdown">
-                        <select id="modal-assignment" class="modal-action-select modal-assign-select" onchange="changeAssignment()" title="Assigned Staff">
-                            <option value="Unassigned">Unassigned</option>
-                            {% for staff in staff_members %}
-                            <option value="{{ staff.username }}">{{ staff.username }}</option>
-                            {% endfor %}
-                        </select>
+                    <!-- Hidden legacy select for backward compatibility -->
+                    <select id="modal-assignment" style="display: none;">
+                        <option value="Unassigned">Unassigned</option>
+                        {% for staff in staff_members %}
+                        <option value="{{ staff.username }}">{{ staff.username }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <!-- Assigned Staff Combobox -->
+                    <div class="combobox-wrapper" id="assignedToComboboxWrapper">
+                        <div class="combobox-input-group" title="Primary Assignee">
+                            <i class="fa fa-user combobox-icon"></i>
+                            <input type="text" id="modal-assigned-input" class="modal-action-select combobox-input" placeholder="Assignee..." autocomplete="off" onfocus="showComboboxDropdown('assigned_to')" onclick="showComboboxDropdown('assigned_to')" oninput="filterComboboxUsers('assigned_to')" onkeydown="handleComboboxKeydown(event, 'assigned_to')" onblur="handleComboboxBlur('assigned_to')">
+                            <button type="button" class="combobox-clear-btn" onmousedown="event.preventDefault(); clearCombobox('assigned_to')" onclick="clearCombobox('assigned_to')" title="Unassign"><i class="fa fa-times"></i></button>
+                        </div>
+                        <div class="combobox-dropdown" id="assignedToDropdown" style="display:none;" onmousedown="event.preventDefault()"></div>
+                    </div>
+
+                    <!-- Co-Worker Combobox -->
+                    <div class="combobox-wrapper" id="coworkerComboboxWrapper">
+                        <div class="combobox-input-group" title="Co-Worker Collaborator">
+                            <i class="fa fa-user-friends combobox-icon"></i>
+                            <input type="text" id="modal-coworker-input" class="modal-action-select combobox-input" placeholder="Co-Worker..." autocomplete="off" onfocus="showComboboxDropdown('co_worker')" onclick="showComboboxDropdown('co_worker')" oninput="filterComboboxUsers('co_worker')" onkeydown="handleComboboxKeydown(event, 'co_worker')" onblur="handleComboboxBlur('co_worker')">
+                            <button type="button" class="combobox-clear-btn" onmousedown="event.preventDefault(); clearCombobox('co_worker')" onclick="clearCombobox('co_worker')" title="Remove Co-Worker"><i class="fa fa-times"></i></button>
+                        </div>
+                        <div class="combobox-dropdown" id="coworkerDropdown" style="display:none;" onmousedown="event.preventDefault()"></div>
+                    </div>
+
+                    <!-- Unified Co-Worker Due In & Calendar -->
+                    <div class="combobox-wrapper" id="timeLimitComboboxWrapper" style="position: relative;">
+                        <div class="combobox-input-group" title="Co-Worker Due In (Presets + Calendar)">
+                            <i class="fa fa-clock combobox-icon" id="timeLimitIcon"></i>
+                            <input type="text" id="modal-coworker-timelimit" class="modal-action-select combobox-input timelimit-unified-input" placeholder="Due In..." readonly onclick="handleTimeLimitWidgetClick(event)">
+                            <button type="button" class="combobox-clear-btn" id="timelimitClearBtn" onclick="clearTimeLimit()" title="Clear Due In"><i class="fa fa-times"></i></button>
+                        </div>
+
+                        <!-- Audio/Timer Style Dropdown Menu -->
+                        <div class="timer-action-menu" id="timerActionMenu" style="display: none;" onclick="event.stopPropagation()">
+                            <div class="timer-menu-header">
+                                <div class="timer-menu-label"><i class="fa fa-clock me-1"></i> Target Deadline</div>
+                                <div class="timer-menu-deadline" id="timerMenuDeadlineText">--</div>
+                            </div>
+                            <div class="timer-menu-options">
+                                <button type="button" class="timer-menu-btn" id="btnTimerTogglePause" onclick="togglePauseTimer()" title="Pause or Resume Timer">
+                                    <i class="fa fa-pause" id="timerPausePlayIcon"></i>
+                                    <span id="timerPausePlayText">Pause</span>
+                                </button>
+                                <button type="button" class="timer-menu-btn" onclick="stopTimerFromMenu()" title="Stop and Clear Timer">
+                                    <i class="fa fa-stop"></i>
+                                    <span>Stop</span>
+                                </button>
+                                <button type="button" class="timer-menu-btn" onclick="resetTimerFromMenu()" title="Reset / Change Due In">
+                                    <i class="fa fa-redo"></i>
+                                    <span>Reset</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <button type="button" class="modal-action-btn modal-close-btn" onclick="closeModal()" title="Close (ESC)">
@@ -245,6 +319,14 @@
                         <div class="info-item">
                             <strong>Last Activity:</strong>
                             <span id="modal-date"></span>
+                        </div>
+                        <div class="info-item" id="info-coworker-row">
+                            <strong>Co-Worker:</strong>
+                            <span id="modal-info-coworker" style="color: var(--text-primary); font-weight: 500;">None</span>
+                        </div>
+                        <div class="info-item" id="info-timelimit-row">
+                            <strong>Due In:</strong>
+                            <span id="modal-info-timelimit" style="color: var(--text-primary); font-weight: 500;">None</span>
                         </div>
                     </div>
 
@@ -670,6 +752,122 @@
         </div>
     </div>
 
+    <!-- Quick Add Modal -->
+    <div id="quickAddModal" class="modal" style="z-index: 2500;">
+        <div class="modal-content" style="max-width: 480px; padding: 1.5rem; border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 16px 40px rgba(0,0,0,0.35);">
+            <div class="d-flex justify-content-between align-items-center mb-3 pb-2" style="border-bottom: 1px solid var(--border-color);">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(59, 130, 246, 0.12); display: flex; align-items: center; justify-content: center; color: var(--primary);">
+                        <i class="fa fa-user-plus" style="font-size: 1.1rem;"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Quick Add</h4>
+                        <p style="margin: 0; font-size: 0.78rem; color: var(--text-secondary);">Register an organization member</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeQuickAddModal()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; line-height: 1;">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="alert alert-info py-2 px-3 mb-3 d-flex align-items-start gap-2" style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.25); border-radius: 8px; font-size: 0.84rem; color: var(--text-primary); line-height: 1.4;">
+                <i class="fa fa-info-circle text-info mt-1" style="flex-shrink: 0;"></i>
+                <span>This employee does not exist in the database. Registering them now will assign them immediately to this ticket.</span>
+            </div>
+
+            <form id="quickAddForm" onsubmit="event.preventDefault(); submitQuickAddUser();">
+                <input type="hidden" id="quickAddTargetField" value="assigned_to">
+
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" style="color: var(--text-secondary);"><i class="fa fa-user me-1"></i> First Name</label>
+                        <input type="text" id="quickAddFirstName" class="form-control form-control-sm" placeholder="e.g. Bilal" required oninput="updateQuickAddPreview()">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold" style="color: var(--text-secondary);"><i class="fa fa-user me-1"></i> Last Name</label>
+                        <input type="text" id="quickAddLastName" class="form-control form-control-sm" placeholder="e.g. Khan" required oninput="updateQuickAddPreview()">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small fw-bold mb-1" style="color: var(--text-secondary);"><i class="fa fa-shield-alt me-1"></i> Role</label>
+                    <div class="d-flex gap-3 align-items-center">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="quickAddRole" id="roleStaff" value="staff" checked onchange="updateQuickAddPreview()">
+                            <label class="form-check-label small" for="roleStaff" style="color: var(--text-primary); cursor: pointer;">
+                                <i class="fa fa-user me-1 text-primary"></i> Staff
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="quickAddRole" id="roleAdmin" value="admin" onchange="updateQuickAddPreview()">
+                            <label class="form-check-label small" for="roleAdmin" style="color: var(--text-primary); cursor: pointer;">
+                                <i class="fa fa-shield-alt me-1 text-warning"></i> Admin
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="preview-box p-3 mb-3" style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px;">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span style="font-size: 0.78rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">System Username / ID</span>
+                        <span class="badge" style="background: rgba(16, 185, 129, 0.12); color: #10b981; font-size: 0.72rem; font-weight: 600;"><i class="fa fa-check-circle me-1"></i> first_name_last_name</span>
+                    </div>
+                    <div id="quickAddUsernamePreview" style="font-family: monospace; font-size: 1.05rem; font-weight: 700; color: var(--primary);">first_last</div>
+                    <div class="mt-2 pt-2 d-flex justify-content-between align-items-center" style="border-top: 1px dashed var(--border-color); font-size: 0.78rem; color: var(--text-secondary);">
+                        <span><i class="fa fa-key me-1"></i> Default Password: <code>India@123</code></span>
+                        <span id="quickAddRolePreview"><i class="fa fa-user-tag me-1"></i> Role: Staff</span>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeQuickAddModal()">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-primary" id="btnSubmitQuickAdd">
+                        <i class="fa fa-user-plus me-1"></i> Register & Assign
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stop Timer Confirmation Modal on Email Send -->
+    <div id="stopTimerModal" class="modal" style="z-index: 2600;">
+        <div class="modal-content" style="max-width: 440px; padding: 1.5rem; text-align: left; border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 16px 40px rgba(0,0,0,0.35);">
+            <div class="d-flex align-items-center justify-content-between pb-3 mb-3" style="border-bottom: 1px solid var(--border-color);">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width: 36px; height: 36px; border-radius: 8px; background: rgba(245, 158, 11, 0.12); color: #f59e0b; display: flex; align-items: center; justify-content: center;">
+                        <i class="fa fa-clock" style="font-size: 1.1rem;"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">Stop Timer?</h4>
+                        <p style="margin: 0; font-size: 0.78rem; color: var(--text-secondary);">Active collaboration deadline detected</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeStopTimerModal(false)" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; line-height: 1;">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-3 mb-3" style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; font-size: 0.88rem; color: var(--text-primary); line-height: 1.5;">
+                An active co-worker due in deadline is running on this ticket:
+                <div class="mt-2 fw-bold d-flex align-items-center gap-2" style="color: #f59e0b;">
+                    <i class="fa fa-hourglass-half"></i> <span id="stopTimerModalDeadlineText">--</span>
+                </div>
+                <div class="mt-2 text-muted small">
+                    Would you like to stop and clear this timer now that an email response is being sent?
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 pt-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="confirmSendWithTimerDecision(false)" style="font-weight: 600; padding: 7px 14px;">
+                    Keep Timer Running
+                </button>
+                <button type="button" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1" onclick="confirmSendWithTimerDecision(true)" style="font-weight: 600; padding: 7px 14px;">
+                    <i class="fa fa-stop-circle"></i> Stop Timer & Send
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const currentUsername = '{{ user.username }}';
         const userRole = '{{ user.role }}';
@@ -693,7 +891,7 @@
         }
     </script>
     <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - end -->
-    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20260904_7"></script>
 </body>
 
 </html>

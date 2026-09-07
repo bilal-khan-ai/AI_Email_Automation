@@ -7,9 +7,9 @@ import signal
 import threading
 from bs4 import BeautifulSoup
 from config import Config
-from modules.vector_db import VectorDatabase
-from modules.graph_connector import GraphConnector
-from modules.image_processor import ImageProcessor
+from data_access.vector_db import VectorDatabase
+from services.connectors.graph_connector import GraphConnector
+from services.processors.image_processor import ImageProcessor
 
 # ---------- CONFIGURATION ----------
 # Set to True to disable all GPU usage (useful for low-memory environments)
@@ -195,7 +195,7 @@ def main():
     # Note: in standalone ingest we might need an AI agent if we want Vision.
     # But for just text ingestion, it's fine.
     # To enable vision in ingest, we'd need to init AI agent.
-    from modules.openai_agent import OpenAIAgent
+    from services.connectors.openai_agent import OpenAIAgent
     ai = OpenAIAgent(Config.OPENAI_API_KEY)
     ai.authenticate()
     img_processor.set_ai_agent(ai)

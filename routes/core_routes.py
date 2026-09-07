@@ -76,5 +76,20 @@ def get_config():
         logger.error(f"Error serving config: {e}")
         return jsonify({'error': str(e)}), 500
 
+@core_bp.route('/api/users/assignable', methods=['GET'])
+@login_required
+def get_assignable_users():
+    """Get active assignable staff and admin members."""
+    try:
+        users = auth.user_manager.list_users()
+        assignable = [
+            {'id': u['id'], 'username': u['username'], 'role': u['role']}
+            for u in users if u.get('is_assignable', True) and u.get('is_active', True) and u['role'] in ['staff', 'admin']
+        ]
+        return jsonify({'users': assignable})
+    except Exception as e:
+        logger.error(f"Error serving assignable users: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 __all__ = ['core_bp']
-# Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Core Dashboard Views Blueprint - end

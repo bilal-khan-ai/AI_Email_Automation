@@ -300,3 +300,8 @@ class AadhaarRecognizer(PatternRecognizer):
         for i, digit in enumerate(map(int, reversed(number))):
             c = d[c][p[i % 8][digit]]
         return c == 0
+
+
+def redact_pii(payload: Union[str, Dict[str, Any]]) -> Union[str, Dict[str, Any]]:
+    """Module-level convenience wrapper for PIIRedactor.redact_email_content."""
+    return PIIRedactor().redact_email_content(payload)

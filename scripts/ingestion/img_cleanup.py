@@ -1,5 +1,5 @@
 import logging
-from modules.vector_db import VectorDatabase
+from data_access.vector_db import VectorDatabase
 from config import Config
 
 logging.basicConfig(level=logging.INFO)

@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 
 from auth import login_required
 from dashboard_context import sql_logger, get_ai_agent
-from modules.env_manager import EnvManager
+from services.env_manager import EnvManager
 
 logger = logging.getLogger(__name__)
 

@@ -6,12 +6,12 @@ Provides SLA duration tracking (business hours), staff/client analytics, and aud
 # Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Ticket analytics, audit logs, and metrics module - start
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Tuple, Any, Union
 import time
 import hashlib
 from psycopg2 import extras
-from modules.db_connection import ActionType, ActorType, PostgreSQLConnectionManager
+from data_access.db_connection import ActionType, ActorType, PostgreSQLConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class TicketAnalytics:
         cur.execute("""
             INSERT INTO ticket_events (ticket_id, event_type, actor, details, timestamp)
             VALUES (%s, %s, %s, %s, %s)
-        """, (ticket_id, event_type, actor, json.dumps(details) if details else None, timestamp or datetime.now()))
+        """, (ticket_id, event_type, actor, json.dumps(details) if details else None, timestamp or datetime.now(timezone.utc)))
 
     def log_audit_event(self, ticket_id: str, action_type: str, actor_id: str, 
                         actor_type: str = ActorType.SYSTEM, description: str = None, 
@@ -55,10 +55,16 @@ class TicketAnalytics:
                 except (ValueError, TypeError):
                     timestamp = None # Fallback to NOW() later
 
-            # 1. Generate idempotency hash (action + ticket + actor + 5sec window)
+            # 1. Generate idempotency hash (action + ticket + actor + metadata + 5sec window)
             time_window = int(time.time() / 5)
-            hash_input = f"{ticket_id}:{action_type}:{actor_id}:{time_window}"
-            event_hash = hashlib.md5(hash_input.encode()).hexdigest()
+            def _norm_hash_val(v):
+                if not v or str(v).strip().lower() in ('', 'none', 'unassigned'):
+                    return 'unassigned'
+                return str(v).strip().lower()
+
+            meta_key = f":{_norm_hash_val(metadata.get('from'))}:{_norm_hash_val(metadata.get('to'))}" if metadata else ""
+            hash_input = f"{ticket_id}:{action_type}:{actor_id}{meta_key}:{time_window}"
+            event_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:32]
 
             query = """
                 INSERT INTO ticket_audit_logs (
@@ -71,7 +77,7 @@ class TicketAnalytics:
                 ticket_id, action_type, actor_type, actor_id,
                 description, json.dumps(metadata) if metadata else None,
                 event_hash,
-                timestamp or datetime.now()
+                timestamp or datetime.now(timezone.utc)
             )
 
             # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix ticket_metrics schema columns and transaction isolation - start
@@ -139,7 +145,7 @@ class TicketAnalytics:
         Incrementally maintain the ticket_metrics table upon audit log events.
         """
         metadata = metadata or {}
-        now = timestamp or datetime.now()
+        now = timestamp or datetime.now(timezone.utc)
 
         # Fetch or insert ticket_metrics baseline
         cur.execute("SELECT * FROM ticket_metrics WHERE ticket_id = %s FOR UPDATE", (ticket_id,))
@@ -251,7 +257,9 @@ class TicketAnalytics:
             'deleted': ActionType.TICKET_DELETED,
             'restored': ActionType.TICKET_RESTORED,
             'devops_linked': ActionType.DEVOPS_ITEM_LINKED,
-            'devops_unlinked': ActionType.DEVOPS_ITEM_UNLINKED
+            'devops_unlinked': ActionType.DEVOPS_ITEM_UNLINKED,
+            'coworker_changed': ActionType.COWORKER_CHANGED,
+            'timelimit_changed': ActionType.TIMELIMIT_CHANGED
         }
         action_type = action_map.get(event_type, event_type.upper())
         actor_type = ActorType.SYSTEM if actor == 'system' else (ActorType.AI if actor == 'AI' else ActorType.USER)
@@ -527,15 +535,27 @@ class TicketAnalytics:
                         atype = event.get('action_type', '')
                         details = event.get('metadata') or {}
                         
-                        if event.get('description'):
-                            event['event_text'] = event['description']
+                        desc = event.get('description') or (details.get('description') if isinstance(details, dict) else None)
+                        if desc:
+                            event['event_text'] = desc
                         else:
                             if atype == ActionType.TICKET_CREATED:
                                 event['event_text'] = f"Ticket created by {actor}."
                             elif atype == ActionType.ASSIGNMENT_CHANGED:
-                                event['event_text'] = f"Ticket assigned to {details.get('to', 'someone')}."
+                                to_user = details.get('to')
+                                if to_user and str(to_user).strip().lower() not in ('', 'none', 'unassigned'):
+                                    event['event_text'] = f"Ticket assigned to {to_user} by {actor}."
+                                else:
+                                    event['event_text'] = f"Ticket unassigned by {actor}."
                             elif atype == ActionType.STATUS_CHANGED:
                                 event['event_text'] = f"Status changed to {details.get('to', 'Closed')} by {actor}."
+                            elif atype == ActionType.COWORKER_CHANGED:
+                                new_cw = details.get('to')
+                                old_cw = details.get('from')
+                                event['event_text'] = f"Co-worker assigned: {new_cw} by {actor}." if new_cw else f"Co-worker {old_cw or ''} removed by {actor}."
+                            elif atype == ActionType.TIMELIMIT_CHANGED:
+                                new_tl = details.get('to')
+                                event['event_text'] = f"Time limit set for {new_tl} by {actor}." if new_tl else f"Time limit stopped / cleared by {actor}."
                             elif atype == ActionType.MESSAGE_RECEIVED:
                                 event['event_text'] = f"New message from customer {actor}."
                             elif atype == ActionType.MESSAGE_SENT:
@@ -553,7 +573,7 @@ class TicketAnalytics:
 
     def _get_time_filter(self, time_range: str, from_date: str = None, to_date: str = None, alias: str = 't') -> Tuple[str, list]:
         """Helper to generate SQL time filter and params"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         if time_range == 'custom' and from_date and to_date:
             try:
                 start = None

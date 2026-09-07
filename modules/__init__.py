@@ -20,8 +20,8 @@ _MODULE_MAP = {
     'TablesProcessor': ('services.processors.tables_processor', 'TablesProcessor'),
     'ImageProcessor': ('services.processors.image_processor', 'ImageProcessor'),
     'redact_pii': ('services.processors.pii_redactor', 'redact_pii'),
-    'EnvManager': ('modules.env_manager', 'EnvManager'),
-    'SQLLogger': ('modules.sql_logger', 'SQLLogger'),
+    'EnvManager': ('services.env_manager', 'EnvManager'),
+    'SQLLogger': ('data_access.sql_logger', 'SQLLogger'),
 }
 
 def __getattr__(name: str):

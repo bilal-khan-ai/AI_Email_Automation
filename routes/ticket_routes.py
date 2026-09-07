@@ -14,7 +14,7 @@ Ticket lifecycle HTTP routes:
 import uuid
 import base64
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from flask import Blueprint, jsonify, request, session
 from bs4 import BeautifulSoup
@@ -122,7 +122,7 @@ def update_ticket():
     # Prepare update payload
     update_payload = {
         'ai_draft': data.get('ai_response'),
-        'last_updated': datetime.now().isoformat()
+        'last_updated': datetime.now(timezone.utc).isoformat()
     }
     
     actor_username = session.get('user', {}).get('username', 'system')
@@ -151,34 +151,92 @@ def update_ticket():
 @ticket_bp.route('/api/take_ticket', methods=['POST'])
 @login_required
 def take_ticket():
-    """Manually take a ticket (assign to self)."""
+    """Manually take a ticket (assign to self) or update assignment/co-worker."""
     data = request.json or {}
     ticket_db_id = data.get('row_number')
     ticket_id = data.get('ticket_id')
     actor_username = session.get('user', {}).get('username', 'system')
-    target_assignee = data.get('assigned_to', actor_username)
     
     if not ticket_db_id or not ticket_id:
         return jsonify({'error': 'Missing ticket identifiers'}), 400
         
     update_payload = {
-        'assigned_to': target_assignee,
-        'last_updated': datetime.now().isoformat()
+        'last_updated': datetime.now(timezone.utc).isoformat()
     }
+
+    # Only modify assigned_to if explicitly provided OR if this is a pure "Take Ticket" action
+    is_pure_take = ('assigned_to' not in data and 'co_worker' not in data and 'co_worker_time_limit' not in data)
+    if 'assigned_to' in data:
+        update_payload['assigned_to'] = data['assigned_to'] or 'Unassigned'
+    elif is_pure_take:
+        update_payload['assigned_to'] = actor_username
+
+    if 'co_worker' in data:
+        update_payload['co_worker'] = data['co_worker'] or None
+    if 'co_worker_time_limit' in data:
+        update_payload['co_worker_time_limit'] = data['co_worker_time_limit'] or None
+
+    current_ticket = sql_logger.get_ticket_by_id(ticket_id) or {}
+
+    def _norm_assign(val):
+        if not val or str(val).strip().lower() in ('', 'none', 'unassigned'):
+            return 'Unassigned'
+        return str(val).strip()
+
+    def _norm_cw(val):
+        if not val or str(val).strip().lower() in ('', 'none'):
+            return None
+        return str(val).strip()
+
+    is_noop = True
+    if 'assigned_to' in update_payload:
+        if _norm_assign(current_ticket.get('assigned_to')) != _norm_assign(update_payload['assigned_to']):
+            is_noop = False
+    if 'co_worker' in update_payload:
+        if _norm_cw(current_ticket.get('co_worker')) != _norm_cw(update_payload['co_worker']):
+            is_noop = False
+    if 'co_worker_time_limit' in update_payload:
+        curr_tl = str(current_ticket.get('co_worker_time_limit') or '')
+        new_tl = str(update_payload['co_worker_time_limit'] or '')
+        if curr_tl != new_tl:
+            is_noop = False
+
+    if is_noop and ('assigned_to' in update_payload or 'co_worker' in update_payload or 'co_worker_time_limit' in update_payload):
+        return jsonify({
+            'success': True,
+            'noop': True,
+            'assigned_to': current_ticket.get('assigned_to', 'Unassigned'),
+            'co_worker': current_ticket.get('co_worker'),
+            'co_worker_time_limit': current_ticket.get('co_worker_time_limit')
+        })
     
     success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
     
     if success:
+        current_ticket = sql_logger.get_ticket_by_id(ticket_id) or {}
+        assigned_to_val = current_ticket.get('assigned_to', update_payload.get('assigned_to', 'Unassigned'))
+        coworker_val = current_ticket.get('co_worker', update_payload.get('co_worker'))
+        timelimit_val = current_ticket.get('co_worker_time_limit', update_payload.get('co_worker_time_limit'))
+
         sio = get_socketio()
         if sio:
             sio.emit('ticket_updated', {
                 'ticket_id': ticket_id,
                 'row_number': ticket_db_id,
-                'updated_by': session.get('user_id')
+                'updated_by': session.get('user_id'),
+                'assigned_to': assigned_to_val,
+                'co_worker': coworker_val,
+                'co_worker_time_limit': timelimit_val.isoformat() if hasattr(timelimit_val, 'isoformat') else timelimit_val
             })
-        return jsonify({'success': True, 'assigned_to': actor_username})
+        coworker_time_limit_out = timelimit_val.isoformat() if hasattr(timelimit_val, 'isoformat') else timelimit_val
+        return jsonify({
+            'success': True,
+            'assigned_to': assigned_to_val,
+            'co_worker': coworker_val,
+            'co_worker_time_limit': coworker_time_limit_out
+        })
     else:
-        return jsonify({'error': 'Failed to take ticket'}), 500
+        return jsonify({'error': 'Failed to update assignment'}), 500
 
 
 @ticket_bp.route('/api/toggle_ticket_status', methods=['POST'])
@@ -210,7 +268,7 @@ def toggle_ticket_status():
 
     update_data = {
         'status': new_status,
-        'last_updated': datetime.now().isoformat()
+        'last_updated': datetime.now(timezone.utc).isoformat()
     }
     
     if new_status == 'Closed':
@@ -341,7 +399,7 @@ def send_to_customer():
         actor_username = session.get('user', {}).get('username', 'system')
         update_payload = {
             'ai_draft': ai_response,
-            'last_updated': datetime.now().isoformat(),
+            'last_updated': datetime.now(timezone.utc).isoformat(),
             'assigned_to': actor_username
         }
 
@@ -369,7 +427,7 @@ def send_to_customer():
             'to': final_recipient,
             'body_text': soup_text,
             'body_html': ai_response,
-            'received': datetime.now(),
+            'received': datetime.now(timezone.utc),
             'attachments': formatted_attachments,
             'cc': final_cc,
             'bcc': final_bcc
@@ -469,7 +527,7 @@ def regenerate_ai_sync():
             
         update_payload = {
             'ai_draft': draft,
-            'last_updated': datetime.now().isoformat()
+            'last_updated': datetime.now(timezone.utc).isoformat()
         }
         
         ticket = sql_logger.get_ticket_by_id(ticket_id)

@@ -13,7 +13,9 @@ let cachedDevOpsMeta = null;
 // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Declare Tiptap editor and DevOps state - end
 let attachedFiles = [];
 let currentAssignmentFilter = null;
+let currentCoworkerFilter = null;
 let currentCustomerFilter = null;
+let currentSortMode = 'default';
 let isTicketLocked = false;
 let isRightPanelCollapsed = false;
 let currentTicketStatus = null; // Added this as it was used but not declared globally in the snippet (or was it?)
@@ -274,98 +276,383 @@ async function loadTickets() {
     }
 }
 
-function toggleFilterDropdown(type) {
-    const dropdownId = type === 'assignment' ? 'assignmentFilterContent' : 'customerFilterContent';
-    const btnId = type === 'assignment' ? 'assignmentFilterBtn' : 'customerFilterBtn';
-    const otherDropdownId = type === 'assignment' ? 'customerFilterContent' : 'assignmentFilterContent';
-    const otherBtnId = type === 'assignment' ? 'customerFilterBtn' : 'assignmentFilterBtn';
+let filterComboboxBlurTimeout = {};
 
+function closeAllFilterComboboxes() {
+    ['filterAssignedDropdown', 'filterCoworkerDropdown', 'filterCustomerDropdown'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+}
+
+function showFilterCombobox(type) {
+    const inputId = type === 'assigned' ? 'filter-assigned-input' : (type === 'coworker' ? 'filter-coworker-input' : 'filter-customer-input');
+    const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+    const input = document.getElementById(inputId);
     const dropdown = document.getElementById(dropdownId);
-    const btn = document.getElementById(btnId);
-    const otherDropdown = document.getElementById(otherDropdownId);
-    const otherBtn = document.getElementById(otherBtnId);
+    if (!input || !dropdown) return;
 
-    otherDropdown.classList.remove('show');
-    otherBtn.classList.remove('open');
+    if (filterComboboxBlurTimeout[type]) {
+        clearTimeout(filterComboboxBlurTimeout[type]);
+        filterComboboxBlurTimeout[type] = null;
+    }
 
-    dropdown.classList.toggle('show');
-    btn.classList.toggle('open');
-}
+    // Close sort dropdown if open
+    const sortDropdown = document.getElementById('sortFilterContent');
+    const sortBtn = document.getElementById('sortFilterBtn');
+    if (sortDropdown) sortDropdown.classList.remove('show');
+    if (sortBtn) sortBtn.classList.remove('open');
 
-function populateAssignmentFilter() {
-    const assignments = new Set();
-    currentTickets.forEach(ticket => {
-        const assignment = ticket.assigned_to || 'Unassigned';
-        assignments.add(assignment);
-    });
-
-    const content = document.getElementById('assignmentFilterContent');
-    if (!content) return;
-
-    let html = `<div class="filter-dropdown-item ${currentAssignmentFilter === null ? 'selected' : ''}" onclick="setAssignmentFilter(null)">All Assignments</div>`;
-
-    Array.from(assignments).sort().forEach(assignment => {
-        const isSelected = currentAssignmentFilter === assignment ? 'selected' : '';
-        html += `<div class="filter-dropdown-item ${isSelected}" onclick="setAssignmentFilter('${escapeHtml(assignment)}')">${escapeHtml(assignment)}</div>`;
-    });
-
-    content.innerHTML = html;
-}
-
-function populateCustomerFilter() {
-    const customers = new Set();
-    currentTickets.forEach(ticket => {
-        if (ticket.customer_email) {
-            const domain = ticket.customer_email.trim().split('@').pop();
-            customers.add(domain);
+    // Close other filter dropdowns
+    ['assigned', 'coworker', 'customer'].forEach(other => {
+        if (other !== type) {
+            const otherDropdownId = other === 'assigned' ? 'filterAssignedDropdown' : (other === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+            const otherEl = document.getElementById(otherDropdownId);
+            if (otherEl) otherEl.style.display = 'none';
         }
     });
 
-    const content = document.getElementById('customerFilterContent');
-    if (!content) return;
+    input.select();
+    renderFilterComboboxDropdown(type, '');
+}
 
-    let html = `<div class="filter-dropdown-item ${currentCustomerFilter === null ? 'selected' : ''}" onclick="setCustomerFilter(null)">All Customers</div>`;
+function handleFilterComboboxBlur(type) {
+    if (filterComboboxBlurTimeout[type]) {
+        clearTimeout(filterComboboxBlurTimeout[type]);
+    }
+    filterComboboxBlurTimeout[type] = setTimeout(() => {
+        const inputId = type === 'assigned' ? 'filter-assigned-input' : (type === 'coworker' ? 'filter-coworker-input' : 'filter-customer-input');
+        const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+        const input = document.getElementById(inputId);
+        const dropdown = document.getElementById(dropdownId);
+        if (!input) return;
 
-    Array.from(customers).sort().forEach(customer => {
-        const isSelected = currentCustomerFilter === customer ? 'selected' : '';
-        html += `<div class="filter-dropdown-item ${isSelected}" onclick="setCustomerFilter('${escapeHtml(customer)}')">${escapeHtml(customer)}</div>`;
+        let activeVal = '';
+        if (type === 'assigned') activeVal = currentAssignmentFilter || '';
+        else if (type === 'coworker') activeVal = currentCoworkerFilter || '';
+        else if (type === 'customer') activeVal = currentCustomerFilter || '';
+
+        input.value = activeVal;
+        if (dropdown) dropdown.style.display = 'none';
+        filterComboboxBlurTimeout[type] = null;
+    }, 250);
+}
+
+function filterFilterCombobox(type) {
+    const inputId = type === 'assigned' ? 'filter-assigned-input' : (type === 'coworker' ? 'filter-coworker-input' : 'filter-customer-input');
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    renderFilterComboboxDropdown(type, input.value.trim());
+}
+
+function getFilterUsersList() {
+    if (assignableUsersList && assignableUsersList.length > 0) {
+        return assignableUsersList;
+    }
+    const legacy = document.getElementById('modal-assignment');
+    if (legacy && legacy.options && legacy.options.length > 0) {
+        assignableUsersList = Array.from(legacy.options)
+            .filter(opt => opt.value && opt.value !== 'Unassigned')
+            .map(opt => ({ id: opt.value, username: opt.value, role: 'staff' }));
+        return assignableUsersList;
+    }
+    const userMap = new Map();
+    currentTickets.forEach(t => {
+        if (t.assigned_to && t.assigned_to !== 'Unassigned') {
+            userMap.set(t.assigned_to, { id: t.assigned_to, username: t.assigned_to, role: 'staff' });
+        }
+        if (t.co_worker && t.co_worker.trim()) {
+            userMap.set(t.co_worker, { id: t.co_worker, username: t.co_worker, role: 'staff' });
+        }
     });
-
-    content.innerHTML = html;
+    return Array.from(userMap.values());
 }
 
-function setAssignmentFilter(assignment) {
-    currentAssignmentFilter = assignment;
-    const btn = document.getElementById('assignmentFilterBtn');
-    const text = document.getElementById('assignmentFilterText');
-    if (assignment) {
-        text.textContent = `👤 ${assignment}`;
-        btn.classList.add('has-filter');
-    } else {
-        text.textContent = '👤 Assignment';
-        btn.classList.remove('has-filter');
+function renderFilterComboboxDropdown(type, query) {
+    const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+
+    const lowerQuery = (query || '').toLowerCase();
+    let html = '';
+
+    if (type === 'assigned') {
+        const users = getFilterUsersList();
+        const matches = users.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
+
+        html += `
+            <div class="combobox-item ${currentAssignmentFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', null);" onclick="selectFilterCombobox('assigned', null);">
+                <span><i class="fa fa-users me-2 text-muted"></i> <em>All Assignments</em></span>
+            </div>
+            <div class="combobox-item ${currentAssignmentFilter === 'Unassigned' ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', 'Unassigned');" onclick="selectFilterCombobox('assigned', 'Unassigned');">
+                <span><i class="fa fa-user-slash me-2 text-muted"></i> <em>Unassigned</em></span>
+            </div>
+        `;
+
+        if (matches.length > 0) {
+            matches.forEach(u => {
+                const isSelected = currentAssignmentFilter === u.username ? 'active' : '';
+                const roleBadge = u.role === 'admin'
+                    ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>'
+                    : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+                html += `
+                    <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', '${escapeHtml(u.username)}');" onclick="selectFilterCombobox('assigned', '${escapeHtml(u.username)}');">
+                        <span><i class="fa fa-user me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(u.username)}</strong></span>
+                        ${roleBadge}
+                    </div>
+                `;
+            });
+        } else if (lowerQuery) {
+            html += `
+                <div class="combobox-zero-state p-3 text-center">
+                    <div class="zero-msg small text-muted"><i class="fa fa-magnifying-glass me-1"></i> No assignee found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                </div>
+            `;
+        }
+    } else if (type === 'coworker') {
+        const users = getFilterUsersList();
+        const matches = users.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
+
+        html += `
+            <div class="combobox-item ${currentCoworkerFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', null);" onclick="selectFilterCombobox('coworker', null);">
+                <span><i class="fa fa-users me-2 text-muted"></i> <em>All Co-Workers</em></span>
+            </div>
+            <div class="combobox-item ${currentCoworkerFilter === 'None' ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', 'None');" onclick="selectFilterCombobox('coworker', 'None');">
+                <span><i class="fa fa-ban me-2 text-muted"></i> <em>None (No Co-Worker)</em></span>
+            </div>
+        `;
+
+        if (matches.length > 0) {
+            matches.forEach(u => {
+                const isSelected = currentCoworkerFilter === u.username ? 'active' : '';
+                const roleBadge = u.role === 'admin'
+                    ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>'
+                    : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+                html += `
+                    <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', '${escapeHtml(u.username)}');" onclick="selectFilterCombobox('coworker', '${escapeHtml(u.username)}');">
+                        <span><i class="fa fa-user-friends me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(u.username)}</strong></span>
+                        ${roleBadge}
+                    </div>
+                `;
+            });
+        } else if (lowerQuery) {
+            html += `
+                <div class="combobox-zero-state p-3 text-center">
+                    <div class="zero-msg small text-muted"><i class="fa fa-magnifying-glass me-1"></i> No co-worker found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                </div>
+            `;
+        }
+    } else if (type === 'customer') {
+        const customerDomains = new Set();
+        currentTickets.forEach(ticket => {
+            if (ticket.customer_email) {
+                const domain = ticket.customer_email.trim().split('@').pop();
+                if (domain) customerDomains.add(domain);
+            }
+        });
+        const domainList = Array.from(customerDomains).sort();
+        const matches = domainList.filter(d => d.toLowerCase().includes(lowerQuery));
+
+        html += `
+            <div class="combobox-item ${currentCustomerFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', null);" onclick="selectFilterCombobox('customer', null);">
+                <span><i class="fa fa-globe me-2 text-muted"></i> <em>All Customers</em></span>
+            </div>
+        `;
+
+        if (matches.length > 0) {
+            matches.forEach(domain => {
+                const isSelected = currentCustomerFilter === domain ? 'active' : '';
+                html += `
+                    <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', '${escapeHtml(domain)}');" onclick="selectFilterCombobox('customer', '${escapeHtml(domain)}');">
+                        <span><i class="fa fa-envelope me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(domain)}</strong></span>
+                    </div>
+                `;
+            });
+        } else {
+            // Customer filter specifically has NO quick add feature; zero screen is a generic message
+            html += `
+                <div class="combobox-zero-state p-3 text-center">
+                    <div class="zero-msg small text-muted"><i class="fa fa-magnifying-glass me-1"></i> No customer found matching "<strong>${escapeHtml(query || '')}</strong>"</div>
+                </div>
+            `;
+        }
     }
-    document.getElementById('assignmentFilterContent').classList.remove('show');
-    btn.classList.remove('open');
+
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+}
+
+function handleFilterComboboxKeydown(e, type) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const inputId = type === 'assigned' ? 'filter-assigned-input' : (type === 'coworker' ? 'filter-coworker-input' : 'filter-customer-input');
+        const input = document.getElementById(inputId);
+        const query = input ? input.value.trim().toLowerCase() : '';
+        if (!query) {
+            selectFilterCombobox(type, null);
+            return;
+        }
+
+        if (type === 'assigned') {
+            const users = getFilterUsersList();
+            const exact = users.find(u => u.username.toLowerCase() === query);
+            if (exact) selectFilterCombobox('assigned', exact.username);
+            else if (query === 'unassigned') selectFilterCombobox('assigned', 'Unassigned');
+        } else if (type === 'coworker') {
+            const users = getFilterUsersList();
+            const exact = users.find(u => u.username.toLowerCase() === query);
+            if (exact) selectFilterCombobox('coworker', exact.username);
+            else if (query === 'none') selectFilterCombobox('coworker', 'None');
+        } else if (type === 'customer') {
+            const customerDomains = new Set();
+            currentTickets.forEach(t => {
+                if (t.customer_email) {
+                    const domain = t.customer_email.trim().split('@').pop();
+                    if (domain) customerDomains.add(domain);
+                }
+            });
+            const exact = Array.from(customerDomains).find(d => d.toLowerCase() === query);
+            if (exact) selectFilterCombobox('customer', exact);
+        }
+    } else if (e.key === 'Escape') {
+        const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+        const dropdown = document.getElementById(dropdownId);
+        if (dropdown) dropdown.style.display = 'none';
+    }
+}
+
+function selectFilterCombobox(type, value) {
+    if (filterComboboxBlurTimeout[type]) {
+        clearTimeout(filterComboboxBlurTimeout[type]);
+        filterComboboxBlurTimeout[type] = null;
+    }
+
+    const inputId = type === 'assigned' ? 'filter-assigned-input' : (type === 'coworker' ? 'filter-coworker-input' : 'filter-customer-input');
+    const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+    const wrapperId = type === 'assigned' ? 'filterAssignedWrapper' : (type === 'coworker' ? 'filterCoworkerWrapper' : 'filterCustomerWrapper');
+
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+    const wrapper = document.getElementById(wrapperId);
+
+    if (type === 'assigned') {
+        currentAssignmentFilter = value;
+    } else if (type === 'coworker') {
+        currentCoworkerFilter = value;
+    } else if (type === 'customer') {
+        currentCustomerFilter = value;
+    }
+
+    if (input) {
+        input.value = value || '';
+        input.dataset.activeFilter = value || '';
+    }
+
+    if (wrapper) {
+        if (value) {
+            wrapper.classList.add('has-filter');
+        } else {
+            wrapper.classList.remove('has-filter');
+        }
+    }
+
+    if (dropdown) dropdown.style.display = 'none';
     displayTickets();
 }
 
-function setCustomerFilter(customer) {
-    currentCustomerFilter = customer;
-    const btn = document.getElementById('customerFilterBtn');
-    const text = document.getElementById('customerFilterText');
-    if (customer) {
-        const shortEmail = customer.length > 20 ? customer.substring(0, 20) + '...' : customer;
-        text.textContent = `📧 ${shortEmail}`;
-        btn.classList.add('has-filter');
-    } else {
-        text.textContent = '📧 Customer';
-        btn.classList.remove('has-filter');
+function clearFilterCombobox(type) {
+    selectFilterCombobox(type, null);
+}
+
+function toggleSortDropdown(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
     }
-    document.getElementById('customerFilterContent').classList.remove('show');
-    btn.classList.remove('open');
+    const dropdown = document.getElementById('sortFilterContent');
+    const btn = document.getElementById('sortFilterBtn');
+    if (!dropdown || !btn) return;
+
+    closeAllFilterComboboxes();
+    const isShown = dropdown.classList.contains('show');
+    if (isShown) {
+        dropdown.classList.remove('show');
+        btn.classList.remove('open');
+    } else {
+        dropdown.classList.add('show');
+        btn.classList.add('open');
+    }
+}
+
+function setSortMode(mode, e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    currentSortMode = mode;
+    updateSortDropdownUI();
+    const dropdown = document.getElementById('sortFilterContent');
+    const btn = document.getElementById('sortFilterBtn');
+    if (dropdown) dropdown.classList.remove('show');
+    if (btn) btn.classList.remove('open');
     displayTickets();
 }
+
+function clearSortMode(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    currentSortMode = 'default';
+    updateSortDropdownUI();
+    const dropdown = document.getElementById('sortFilterContent');
+    const btn = document.getElementById('sortFilterBtn');
+    if (dropdown) dropdown.classList.remove('show');
+    if (btn) btn.classList.remove('open');
+    displayTickets();
+}
+
+function updateSortDropdownUI() {
+    const btn = document.getElementById('sortFilterBtn');
+    const text = document.getElementById('sortFilterText');
+    const optDefault = document.getElementById('sortOptDefault');
+    const optDueAsc = document.getElementById('sortOptDueAsc');
+
+    if (!btn || !text) return;
+
+    if (currentSortMode === 'due_asc') {
+        btn.classList.add('has-filter', 'active-sort');
+        text.innerHTML = '<i class="fa fa-clock me-1 text-warning"></i> Due: Urgency ↑ <span class="sort-clear-btn" role="button" onclick="clearSortMode(event)" title="Reset to default sort"><i class="fa fa-times"></i></span>';
+        if (optDefault) optDefault.classList.remove('selected', 'active');
+        if (optDueAsc) optDueAsc.classList.add('selected', 'active');
+    } else {
+        btn.classList.remove('has-filter', 'active-sort');
+        text.innerHTML = '<i class="fa fa-arrow-down-wide-short me-1"></i> Sort: Recent';
+        if (optDefault) optDefault.classList.add('selected', 'active');
+        if (optDueAsc) optDueAsc.classList.remove('selected', 'active');
+    }
+}
+
+// Global click listener to close filter comboboxes and sort menu on outside click
+document.addEventListener('click', (e) => {
+    const sortDropdown = document.getElementById('sortFilterDropdown');
+    if (sortDropdown && !sortDropdown.contains(e.target)) {
+        const content = document.getElementById('sortFilterContent');
+        const btn = document.getElementById('sortFilterBtn');
+        if (content) content.classList.remove('show');
+        if (btn) btn.classList.remove('open');
+    }
+
+    ['assigned', 'coworker', 'customer'].forEach(type => {
+        const wrapperId = type === 'assigned' ? 'filterAssignedWrapper' : (type === 'coworker' ? 'filterCoworkerWrapper' : 'filterCustomerWrapper');
+        const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
+        const wrapper = document.getElementById(wrapperId);
+        const dropdown = document.getElementById(dropdownId);
+        if (wrapper && !wrapper.contains(e.target) && dropdown) {
+            dropdown.style.display = 'none';
+        }
+    });
+});
 
 function normalizeStatus(status) {
     if (!status) return 'Open';
@@ -441,12 +728,26 @@ function isLongRunningOpen(ticket) {
     return workingHours > 48;
 }
 
+function formatTimeFirstAmPm(dateObj) {
+    if (!dateObj || isNaN(dateObj.getTime())) return '';
+    let hours = dateObj.getHours();
+    const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const strHours = String(hours).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const year = dateObj.getFullYear();
+    return `${strHours}:${minutes} ${ampm}, ${day}-${month}-${year}`;
+}
+
 function displayTickets() {
     const container = document.getElementById('tickets');
     const searchInput = document.getElementById('search');
     const searchQuery = searchInput ? searchInput.value.toLowerCase() : '';
 
-    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCustomerFilter}|${searchQuery}|${currentTimeRange}|${customFromDate}|${customToDate}`;
+    const currentState = `${currentVisibility}|${currentFilter}|${currentAssignmentFilter}|${currentCoworkerFilter}|${currentCustomerFilter}|${currentSortMode}|${searchQuery}|${currentTimeRange}|${customFromDate}|${customToDate}`;
     if (lastDisplayState !== currentState) {
         currentPage = 1;
         lastDisplayState = currentState;
@@ -516,6 +817,15 @@ function displayTickets() {
         filteredTickets = filteredTickets.filter(t => (t.assigned_to || 'Unassigned') === currentAssignmentFilter);
     }
 
+    if (typeof currentCoworkerFilter !== 'undefined' && currentCoworkerFilter !== null) {
+        filteredTickets = filteredTickets.filter(t => {
+            if (currentCoworkerFilter === 'None') {
+                return !t.co_worker || t.co_worker.trim() === '';
+            }
+            return t.co_worker === currentCoworkerFilter;
+        });
+    }
+
     if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
         filteredTickets = filteredTickets.filter(t => {
             if (!t.customer_email) return false;
@@ -540,6 +850,14 @@ function displayTickets() {
     }
     if (typeof currentAssignmentFilter !== 'undefined' && currentAssignmentFilter !== null) {
         statsBase = statsBase.filter(t => (t.assigned_to || 'Unassigned') === currentAssignmentFilter);
+    }
+    if (typeof currentCoworkerFilter !== 'undefined' && currentCoworkerFilter !== null) {
+        statsBase = statsBase.filter(t => {
+            if (currentCoworkerFilter === 'None') {
+                return !t.co_worker || t.co_worker.trim() === '';
+            }
+            return t.co_worker === currentCoworkerFilter;
+        });
     }
     if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
         statsBase = statsBase.filter(t => {
@@ -569,10 +887,33 @@ function displayTickets() {
     };
     updateStats(dynamicStats);
 
-    if (typeof populateAssignmentFilter === 'function') populateAssignmentFilter();
-    if (typeof populateCustomerFilter === 'function') populateCustomerFilter();
+    if (currentSortMode === 'due_asc') {
+        filteredTickets.sort((a, b) => {
+            const getDueTimestamp = (t) => {
+                if (!t || !t.co_worker_time_limit) return null;
+                const time = new Date(t.co_worker_time_limit).getTime();
+                return (isNaN(time) || time <= 0) ? null : time;
+            };
 
-    filteredTickets.sort((a, b) => b.latestActivity - a.latestActivity);
+            const aDue = getDueTimestamp(a);
+            const bDue = getDueTimestamp(b);
+
+            // Both have valid deadlines: soonest / most overdue first
+            if (aDue !== null && bDue !== null) {
+                if (aDue !== bDue) return aDue - bDue;
+                return b.latestActivity - a.latestActivity;
+            }
+            // A has deadline, B does not: A comes first
+            if (aDue !== null && bDue === null) return -1;
+            // B has deadline, A does not: B comes first
+            if (aDue === null && bDue !== null) return 1;
+
+            // Neither has deadline: fallback to latest activity descending
+            return b.latestActivity - a.latestActivity;
+        });
+    } else {
+        filteredTickets.sort((a, b) => b.latestActivity - a.latestActivity);
+    }
 
     if (filteredTickets.length === 0) {
         container.innerHTML = `
@@ -624,38 +965,70 @@ function displayTickets() {
         }
 
         const unansweredBadgeHtml = showUnansweredBadge ?
-            '<span class="sla-badge-unanswered">⏰ Unanswered 24h+</span>' : '';
+            '<span class="sla-badge-unanswered"><i class="fa fa-clock me-1"></i> Unanswered 24h+</span>' : '';
 
         const importantBadgeHtml = isReopened ?
-            '<span class="important-badge">🚩 Reopened</span>' : '';
+            '<span class="important-badge"><i class="fa fa-redo me-1"></i> Reopened</span>' : '';
 
         const unreadBadgeHtml = hasUnreadResponse ?
-            '<span class="unread-badge" title="New customer response unread">⭐ New</span>' : '';
+            '<span class="unread-badge" title="New customer response unread"><i class="fa fa-star me-1"></i> New</span>' : '';
 
         const isLocked = ticket.locked_by && ticket.locked_by !== null;
         const lockClass = isLocked ? 'locked-by-other' : '';
-        const lockBadge = isLocked ? `<span style="font-size:0.8rem; margin-left:5px">🔒 ${escapeHtml(ticket.locked_by)}</span>` : '';
+        const lockBadge = isLocked ? `<span style="font-size:0.8rem; margin-left:5px"><i class="fa fa-lock me-1"></i> ${escapeHtml(ticket.locked_by)}</span>` : '';
+
+        // Co-Worker Badge
+        const coWorker = ticket.co_worker ? escapeHtml(ticket.co_worker) : null;
+        const coWorkerBadgeHtml = coWorker ?
+            `<span class="coworker-badge" title="Co-Worker Collaborator"><i class="fa fa-user-friends me-1"></i> ${coWorker}</span>` : '';
+
+        // Co-Worker Time Limit Badge
+        let timeLimitBadgeHtml = '';
+        if (ticket.co_worker_time_limit) {
+            const deadline = new Date(ticket.co_worker_time_limit);
+            const now = new Date();
+            const diffMs = deadline - now;
+            if (diffMs <= 0) {
+                timeLimitBadgeHtml = `<span class="time-limit-badge tl-overdue" title="Deadline passed on ${formatTimeFirstAmPm(deadline)}"><i class="fa fa-exclamation-circle me-1"></i> Overdue</span>`;
+            } else {
+                const diffMins = Math.round(diffMs / 60000);
+                const diffHours = Math.floor(diffMins / 60);
+                if (diffHours < 2) {
+                    timeLimitBadgeHtml = `<span class="time-limit-badge tl-warning" title="Deadline: ${formatTimeFirstAmPm(deadline)}"><i class="fa fa-exclamation-triangle me-1"></i> ${diffMins}m left</span>`;
+                } else if (diffHours < 24) {
+                    timeLimitBadgeHtml = `<span class="time-limit-badge tl-normal" title="Deadline: ${formatTimeFirstAmPm(deadline)}"><i class="fa fa-clock me-1"></i> ${diffHours}h left</span>`;
+                } else {
+                    const diffDays = Math.floor(diffHours / 24);
+                    timeLimitBadgeHtml = `<span class="time-limit-badge tl-normal" title="Deadline: ${formatTimeFirstAmPm(deadline)}"><i class="fa fa-clock me-1"></i> ${diffDays}d left</span>`;
+                }
+            }
+        }
 
         return `
         <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
-            <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', ${JSON.stringify(subject).replace(/"/g, '&quot;')}, '${displayId}')">🕒</div>
+            <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', ${JSON.stringify(subject).replace(/"/g, '&quot;')}, '${displayId}')"><i class="fa fa-history"></i></div>
             <div class="ticket-header">
                 <div class="ticket-id-row">
                     <span class="ticket-id" title="${ticketId}">${displayId}</span>
+                    <span class="ticket-status-inline status-${statusClass}">
+                        <span class="status-dot"></span>
+                        <span class="status-name">${status}</span>
+                    </span>
                     ${lockBadge}
                     ${unansweredBadgeHtml}
                     ${importantBadgeHtml}
                     ${unreadBadgeHtml}
                 </div>
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
-                    <span class="ticket-status status-${statusClass}">${status}</span>
-                    <span class="assignment-badge ${assignedTo === 'Unassigned' ? 'unassigned' : ''}">👤 ${assignedTo}</span>
+                <div class="ticket-meta-badges">
+                    <span class="assignment-badge ${assignedTo === 'Unassigned' ? 'unassigned' : 'assigned'}"><i class="fa fa-user me-1"></i> ${assignedTo}</span>
+                    ${coWorkerBadgeHtml}
+                    ${timeLimitBadgeHtml}
                 </div>
             </div>
             <div class="ticket-subject">${subject}</div>
             <div class="ticket-meta">
-                <span>📧 ${customerEmail}</span>
-                <span>📅 Last Replied: ${timestamp}</span>
+                <span><i class="fa fa-envelope me-1"></i> ${customerEmail}</span>
+                <span><i class="fa fa-calendar-alt me-1"></i> Last Replied: ${timestamp}</span>
             </div>
         </div>
         `;
@@ -693,6 +1066,8 @@ function renderTicketSkeleton() {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '<div class="skeleton skeleton-text" style="width: 150px; display: inline-block; vertical-align: middle;"></div>';
     });
+    const wrapper = document.getElementById('modalSubjectWrapper');
+    if (wrapper) wrapper.classList.remove('is-overflowing');
 
     // Skeleton for message thread
     const threadContainer = document.getElementById('emailChainContainer');
@@ -711,6 +1086,50 @@ function renderTicketSkeleton() {
     //     quillEditor.root.innerHTML = '<div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text"></div><div class="skeleton skeleton-text" style="width: 60%;"></div>';
     // }
 }
+
+function updateModalSubjectAutoScroll(subjectText) {
+    const subjectEl = document.getElementById('modal-subject');
+    const wrapperEl = document.getElementById('modalSubjectWrapper');
+    if (!subjectEl) return;
+
+    subjectEl.textContent = subjectText || 'No Subject';
+    subjectEl.title = subjectText || 'No Subject';
+    
+    // Clear previous animation parameters
+    subjectEl.classList.remove('animate-scroll');
+    subjectEl.style.removeProperty('--scroll-distance');
+    subjectEl.style.removeProperty('--scroll-duration');
+    if (wrapperEl) wrapperEl.classList.remove('is-overflowing');
+
+    // Measure after browser paint
+    setTimeout(() => {
+        if (!wrapperEl || !subjectEl) return;
+        const textWidth = subjectEl.scrollWidth;
+        const containerWidth = wrapperEl.clientWidth;
+        const diff = textWidth - containerWidth;
+
+        if (diff > 8) {
+            wrapperEl.classList.add('is-overflowing');
+            const scrollDistance = -(diff + 24);
+            // Dynamic comfortable reading speed: ~32px per second + 4s pause time
+            const duration = Math.max(6, Math.round((diff / 32) + 4));
+            
+            subjectEl.style.setProperty('--scroll-distance', `${scrollDistance}px`);
+            subjectEl.style.setProperty('--scroll-duration', `${duration}s`);
+            subjectEl.classList.add('animate-scroll');
+        }
+    }, 150);
+}
+
+window.addEventListener('resize', () => {
+    const modal = document.getElementById('ticketModal');
+    if (modal && modal.classList.contains('active')) {
+        const subjectEl = document.getElementById('modal-subject');
+        if (subjectEl && subjectEl.textContent) {
+            updateModalSubjectAutoScroll(subjectEl.textContent);
+        }
+    }
+});
 
 async function openTicket(ticketId, rowNumber) {
     currentTicketRow = rowNumber;
@@ -737,6 +1156,14 @@ async function openTicket(ticketId, rowNumber) {
     if (!ticket) {
         closeModal();
         return;
+    }
+
+    if (!currentTicketRow && ticket && (ticket.id || ticket.row_id)) {
+        currentTicketRow = ticket.id || ticket.row_id;
+    }
+
+    if (!assignableUsersList || assignableUsersList.length === 0) {
+        loadAssignableUsers();
     }
 
     currentTicketStatus = normalizeStatus(ticket.status);
@@ -767,12 +1194,46 @@ async function openTicket(ticketId, rowNumber) {
             emailToEl.title = "";
         }
     }
-    document.getElementById('modal-subject').textContent = ticket.subject || 'No Subject';
+    updateModalSubjectAutoScroll(ticket.subject || 'No Subject');
     document.getElementById('modal-ticket-id').textContent = ticket.display_id || truncateTicketId(ticket.ticket_id || 'NO-ID');
     document.getElementById('modal-ticket-id').title = ticket.ticket_id || 'NO-ID';
     document.getElementById('modal-email').textContent = ticket.customer_email || 'Unknown';
     document.getElementById('modal-date').textContent = formatDate(ticket.last_updated);
-    document.getElementById('modal-assignment').value = ticket.assigned_to || '';
+    const legacySelect = document.getElementById('modal-assignment');
+    if (legacySelect) legacySelect.value = ticket.assigned_to || '';
+
+    const assignedInput = document.getElementById('modal-assigned-input');
+    if (assignedInput) {
+        const userVal = (ticket.assigned_to && ticket.assigned_to !== 'Unassigned') ? ticket.assigned_to : '';
+        assignedInput.value = userVal;
+        assignedInput.dataset.activeUser = userVal;
+    }
+
+    const coworkerInput = document.getElementById('modal-coworker-input');
+    if (coworkerInput) {
+        const cwVal = ticket.co_worker || '';
+        coworkerInput.value = cwVal;
+        coworkerInput.dataset.activeUser = cwVal;
+    }
+
+    const infoCoworker = document.getElementById('modal-info-coworker');
+    if (infoCoworker) {
+        infoCoworker.textContent = ticket.co_worker || 'None';
+    }
+
+    const infoTimeLimit = document.getElementById('modal-info-timelimit');
+    if (infoTimeLimit) {
+        if (ticket.co_worker_time_limit) {
+            infoTimeLimit.textContent = formatTimeFirstAmPm(new Date(ticket.co_worker_time_limit));
+        } else {
+            infoTimeLimit.textContent = 'None';
+        }
+    }
+
+    if (typeof updateTimeLimitControls === 'function') {
+        updateTimeLimitControls(ticket.co_worker_time_limit);
+    }
+
     document.body.classList.add('modal-open');
 
     // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Populate Tiptap editor and load DevOps items - start
@@ -1434,7 +1895,11 @@ async function previewAttachment(attachmentId, messageId, filename, contentType)
         const isPDF = contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf');
 
         if (isImage) {
-            previewBody.innerHTML = `<img src="${viewUrl}" alt="${escapeHtml(filename)}" onerror="this.parentElement.innerHTML='<div style=\'padding:2rem;color:red;\'>❌ Failed to load image preview.</div>'">`;
+            previewBody.innerHTML = `
+                <div style="display: flex; justify-content: center; align-items: center; min-height: 240px; width: 100%;">
+                    <img src="${viewUrl}" alt="${escapeHtml(filename)}" style="max-width: 100%; max-height: 75vh; object-fit: contain; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);" onerror="this.parentElement.innerHTML='<div style=\\'padding:2rem;color:red;\\'>❌ Failed to load image preview.</div>'">
+                </div>
+            `;
         } else if (isPDF) {
             previewBody.innerHTML = `<iframe src="${viewUrl}" style="border:none; width:100%; height:100%;" title="PDF Preview"></iframe>`;
         } else {
@@ -1478,6 +1943,8 @@ async function downloadAttachment(attachmentId, messageId, filename) {
 function closeModal() {
     try {
         console.log('Closing ticket modal...');
+        stopLiveTimerCountdown();
+        closeTimerActionMenu();
         if (currentTicketIdStr && socket && socket.connected) {
             socket.emit('unlock_ticket', { ticket_id: currentTicketIdStr });
         }
@@ -1514,6 +1981,14 @@ async function changeAssignment() {
     if (!currentTicketRow || !currentTicketIdStr) return;
 
     const newAssignee = document.getElementById('modal-assignment').value;
+    const assignedInput = document.getElementById('modal-assigned-input');
+    const currentVal = assignedInput ? (assignedInput.dataset.activeUser || assignedInput.value.trim()) : '';
+    const normCurrent = (!currentVal || currentVal.toLowerCase() === 'unassigned') ? 'unassigned' : currentVal.toLowerCase();
+    const normNew = (!newAssignee || newAssignee.toLowerCase() === 'unassigned') ? 'unassigned' : newAssignee.toLowerCase();
+
+    if (normCurrent === normNew) {
+        return;
+    }
 
     try {
         const response = await fetch('/api/take_ticket', {
@@ -1542,6 +2017,13 @@ async function changeAssignment() {
 async function takeTicket() {
     if (!currentTicketIdStr) return;
 
+    const assignedInput = document.getElementById('modal-assigned-input');
+    const currentVal = assignedInput ? (assignedInput.dataset.activeUser || assignedInput.value.trim()) : '';
+    if (currentVal && typeof currentUsername !== 'undefined' && currentUsername && currentVal.toLowerCase() === currentUsername.toLowerCase()) {
+        showToast('Ticket is already assigned to you', false);
+        return;
+    }
+
     try {
         const response = await fetch('/api/take_ticket', {
             method: 'POST',
@@ -1559,6 +2041,11 @@ async function takeTicket() {
             if (assignmentSelect) {
                 assignmentSelect.value = result.assigned_to;
             }
+            const assignedInput = document.getElementById('modal-assigned-input');
+            if (assignedInput) {
+                assignedInput.value = result.assigned_to;
+                assignedInput.dataset.activeUser = result.assigned_to;
+            }
             loadTickets();
         } else {
             showToast(result.error || 'Failed to take ticket', true);
@@ -1568,6 +2055,789 @@ async function takeTicket() {
         showToast('Network error while taking ticket', true);
     }
 }
+
+// ==========================================================================
+// Combobox Typeahead & Quick Add Implementation
+// ==========================================================================
+let assignableUsersList = [];
+
+async function loadAssignableUsers() {
+    try {
+        const resp = await fetch('/api/users/assignable');
+        const data = await resp.json();
+        if (data && data.users) {
+            assignableUsersList = data.users;
+            updateAssignmentFilterDropdown();
+        }
+    } catch (e) {
+        console.error('Error loading assignable users:', e);
+    }
+}
+
+function updateAssignmentFilterDropdown() {
+    const filterSelect = document.getElementById('assignmentFilter');
+    if (!filterSelect) return;
+    const currentVal = filterSelect.value;
+    let html = '<option value="">All Assignments</option><option value="Unassigned">Unassigned</option>';
+    assignableUsersList.forEach(u => {
+        html += `<option value="${escapeHtml(u.username)}">${escapeHtml(u.username)}</option>`;
+    });
+    filterSelect.innerHTML = html;
+    filterSelect.value = currentVal;
+}
+
+let comboboxBlurTimeout = {};
+
+function showComboboxDropdown(field) {
+    const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+    const dropdown = document.getElementById(field === 'assigned_to' ? 'assignedToDropdown' : 'coworkerDropdown');
+    if (!input || !dropdown) return;
+
+    if (comboboxBlurTimeout[field]) {
+        clearTimeout(comboboxBlurTimeout[field]);
+        comboboxBlurTimeout[field] = null;
+    }
+
+    // Fallback: Populate assignableUsersList from server-rendered options if empty
+    if (!assignableUsersList || assignableUsersList.length === 0) {
+        const legacy = document.getElementById('modal-assignment');
+        if (legacy && legacy.options && legacy.options.length > 0) {
+            assignableUsersList = Array.from(legacy.options)
+                .filter(opt => opt.value && opt.value !== 'Unassigned')
+                .map(opt => ({ id: opt.value, username: opt.value, role: 'staff' }));
+        }
+        if (typeof loadAssignableUsers === 'function') {
+            loadAssignableUsers();
+        }
+    }
+
+    input.select();
+    renderComboboxDropdown(field, '');
+}
+
+function handleComboboxBlur(field) {
+    if (comboboxBlurTimeout[field]) {
+        clearTimeout(comboboxBlurTimeout[field]);
+    }
+    comboboxBlurTimeout[field] = setTimeout(() => {
+        const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+        const dropdown = document.getElementById(field === 'assigned_to' ? 'assignedToDropdown' : 'coworkerDropdown');
+        if (!input) return;
+
+        // Revert back to the actual assigned employee or empty if unassigned
+        const active = input.dataset.activeUser || '';
+        input.value = active;
+
+        if (dropdown) dropdown.style.display = 'none';
+        comboboxBlurTimeout[field] = null;
+    }, 250);
+}
+
+function filterComboboxUsers(field) {
+    const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+    if (!input) return;
+    renderComboboxDropdown(field, input.value.trim());
+}
+
+function renderComboboxDropdown(field, query) {
+    const dropdown = document.getElementById(field === 'assigned_to' ? 'assignedToDropdown' : 'coworkerDropdown');
+    if (!dropdown) return;
+
+    // Ensure assignable users are populated
+    if (!assignableUsersList || assignableUsersList.length === 0) {
+        const legacy = document.getElementById('modal-assignment');
+        if (legacy && legacy.options && legacy.options.length > 0) {
+            assignableUsersList = Array.from(legacy.options)
+                .filter(opt => opt.value && opt.value !== 'Unassigned')
+                .map(opt => ({ id: opt.value, username: opt.value, role: 'staff' }));
+        }
+    }
+
+    const lowerQuery = (query || '').toLowerCase();
+    const matches = assignableUsersList.filter(u => u.username && u.username.toLowerCase().includes(lowerQuery));
+
+    let html = '';
+    if (field === 'co_worker') {
+        html += `
+            <div class="combobox-item" onmousedown="event.preventDefault(); selectComboboxUser('${field}', '');" onclick="selectComboboxUser('${field}', '');">
+                <span><i class="fa fa-ban me-2 text-muted"></i> <em>None (Remove)</em></span>
+            </div>
+        `;
+    } else if (field === 'assigned_to') {
+        html += `
+            <div class="combobox-item" onmousedown="event.preventDefault(); selectComboboxUser('${field}', 'Unassigned');" onclick="selectComboboxUser('${field}', 'Unassigned');">
+                <span><i class="fa fa-user-slash me-2 text-muted"></i> <em>Unassigned</em></span>
+            </div>
+        `;
+    }
+
+    if (matches.length > 0) {
+        matches.forEach(u => {
+            const roleBadge = u.role === 'admin' 
+                ? '<span class="badge bg-warning text-dark" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-shield-alt"></i> Admin</span>' 
+                : '<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 5px;"><i class="fa fa-user"></i> Staff</span>';
+            html += `
+                <div class="combobox-item" onmousedown="event.preventDefault(); selectComboboxUser('${field}', '${escapeHtml(u.username)}');" onclick="selectComboboxUser('${field}', '${escapeHtml(u.username)}');">
+                    <span><i class="fa fa-user me-2 text-primary"></i> <strong>${escapeHtml(u.username)}</strong></span>
+                    ${roleBadge}
+                </div>
+            `;
+        });
+
+        // If user typed a query that is not an exact match, offer Add Employee as well
+        const exactMatch = matches.some(u => u.username.toLowerCase() === lowerQuery);
+        if (query && query.trim().length > 0 && !exactMatch) {
+            html += `
+                <div class="combobox-item" style="border-top: 1px dashed var(--border-color); background: rgba(59, 130, 246, 0.06);" onmousedown="event.preventDefault(); triggerQuickAddFromCombobox('${field}');" onclick="triggerQuickAddFromCombobox('${field}');">
+                    <span style="color: var(--primary); font-weight: 600;"><i class="fa fa-user-plus me-2"></i> Add Employee "${escapeHtml(query)}"</span>
+                </div>
+            `;
+        }
+    } else {
+        html += `
+            <div class="combobox-zero-state p-3 text-center">
+                <div class="zero-msg small text-muted mb-2"><i class="fa fa-search me-1"></i> No employee found matching "<strong>${escapeHtml(query || '')}</strong>"</div>
+                <button type="button" class="btn btn-primary btn-sm w-100 d-inline-flex align-items-center justify-content-center gap-2" style="font-weight: 600; padding: 7px 12px; border-radius: 6px; cursor: pointer;" onmousedown="event.preventDefault(); triggerQuickAddFromCombobox('${field}');" onclick="triggerQuickAddFromCombobox('${field}');">
+                    <i class="fa fa-user-plus"></i> Add Employee
+                </button>
+            </div>
+        `;
+    }
+
+    dropdown.innerHTML = html;
+    dropdown.style.display = 'block';
+}
+
+function triggerQuickAddFromCombobox(field) {
+    const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+    const query = input ? input.value.trim() : '';
+    openQuickAddModal(field, query);
+}
+
+function handleComboboxKeydown(e, field) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+        const query = input ? input.value.trim() : '';
+        if (!query) return;
+
+        const exact = assignableUsersList.find(u => u.username.toLowerCase() === query.toLowerCase());
+        if (exact) {
+            selectComboboxUser(field, exact.username);
+        } else {
+            triggerQuickAddFromCombobox(field);
+        }
+    } else if (e.key === 'Escape') {
+        const dropdown = document.getElementById(field === 'assigned_to' ? 'assignedToDropdown' : 'coworkerDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+    }
+}
+
+function selectComboboxUser(field, username) {
+    if (comboboxBlurTimeout[field]) {
+        clearTimeout(comboboxBlurTimeout[field]);
+        comboboxBlurTimeout[field] = null;
+    }
+
+    const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+    const dropdown = document.getElementById(field === 'assigned_to' ? 'assignedToDropdown' : 'coworkerDropdown');
+
+    const currentVal = input ? (input.dataset.activeUser || '') : '';
+    const normCurrent = (!currentVal || currentVal.toLowerCase() === 'unassigned') ? 'unassigned' : currentVal.toLowerCase();
+    const normNew = (!username || username.toLowerCase() === 'unassigned') ? 'unassigned' : username.toLowerCase();
+
+    const assignedVal = (username === 'Unassigned') ? '' : username;
+    if (input) {
+        input.value = assignedVal;
+        input.dataset.activeUser = assignedVal;
+    }
+    if (dropdown) dropdown.style.display = 'none';
+
+    // If there is no change, do not trigger API call
+    if (normCurrent === normNew) {
+        return;
+    }
+
+    saveTicketAssignment(field, username);
+}
+
+function clearCombobox(field) {
+    if (comboboxBlurTimeout[field]) {
+        clearTimeout(comboboxBlurTimeout[field]);
+        comboboxBlurTimeout[field] = null;
+    }
+
+    const input = document.getElementById(field === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+    const currentVal = input ? (input.dataset.activeUser || input.value.trim()) : '';
+
+    if (field === 'assigned_to') {
+        // Only trigger API call if previously assigned to an actual person
+        if (!currentVal || currentVal.toLowerCase() === 'unassigned') {
+            if (input) {
+                input.value = '';
+                input.dataset.activeUser = '';
+            }
+            return;
+        }
+        selectComboboxUser('assigned_to', 'Unassigned');
+    } else if (field === 'co_worker') {
+        // Only trigger API call if a co-worker was previously set
+        if (!currentVal) {
+            if (input) {
+                input.value = '';
+                input.dataset.activeUser = '';
+            }
+            return;
+        }
+        selectComboboxUser('co_worker', '');
+    }
+}
+
+async function saveTicketAssignment(field, value) {
+    if (currentTicketRow === null || currentTicketRow === undefined || !currentTicketIdStr) return;
+
+    const payload = {
+        ticket_id: currentTicketIdStr,
+        row_number: currentTicketRow
+    };
+    payload[field] = value;
+
+    let res = null;
+    try {
+        const resp = await fetch('/api/take_ticket', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) {
+            let errorText = 'Failed to update assignment';
+            try {
+                const errJson = await resp.json();
+                errorText = errJson.error || errorText;
+            } catch (_) {}
+            showToast(errorText, true);
+            return;
+        }
+
+        res = await resp.json();
+    } catch (netErr) {
+        console.error('Network error during /api/take_ticket:', netErr);
+        showToast('Network error while saving assignment', true);
+        return;
+    }
+
+    if (res && res.success) {
+        const label = field === 'assigned_to' ? 'Assignee' : (field === 'co_worker' ? 'Co-Worker' : 'Due In');
+        showToast(`${label} updated`, false);
+
+        try {
+            if (field === 'assigned_to') {
+                const assignedInput = document.getElementById('modal-assigned-input');
+                const legacySelect = document.getElementById('modal-assignment');
+                const displayVal = (value && value !== 'Unassigned') ? value : '';
+                if (assignedInput) {
+                    assignedInput.value = displayVal;
+                    assignedInput.dataset.activeUser = displayVal;
+                }
+                if (legacySelect) legacySelect.value = value || 'Unassigned';
+            } else if (field === 'co_worker') {
+                const coworkerInput = document.getElementById('modal-coworker-input');
+                const infoCoworker = document.getElementById('modal-info-coworker');
+                if (coworkerInput) {
+                    coworkerInput.value = value || '';
+                    coworkerInput.dataset.activeUser = value || '';
+                }
+                if (infoCoworker) infoCoworker.textContent = value || 'None';
+            } else if (field === 'co_worker_time_limit') {
+                const infoTimeLimit = document.getElementById('modal-info-timelimit');
+                if (infoTimeLimit) {
+                    const isValValid = value && value !== 'null' && value !== 'None';
+                    infoTimeLimit.textContent = isValValid ? formatTimeFirstAmPm(new Date(value)) : 'None';
+                }
+                updateTimeLimitControls(value);
+            }
+            loadTickets();
+        } catch (domErr) {
+            console.error('Error updating UI state after assignment:', domErr);
+        }
+    } else if (res) {
+        showToast(res.error || 'Failed to update assignment', true);
+    }
+}
+
+let timeLimitPickerInstance = null;
+
+function initTimeLimitPicker() {
+    const input = document.getElementById('modal-coworker-timelimit');
+    if (!input || typeof flatpickr === 'undefined') return;
+
+    if (timeLimitPickerInstance) {
+        timeLimitPickerInstance.destroy();
+    }
+
+    timeLimitPickerInstance = flatpickr(input, {
+        enableTime: true,
+        dateFormat: "h:i K, d-m-Y",
+        time_24hr: false,
+        minDate: "today",
+        clickOpens: false,
+        appendTo: document.body,
+        onReady: function(selectedDates, dateStr, instance) {
+            const container = document.createElement('div');
+            container.className = 'flatpickr-presets-bar';
+            container.innerHTML = `
+                <div class="flatpickr-presets-title"><i class="fa fa-bolt me-1"></i> Quick Presets</div>
+                <div class="flatpickr-presets-chips">
+                    <button type="button" class="fp-preset-btn" data-hours="1">+1h</button>
+                    <button type="button" class="fp-preset-btn" data-hours="2">+2h</button>
+                    <button type="button" class="fp-preset-btn" data-hours="4">+4h</button>
+                    <button type="button" class="fp-preset-btn" data-hours="8">+8h</button>
+                    <button type="button" class="fp-preset-btn" data-hours="24">+24h</button>
+                    <button type="button" class="fp-preset-btn" data-hours="48">+48h</button>
+                </div>
+            `;
+            instance.calendarContainer.prepend(container);
+
+            container.querySelectorAll('.fp-preset-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const hours = parseInt(btn.dataset.hours, 10);
+                    const target = new Date(Date.now() + hours * 3600 * 1000);
+                    instance.setDate(target, true);
+                    instance.close();
+                });
+            });
+        },
+        onChange: function(selectedDates, dateStr, instance) {
+            if (selectedDates.length > 0) {
+                const selectedIso = selectedDates[0].toISOString();
+                saveTicketAssignment('co_worker_time_limit', selectedIso);
+            }
+        }
+    });
+}
+
+let liveTimerInterval = null;
+let activeTimerDeadlineMs = null;
+let isTimerPaused = false;
+let pausedRemainingMs = 0;
+
+function formatLiveCountdown(diffMs) {
+    const isNegative = diffMs < 0;
+    const absMs = Math.abs(diffMs);
+    const totalSeconds = Math.floor(absMs / 1000);
+
+    const months  = Math.floor(totalSeconds / (30 * 24 * 3600));
+    const days    = Math.floor((totalSeconds % (30 * 24 * 3600)) / (24 * 3600));
+    const hours   = Math.floor((totalSeconds % (24 * 3600)) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const pad = (n) => String(n).padStart(2, '0');
+
+    // Build a human-readable cascade — only show units that are non-zero
+    // (always show at least minutes + seconds)
+    let parts = [];
+    if (months  > 0) parts.push(`${months}mo`);
+    if (days    > 0) parts.push(`${days}d`);
+    if (hours   > 0) parts.push(`${hours}h`);
+    if (minutes > 0 || months > 0 || days > 0 || hours > 0) parts.push(`${pad(minutes)}m`);
+    parts.push(`${pad(seconds)}s`);
+
+    const label = parts.join(' ');
+
+    if (isNegative) {
+        return `Overdue (-${label})`;
+    }
+    return `${label} left`;
+}
+
+function tickLiveTimer() {
+    const input = document.getElementById('modal-coworker-timelimit');
+    if (!input || !activeTimerDeadlineMs) {
+        stopLiveTimerCountdown();
+        return;
+    }
+
+    if (isTimerPaused) {
+        input.value = `Paused: ${formatLiveCountdown(pausedRemainingMs)}`;
+        input.className = 'modal-action-select combobox-input timelimit-unified-input timer-paused';
+        return;
+    }
+
+    const now = Date.now();
+    const diffMs = activeTimerDeadlineMs - now;
+
+    input.value = formatLiveCountdown(diffMs);
+
+    if (diffMs <= 0) {
+        input.className = 'modal-action-select combobox-input timelimit-unified-input timer-overdue';
+    } else {
+        input.className = 'modal-action-select combobox-input timelimit-unified-input timer-running';
+    }
+}
+
+function startLiveTimerCountdown(deadlineIso) {
+    stopLiveTimerCountdown();
+    if (!deadlineIso) return;
+
+    const deadline = new Date(deadlineIso);
+    if (isNaN(deadline.getTime())) return;
+
+    activeTimerDeadlineMs = deadline.getTime();
+    isTimerPaused = false;
+    pausedRemainingMs = 0;
+
+    updatePausePlayMenuBtn();
+    tickLiveTimer();
+    liveTimerInterval = setInterval(tickLiveTimer, 1000);
+}
+
+function stopLiveTimerCountdown() {
+    if (liveTimerInterval) {
+        clearInterval(liveTimerInterval);
+        liveTimerInterval = null;
+    }
+    activeTimerDeadlineMs = null;
+    isTimerPaused = false;
+    pausedRemainingMs = 0;
+
+    const input = document.getElementById('modal-coworker-timelimit');
+    if (input) {
+        input.className = 'modal-action-select combobox-input timelimit-unified-input';
+    }
+    closeTimerActionMenu();
+}
+
+function toggleTimerActionMenu(forceState = null) {
+    const menu = document.getElementById('timerActionMenu');
+    if (!menu) return;
+    const isVisible = menu.style.display === 'block';
+    const newState = forceState !== null ? forceState : !isVisible;
+    menu.style.display = newState ? 'block' : 'none';
+}
+
+function closeTimerActionMenu() {
+    const menu = document.getElementById('timerActionMenu');
+    if (menu) menu.style.display = 'none';
+}
+
+document.addEventListener('click', (e) => {
+    const wrapper = document.getElementById('timeLimitComboboxWrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        closeTimerActionMenu();
+    }
+});
+
+function handleTimeLimitWidgetClick(e) {
+    const input = document.getElementById('modal-coworker-timelimit');
+    if (!input) return;
+
+    // If an active deadline is running or paused, toggle the audio player control menu
+    if (activeTimerDeadlineMs || (input.dataset.activeDeadline && input.dataset.activeDeadline !== '')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (timeLimitPickerInstance) timeLimitPickerInstance.close();
+        toggleTimerActionMenu();
+        return;
+    }
+
+    // Unset / stopped: open presets and calendar picker
+    closeTimerActionMenu();
+    if (timeLimitPickerInstance) {
+        timeLimitPickerInstance.open();
+    }
+}
+
+function updatePausePlayMenuBtn() {
+    const icon = document.getElementById('timerPausePlayIcon');
+    const text = document.getElementById('timerPausePlayText');
+    if (!icon || !text) return;
+
+    if (isTimerPaused) {
+        icon.className = 'fa fa-play';
+        text.textContent = 'Play';
+    } else {
+        icon.className = 'fa fa-pause';
+        text.textContent = 'Pause';
+    }
+}
+
+async function togglePauseTimer() {
+    if (!activeTimerDeadlineMs) return;
+
+    if (!isTimerPaused) {
+        isTimerPaused = true;
+        pausedRemainingMs = Math.max(0, activeTimerDeadlineMs - Date.now());
+        updatePausePlayMenuBtn();
+        tickLiveTimer();
+        showToast('Timer paused', false);
+    } else {
+        isTimerPaused = false;
+        activeTimerDeadlineMs = Date.now() + pausedRemainingMs;
+        updatePausePlayMenuBtn();
+        tickLiveTimer();
+
+        const newDeadlineIso = new Date(activeTimerDeadlineMs).toISOString();
+        const input = document.getElementById('modal-coworker-timelimit');
+        if (input) input.dataset.activeDeadline = newDeadlineIso;
+        const deadlineTextEl = document.getElementById('timerMenuDeadlineText');
+        if (deadlineTextEl) deadlineTextEl.textContent = formatTimeFirstAmPm(new Date(activeTimerDeadlineMs));
+
+        await saveTicketAssignment('co_worker_time_limit', newDeadlineIso);
+        showToast('Timer resumed', false);
+    }
+    closeTimerActionMenu();
+}
+
+async function stopTimerFromMenu() {
+    closeTimerActionMenu();
+    await clearTimeLimit();
+    showToast('Timer stopped', false);
+}
+
+function resetTimerFromMenu() {
+    closeTimerActionMenu();
+    clearTimeLimit();
+    if (timeLimitPickerInstance) {
+        timeLimitPickerInstance.clear(false);
+        setTimeout(() => {
+            timeLimitPickerInstance.open();
+        }, 60);
+    }
+}
+
+function clearTimeLimit() {
+    stopLiveTimerCountdown();
+    const input = document.getElementById('modal-coworker-timelimit');
+    const currentVal = input ? (input.dataset.activeDeadline || input.value.trim()) : '';
+    if (!currentVal) {
+        // No time limit was set, skip API call
+        return Promise.resolve();
+    }
+    if (timeLimitPickerInstance) {
+        timeLimitPickerInstance.clear(false);
+    }
+    if (input) {
+        input.value = '';
+        input.dataset.activeDeadline = '';
+        input.title = "Click to set due in";
+        input.className = 'modal-action-select combobox-input timelimit-unified-input';
+    }
+    const deadlineTextEl = document.getElementById('timerMenuDeadlineText');
+    if (deadlineTextEl) deadlineTextEl.textContent = '--';
+
+    return saveTicketAssignment('co_worker_time_limit', null);
+}
+
+function updateTimeLimitControls(isoString) {
+    const input = document.getElementById('modal-coworker-timelimit');
+    if (!input) return;
+
+    if (!timeLimitPickerInstance) {
+        initTimeLimitPicker();
+    }
+
+    if (!isoString || isoString === 'null' || isoString === 'None') {
+        stopLiveTimerCountdown();
+        if (timeLimitPickerInstance) timeLimitPickerInstance.clear(false);
+        input.value = '';
+        input.dataset.activeDeadline = '';
+        input.title = "Click to set due in";
+        input.className = 'modal-action-select combobox-input timelimit-unified-input';
+        const deadlineTextEl = document.getElementById('timerMenuDeadlineText');
+        if (deadlineTextEl) deadlineTextEl.textContent = '--';
+        return;
+    }
+
+    const deadline = new Date(isoString);
+    if (isNaN(deadline.getTime())) {
+        stopLiveTimerCountdown();
+        if (timeLimitPickerInstance) timeLimitPickerInstance.clear(false);
+        input.value = '';
+        input.dataset.activeDeadline = '';
+        input.title = "Click to set due in";
+        input.className = 'modal-action-select combobox-input timelimit-unified-input';
+        const deadlineTextEl = document.getElementById('timerMenuDeadlineText');
+        if (deadlineTextEl) deadlineTextEl.textContent = '--';
+        return;
+    }
+
+    input.dataset.activeDeadline = isoString;
+    const formattedDeadline = formatTimeFirstAmPm(deadline);
+    input.title = `Active Timer (Due In: ${formattedDeadline}) - Click for controls`;
+    const deadlineTextEl = document.getElementById('timerMenuDeadlineText');
+    if (deadlineTextEl) deadlineTextEl.textContent = formattedDeadline;
+
+    if (timeLimitPickerInstance) {
+        timeLimitPickerInstance.setDate(deadline, false);
+    }
+
+    // Start real-time live countdown!
+    startLiveTimerCountdown(isoString);
+}
+
+function parseNamesFromQuery(query) {
+    if (!query) return { first: '', last: '' };
+    let str = query.includes('@') ? query.split('@')[0] : query;
+    let clean = str.replace(/[._\-]+/g, ' ').trim();
+    if (!clean) return { first: '', last: '' };
+
+    const parts = clean.split(/\s+/).filter(Boolean);
+    const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
+
+    if (parts.length === 1) {
+        return { first: capitalize(parts[0]), last: '' };
+    } else {
+        const first = capitalize(parts[0]);
+        const last = parts.slice(1).map(capitalize).join(' ');
+        return { first, last };
+    }
+}
+
+function openQuickAddModal(targetField, prefillQuery) {
+    const modal = document.getElementById('quickAddModal');
+    const targetInput = document.getElementById('quickAddTargetField');
+    const firstInput = document.getElementById('quickAddFirstName');
+    const lastInput = document.getElementById('quickAddLastName');
+    const roleStaff = document.getElementById('roleStaff');
+
+    if (targetInput) targetInput.value = targetField || 'assigned_to';
+    if (roleStaff) roleStaff.checked = true;
+
+    if (!prefillQuery) {
+        const activeInput = document.getElementById(targetField === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+        if (activeInput) prefillQuery = activeInput.value.trim();
+    }
+
+    const { first, last } = parseNamesFromQuery(prefillQuery);
+    if (firstInput) firstInput.value = first;
+    if (lastInput) lastInput.value = last;
+
+    updateQuickAddPreview();
+
+    const d1 = document.getElementById('assignedToDropdown');
+    const d2 = document.getElementById('coworkerDropdown');
+    if (d1) d1.style.display = 'none';
+    if (d2) d2.style.display = 'none';
+
+    if (modal) {
+        modal.classList.add('active');
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            if (first && !last && lastInput) {
+                lastInput.focus();
+            } else if (firstInput) {
+                firstInput.focus();
+            }
+        }, 80);
+    }
+}
+
+function closeQuickAddModal() {
+    const modal = document.getElementById('quickAddModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function updateQuickAddPreview() {
+    const firstInput = document.getElementById('quickAddFirstName');
+    const lastInput = document.getElementById('quickAddLastName');
+    const previewEl = document.getElementById('quickAddUsernamePreview');
+    const rolePreviewEl = document.getElementById('quickAddRolePreview');
+    const roleAdmin = document.getElementById('roleAdmin');
+
+    const first = (firstInput ? firstInput.value : '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const last = (lastInput ? lastInput.value : '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+    const username = (first && last) ? `${first}_${last}` : (first ? `${first}_` : 'first_last');
+    if (previewEl) previewEl.textContent = username;
+
+    const isAdmin = roleAdmin && roleAdmin.checked;
+    if (rolePreviewEl) {
+        rolePreviewEl.innerHTML = isAdmin 
+            ? '<i class="fa fa-shield-alt me-1 text-warning"></i> Role: Admin' 
+            : '<i class="fa fa-user me-1 text-primary"></i> Role: Staff';
+    }
+}
+
+async function submitQuickAddUser() {
+    const firstInput = document.getElementById('quickAddFirstName');
+    const lastInput = document.getElementById('quickAddLastName');
+    const targetInput = document.getElementById('quickAddTargetField');
+    const roleAdmin = document.getElementById('roleAdmin');
+    const btnSubmit = document.getElementById('btnSubmitQuickAdd');
+
+    const firstName = firstInput ? firstInput.value.trim() : '';
+    const lastName = lastInput ? lastInput.value.trim() : '';
+    const role = (roleAdmin && roleAdmin.checked) ? 'admin' : 'staff';
+    const targetField = targetInput ? targetInput.value : 'assigned_to';
+
+    if (!firstName || !lastName) {
+        showToast('Both First Name and Last Name are required.', true);
+        return;
+    }
+
+    if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Registering...';
+    }
+
+    try {
+        const resp = await fetch('/api/users/quick-add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                first_name: firstName,
+                last_name: lastName,
+                role: role
+            })
+        });
+
+        const res = await resp.json();
+        if (res.success && res.user) {
+            const newUser = res.user;
+            showToast(res.message || `Employee ${newUser.username} registered!`, false);
+
+            const exists = assignableUsersList.some(u => u.username.toLowerCase() === newUser.username.toLowerCase());
+            if (!exists) {
+                assignableUsersList.push(newUser);
+                updateAssignmentFilterDropdown();
+            }
+
+            selectComboboxUser(targetField, newUser.username);
+            closeQuickAddModal();
+        } else {
+            showToast(res.error || 'Failed to register employee', true);
+        }
+    } catch (err) {
+        console.error('Error in submitQuickAddUser:', err);
+        showToast('Network error while registering employee', true);
+    } finally {
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fa fa-user-plus me-1"></i> Register & Assign';
+        }
+    }
+}
+
+// Close combobox dropdowns on outside click
+document.addEventListener('click', (e) => {
+    const d1 = document.getElementById('assignedToDropdown');
+    const w1 = document.getElementById('assignedToComboboxWrapper');
+    if (d1 && w1 && !w1.contains(e.target)) {
+        d1.style.display = 'none';
+    }
+
+    const d2 = document.getElementById('coworkerDropdown');
+    const w2 = document.getElementById('coworkerComboboxWrapper');
+    if (d2 && w2 && !w2.contains(e.target)) {
+        d2.style.display = 'none';
+    }
+});
 
 // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Tiptap v2 Editor and Azure DevOps Integration Logic - start
 async function uploadInlineImageFile(file) {
@@ -2027,11 +3297,27 @@ async function importTicketAttachmentToEmail(filename, msgId, attId, contentType
 // Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Strict duplicate send protection in sendToCustomer - start
 let isSendingEmail = false;
 
+function closeStopTimerModal() {
+    const modal = document.getElementById('stopTimerModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+async function confirmSendWithTimerDecision(shouldStopTimer) {
+    closeStopTimerModal();
+    if (shouldStopTimer) {
+        await saveTicketAssignment('co_worker_time_limit', null);
+        showToast('Timer stopped', false);
+    }
+    proceedWithSendToCustomer();
+}
+
 async function sendToCustomer() {
     if (isTicketLocked || isSendingEmail) return;
 
     const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
-    const assignedTo = document.getElementById('modal-assignment').value;
     const sendTo = document.getElementById('emailTo').value;
 
     const isEditorEmpty = !emailContent || emailContent.trim() === '' || emailContent === '<p></p>' || emailContent === '<p><br></p>';
@@ -2044,6 +3330,31 @@ async function sendToCustomer() {
         alert('Recipient email is missing.');
         return;
     }
+
+    // Check if there is an active co_worker_time_limit on this ticket
+    const timelimitInput = document.getElementById('modal-coworker-timelimit');
+    const hasActiveTimer = timelimitInput && (timelimitInput.dataset.activeDeadline || timelimitInput.value.trim());
+
+    if (hasActiveTimer) {
+        const modal = document.getElementById('stopTimerModal');
+        const textEl = document.getElementById('stopTimerModalDeadlineText');
+        if (modal && textEl) {
+            textEl.textContent = timelimitInput.value.trim() || 'Active Deadline';
+            modal.classList.add('active');
+            modal.style.display = 'flex';
+            return;
+        }
+    }
+
+    proceedWithSendToCustomer();
+}
+
+async function proceedWithSendToCustomer() {
+    if (isTicketLocked || isSendingEmail) return;
+
+    const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
+    const assignedTo = document.getElementById('modal-assignment').value;
+    const sendTo = document.getElementById('emailTo').value;
 
     isSendingEmail = true;
     const btnSend = document.getElementById('btnSend');
@@ -3138,6 +4449,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             dateFormat: "d-m-Y",
             allowInput: true
         });
+        initTimeLimitPicker();
     }
 
     // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Initialize Tiptap v2 Editor - start
@@ -3145,6 +4457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Initialize Tiptap v2 Editor - end
 
     await fetchContacts();
+    await loadAssignableUsers();
     setupAutocomplete('emailTo', 'suggestionsTo');
     setupAutocomplete('emailCC', 'suggestionsCC');
     setupAutocomplete('emailBCC', 'suggestionsBCC');
@@ -3316,7 +4629,40 @@ socket.on('stats_update', (stats) => {
     updateStats(stats);
 });
 
-socket.on('ticket_updated', () => loadTickets());
+socket.on('ticket_updated', (data) => {
+    loadTickets();
+    if (data && data.ticket_id && String(data.ticket_id) === String(currentTicketIdStr)) {
+        if (data.assigned_to !== undefined) {
+            const assignedInput = document.getElementById('modal-assigned-input');
+            const legacySelect = document.getElementById('modal-assignment');
+            const aVal = (data.assigned_to && data.assigned_to !== 'Unassigned') ? data.assigned_to : '';
+            if (assignedInput) {
+                assignedInput.value = aVal;
+                assignedInput.dataset.activeUser = aVal;
+            }
+            if (legacySelect) legacySelect.value = data.assigned_to || 'Unassigned';
+        }
+        if (data.co_worker !== undefined) {
+            const coworkerInput = document.getElementById('modal-coworker-input');
+            const infoCoworker = document.getElementById('modal-info-coworker');
+            const cwVal = data.co_worker || '';
+            if (coworkerInput) {
+                coworkerInput.value = cwVal;
+                coworkerInput.dataset.activeUser = cwVal;
+            }
+            if (infoCoworker) infoCoworker.textContent = cwVal || 'None';
+        }
+        if (data.co_worker_time_limit !== undefined) {
+            const infoTimeLimit = document.getElementById('modal-info-timelimit');
+            if (infoTimeLimit) {
+                infoTimeLimit.textContent = data.co_worker_time_limit ? formatTimeFirstAmPm(new Date(data.co_worker_time_limit)) : 'None';
+            }
+            if (typeof updateTimeLimitControls === 'function') {
+                updateTimeLimitControls(data.co_worker_time_limit);
+            }
+        }
+    }
+});
 socket.on('ticket_status_toggled', () => loadTickets());
 socket.on('email_sent', () => loadTickets());
 
@@ -3404,6 +4750,8 @@ function renderAuditLogs() {
                 else if (cell === 'STATUS_CHANGED') { badgeClass = 'badge-status'; label = 'Status'; }
                 else if (cell === 'ASSIGNMENT_CHANGED') { badgeClass = 'badge-assign'; label = 'Assign'; }
                 else if (cell === 'NOTE_ADDED') { badgeClass = 'badge-assign'; label = 'Note'; }
+                else if (cell === 'COWORKER_CHANGED') { badgeClass = 'badge-coworker'; label = 'Co-Worker'; }
+                else if (cell === 'TIMELIMIT_CHANGED') { badgeClass = 'badge-timer'; label = 'Timer'; }
 
                 return gridjs.html(`<span class="badge-audit ${badgeClass}">${label}</span>`);
             }

@@ -13,15 +13,109 @@ Design principles:
 """
 
 import io
+import os
 import logging
 import base64
+import hashlib
+import sqlite3
+import threading
 from PIL import Image
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from modules.openai_agent import OpenAIAgent
+    from services.connectors.openai_agent import OpenAIAgent
 
 logger = logging.getLogger(__name__)
+
+
+class VisionCache:
+    """
+    Persistent SQLite + LRU memory cache for OpenAI Vision analysis results.
+    Indexed by deterministic decoded pixel hashes, stripping all EXIF/metadata.
+    """
+    def __init__(self, db_path: str = "data/vision_cache.sqlite", max_mem_entries: int = 500):
+        self.db_path = db_path
+        self.max_mem_entries = max_mem_entries
+        self._lock = threading.Lock()
+        self._mem_cache = {}
+        self._init_db()
+
+    def _init_db(self):
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
+            with self._lock:
+                with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("PRAGMA synchronous=NORMAL;")
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS vision_cache (
+                            cache_key TEXT PRIMARY KEY,
+                            pixel_hash TEXT NOT NULL,
+                            model TEXT NOT NULL,
+                            analysis TEXT NOT NULL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            hit_count INTEGER DEFAULT 1,
+                            last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    """)
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_pixel_hash ON vision_cache(pixel_hash)")
+                    conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to initialize vision cache DB: {e}")
+
+    def get(self, cache_key: str) -> Optional[str]:
+        with self._lock:
+            if cache_key in self._mem_cache:
+                return self._mem_cache[cache_key]
+
+        try:
+            with self._lock:
+                with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT analysis FROM vision_cache WHERE cache_key = ?", (cache_key,))
+                    row = cursor.fetchone()
+                    if row:
+                        analysis = row[0]
+                        with self._lock:
+                            if len(self._mem_cache) >= self.max_mem_entries:
+                                try:
+                                    self._mem_cache.pop(next(iter(self._mem_cache)))
+                                except (StopIteration, KeyError):
+                                    pass
+                            self._mem_cache[cache_key] = analysis
+                        cursor.execute(
+                            "UPDATE vision_cache SET hit_count = hit_count + 1, last_accessed = CURRENT_TIMESTAMP WHERE cache_key = ?",
+                            (cache_key,)
+                        )
+                        conn.commit()
+                        return analysis
+        except Exception as e:
+            logger.warning(f"Vision cache get error: {e}")
+        return None
+
+    def set(self, cache_key: str, pixel_hash: str, model: str, analysis: str):
+        with self._lock:
+            if len(self._mem_cache) >= self.max_mem_entries:
+                try:
+                    self._mem_cache.pop(next(iter(self._mem_cache)))
+                except (StopIteration, KeyError):
+                    pass
+            self._mem_cache[cache_key] = analysis
+
+        try:
+            with self._lock:
+                with sqlite3.connect(self.db_path, timeout=30.0) as conn:
+                    conn.execute("""
+                        INSERT INTO vision_cache (cache_key, pixel_hash, model, analysis)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(cache_key) DO UPDATE SET
+                            analysis = excluded.analysis,
+                            hit_count = vision_cache.hit_count + 1,
+                            last_accessed = CURRENT_TIMESTAMP
+                    """, (cache_key, pixel_hash, model, analysis))
+                    conn.commit()
+        except Exception as e:
+            logger.warning(f"Vision cache set error: {e}")
 
 
 class ImageProcessor:
@@ -29,14 +123,16 @@ class ImageProcessor:
     Image processor using OpenAI Vision for visual analysis and OCR.
     """
     
-    def __init__(self, ai_agent: Optional["OpenAIAgent"] = None):
+    def __init__(self, ai_agent: Optional["OpenAIAgent"] = None, cache_db_path: str = "data/vision_cache.sqlite"):
         """
         Initialize image processor.
         
         Args:
             ai_agent: Shared OpenAIAgent instance with Vision capabilities.
+            cache_db_path: Path to persistent SQLite cache database.
         """
         self.ai = ai_agent
+        self.cache = VisionCache(db_path=cache_db_path)
         
         # Noise filtering keywords (Pure noise if no signal is found)
         self.NOISE_KEYWORDS = [
@@ -52,20 +148,30 @@ class ImageProcessor:
             "log", "code", "text", "message", "details", "user interface"
         ]
         
-        logger.info("ImageProcessor initialized (Cloud Vision mode)")
+        logger.info("ImageProcessor initialized (Cloud Vision mode with Pixel Cache)")
     
     def set_ai_agent(self, ai_agent: "OpenAIAgent"):
         """Attach AI agent if not provided during init"""
         self.ai = ai_agent
 
+    def _compute_pixel_hash(self, image: Image.Image) -> str:
+        """
+        Compute a deterministic SHA-256 hash of decoded RGB raster pixels.
+        All EXIF, IPTC, XMP, timestamps, author, and container headers are stripped.
+        """
+        rgb_img = image.convert("RGB")
+        return hashlib.sha256(rgb_img.tobytes()).hexdigest()
+
     def process_image(self, image_bytes: bytes, filename: str = "", is_complex_table: bool = False) -> str:
         """
-        Process a single image using OpenAI Vision.
+        Process a single image using OpenAI Vision with metadata-free pixel caching.
         
         Strategy:
         1. Basic local normalization.
-        2. Reroute to OpenAI.
-        3. Multi-tier filtering (Noise vs Signal).
+        2. Decode to raw raster & compute EXIF-stripped pixel hash.
+        3. Check persistent vision cache (bypasses OpenAI API on hit).
+        4. Reroute to OpenAI on cache miss & update cache.
+        5. Multi-tier filtering (Noise vs Signal).
         """
         if not self.ai:
             logger.warning("ImageProcessor: AI agent not attached. Skipping image.")
@@ -96,21 +202,35 @@ class ImageProcessor:
             
             if image is None:
                 return "" # Already logged as too small/invalid in _load_pil_image
-            
-            img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format='JPEG')
-            processed_bytes = img_byte_arr.getvalue()
-            image.close()
+
+            # Compute metadata-stripped pixel hash from decoded raster
+            pixel_hash = self._compute_pixel_hash(image)
 
             # Step 3: Choose model
             model = self.ai.ANALYSIS_MODEL if is_complex_table else self.ai.INTERPRETATION_MODEL
-            
-            # Step 4: Call OpenAI Vision
-            logger.info(f"📤 Rerouting image to OpenAI ({model})...")
-            analysis = self.ai.analyze_image(processed_bytes, model=model)
-            
-            if not analysis:
-                return ""
+            cache_key = f"vision:{model}:{pixel_hash}"
+
+            # Step 4: Check Vision Cache
+            cached_analysis = self.cache.get(cache_key)
+            if cached_analysis:
+                logger.info(f"⚡ Vision cache HIT for '{filename}' (pixel hash: {pixel_hash[:10]}...)")
+                analysis = cached_analysis
+            else:
+                img_byte_arr = io.BytesIO()
+                image.save(img_byte_arr, format='JPEG')
+                processed_bytes = img_byte_arr.getvalue()
+
+                # Call OpenAI Vision
+                logger.info(f"📤 Vision cache MISS. Rerouting image to OpenAI ({model})...")
+                analysis = self.ai.analyze_image(processed_bytes, model=model)
+                
+                if not analysis:
+                    return ""
+
+                # Populate persistent cache
+                self.cache.set(cache_key, pixel_hash, model, analysis)
+
+            image.close()
 
             # Step 5: Refined local filtering (Signal-Aware)
             import re

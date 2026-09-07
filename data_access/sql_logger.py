@@ -7,13 +7,13 @@ Provides backward-compatible interface for TicketRepository, TicketAnalytics, an
 import logging
 from typing import Optional
 from config import Config
-from modules.db_connection import (
+from data_access.db_connection import (
     ActionType,
     ActorType,
     PostgreSQLConnectionManager,
 )
-from modules.ticket_repository import TicketRepository
-from modules.ticket_analytics import TicketAnalytics
+from data_access.ticket_repository import TicketRepository
+from data_access.ticket_analytics import TicketAnalytics
 
 logger = logging.getLogger(__name__)
 
