@@ -428,10 +428,22 @@ function renderFilterComboboxDropdown(type, query) {
                     </div>
                 `;
             });
+
+            const exactMatch = matches.some(u => u.username.toLowerCase() === lowerQuery);
+            if (query && query.trim().length > 0 && !exactMatch) {
+                html += `
+                    <div class="combobox-item" style="border-top: 1px dashed var(--border-color); background: rgba(59, 130, 246, 0.06);" onmousedown="event.preventDefault(); triggerFilterQuickAdd('assigned');" onclick="triggerFilterQuickAdd('assigned');">
+                        <span style="color: var(--primary); font-weight: 600;"><i class="fa fa-user-plus me-2"></i> Add Employee "${escapeHtml(query)}"</span>
+                    </div>
+                `;
+            }
         } else if (lowerQuery) {
             html += `
                 <div class="combobox-zero-state p-3 text-center">
-                    <div class="zero-msg small text-muted"><i class="fa fa-magnifying-glass me-1"></i> No assignee found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                    <div class="zero-msg small text-muted mb-2"><i class="fa fa-magnifying-glass me-1"></i> No assignee found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                    <button type="button" class="btn btn-primary btn-sm w-100 d-inline-flex align-items-center justify-content-center gap-2" style="font-weight: 600; padding: 7px 12px; border-radius: 6px; cursor: pointer;" onmousedown="event.preventDefault(); triggerFilterQuickAdd('assigned');" onclick="triggerFilterQuickAdd('assigned');">
+                        <i class="fa fa-user-plus"></i> Add Employee
+                    </button>
                 </div>
             `;
         }
@@ -469,10 +481,22 @@ function renderFilterComboboxDropdown(type, query) {
                     </div>
                 `;
             });
+
+            const exactMatch = matches.some(u => u.username.toLowerCase() === lowerQuery);
+            if (query && query.trim().length > 0 && !exactMatch) {
+                html += `
+                    <div class="combobox-item" style="border-top: 1px dashed var(--border-color); background: rgba(59, 130, 246, 0.06);" onmousedown="event.preventDefault(); triggerFilterQuickAdd('coworker');" onclick="triggerFilterQuickAdd('coworker');">
+                        <span style="color: var(--primary); font-weight: 600;"><i class="fa fa-user-plus me-2"></i> Add Employee "${escapeHtml(query)}"</span>
+                    </div>
+                `;
+            }
         } else if (lowerQuery) {
             html += `
                 <div class="combobox-zero-state p-3 text-center">
-                    <div class="zero-msg small text-muted"><i class="fa fa-magnifying-glass me-1"></i> No co-worker found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                    <div class="zero-msg small text-muted mb-2"><i class="fa fa-magnifying-glass me-1"></i> No co-worker found matching "<strong>${escapeHtml(query)}</strong>"</div>
+                    <button type="button" class="btn btn-primary btn-sm w-100 d-inline-flex align-items-center justify-content-center gap-2" style="font-weight: 600; padding: 7px 12px; border-radius: 6px; cursor: pointer;" onmousedown="event.preventDefault(); triggerFilterQuickAdd('coworker');" onclick="triggerFilterQuickAdd('coworker');">
+                        <i class="fa fa-user-plus"></i> Add Employee
+                    </button>
                 </div>
             `;
         }
@@ -516,6 +540,13 @@ function renderFilterComboboxDropdown(type, query) {
     dropdown.style.display = 'block';
 }
 
+function triggerFilterQuickAdd(type) {
+    const inputId = type === 'assigned' ? 'filter-assigned-input' : 'filter-coworker-input';
+    const input = document.getElementById(inputId);
+    const query = input ? input.value.trim() : '';
+    openQuickAddModal(type, query);
+}
+
 function handleFilterComboboxKeydown(e, type) {
     if (e.key === 'Enter') {
         e.preventDefault();
@@ -532,11 +563,13 @@ function handleFilterComboboxKeydown(e, type) {
             const exact = users.find(u => u.username.toLowerCase() === query);
             if (exact) selectFilterCombobox('assigned', exact.username);
             else if (query === 'unassigned') selectFilterCombobox('assigned', 'Unassigned');
+            else triggerFilterQuickAdd('assigned');
         } else if (type === 'coworker') {
             const users = getFilterUsersList();
             const exact = users.find(u => u.username.toLowerCase() === query);
             if (exact) selectFilterCombobox('coworker', exact.username);
             else if (query === 'none') selectFilterCombobox('coworker', 'None');
+            else triggerFilterQuickAdd('coworker');
         } else if (type === 'customer') {
             const customerDomains = new Set();
             currentTickets.forEach(t => {
@@ -835,7 +868,10 @@ function displayTickets() {
     let filteredTickets = processedTickets;
 
     if (currentVisibility === 'mine') {
-        filteredTickets = filteredTickets.filter(t => t.assigned_to === currentUsername);
+        filteredTickets = filteredTickets.filter(t => 
+            t.assigned_to === currentUsername || 
+            (t.co_worker && t.co_worker.trim().toLowerCase() === (currentUsername || '').trim().toLowerCase())
+        );
     }
 
     if (typeof currentFilter !== 'undefined' && currentFilter !== 'all') {
@@ -880,7 +916,10 @@ function displayTickets() {
 
     let statsBase = processedTickets;
     if (currentVisibility === 'mine') {
-        statsBase = statsBase.filter(t => t.assigned_to === currentUsername);
+        statsBase = statsBase.filter(t => 
+            t.assigned_to === currentUsername || 
+            (t.co_worker && t.co_worker.trim().toLowerCase() === (currentUsername || '').trim().toLowerCase())
+        );
     }
     if (typeof currentAssignmentFilter !== 'undefined' && currentAssignmentFilter !== null) {
         statsBase = statsBase.filter(t => (t.assigned_to || 'Unassigned') === currentAssignmentFilter);
@@ -2752,7 +2791,11 @@ function openQuickAddModal(targetField, prefillQuery) {
     if (roleStaff) roleStaff.checked = true;
 
     if (!prefillQuery) {
-        const activeInput = document.getElementById(targetField === 'assigned_to' ? 'modal-assigned-input' : 'modal-coworker-input');
+        let activeInput = null;
+        if (targetField === 'assigned_to') activeInput = document.getElementById('modal-assigned-input');
+        else if (targetField === 'co_worker') activeInput = document.getElementById('modal-coworker-input');
+        else if (targetField === 'assigned') activeInput = document.getElementById('filter-assigned-input');
+        else if (targetField === 'coworker') activeInput = document.getElementById('filter-coworker-input');
         if (activeInput) prefillQuery = activeInput.value.trim();
     }
 
@@ -2762,10 +2805,10 @@ function openQuickAddModal(targetField, prefillQuery) {
 
     updateQuickAddPreview();
 
-    const d1 = document.getElementById('assignedToDropdown');
-    const d2 = document.getElementById('coworkerDropdown');
-    if (d1) d1.style.display = 'none';
-    if (d2) d2.style.display = 'none';
+    ['assignedToDropdown', 'coworkerDropdown', 'filterAssignedDropdown', 'filterCoworkerDropdown', 'filterCustomerDropdown'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
 
     if (modal) {
         modal.classList.add('active');
@@ -2853,7 +2896,13 @@ async function submitQuickAddUser() {
                 updateAssignmentFilterDropdown();
             }
 
-            selectComboboxUser(targetField, newUser.username);
+            if (targetField === 'assigned') {
+                selectFilterCombobox('assigned', newUser.username);
+            } else if (targetField === 'coworker') {
+                selectFilterCombobox('coworker', newUser.username);
+            } else {
+                selectComboboxUser(targetField, newUser.username);
+            }
             closeQuickAddModal();
         } else {
             showToast(res.error || 'Failed to register employee', true);
@@ -2881,6 +2930,24 @@ document.addEventListener('click', (e) => {
     const w2 = document.getElementById('coworkerComboboxWrapper');
     if (d2 && w2 && !w2.contains(e.target)) {
         d2.style.display = 'none';
+    }
+
+    const f1 = document.getElementById('filterAssignedDropdown');
+    const fw1 = document.getElementById('filterAssignedWrapper');
+    if (f1 && fw1 && !fw1.contains(e.target)) {
+        f1.style.display = 'none';
+    }
+
+    const f2 = document.getElementById('filterCoworkerDropdown');
+    const fw2 = document.getElementById('filterCoworkerWrapper');
+    if (f2 && fw2 && !fw2.contains(e.target)) {
+        f2.style.display = 'none';
+    }
+
+    const f3 = document.getElementById('filterCustomerDropdown');
+    const fw3 = document.getElementById('filterCustomerWrapper');
+    if (f3 && fw3 && !fw3.contains(e.target)) {
+        f3.style.display = 'none';
     }
 });
 
@@ -4519,10 +4586,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         btn.classList.toggle('active', btn.dataset.filter === currentFilter);
     });
     if (urlParams.has('assignee')) {
-        setAssignmentFilter(urlParams.get('assignee'));
+        selectFilterCombobox('assigned', urlParams.get('assignee'));
     }
     if (urlParams.has('domain')) {
-        setCustomerFilter(urlParams.get('domain'));
+        selectFilterCombobox('customer', urlParams.get('domain'));
     }
     if (urlParams.has('search')) {
         const searchInput = document.getElementById('search');
@@ -4574,17 +4641,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    document.querySelectorAll('.pill-option').forEach(opt => {
-        opt.addEventListener('click', function () {
-            const container = document.getElementById('visibilityPill');
-            const visibility = this.dataset.visibility;
-            document.querySelectorAll('.pill-option').forEach(o => o.classList.remove('active'));
-            this.classList.add('active');
-            container.setAttribute('data-active', visibility);
+    const visibilityPillElem = document.getElementById('visibilityPill');
+    if (visibilityPillElem) {
+        visibilityPillElem.addEventListener('click', function (e) {
+            const targetOption = e.target.closest('.pill-option');
+            let visibility = currentVisibility;
+            if (targetOption) {
+                visibility = targetOption.dataset.visibility;
+            } else {
+                visibility = currentVisibility === 'mine' ? 'all' : 'mine';
+            }
+            document.querySelectorAll('.pill-option').forEach(o => {
+                o.classList.toggle('active', o.dataset.visibility === visibility);
+            });
+            visibilityPillElem.setAttribute('data-active', visibility);
             currentVisibility = visibility;
             displayTickets();
         });
-    });
+    }
 
     const searchInput = document.getElementById('search');
     if (searchInput) {

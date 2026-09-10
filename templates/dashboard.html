@@ -80,15 +80,15 @@
                     aria-label="Search tickets" placeholder="Search by email, subject, or ticket ID...">
             </div>
             <div class="filter-buttons">
-                <div class="pill-toggle" id="visibilityPill" data-active="all">
-                    <div class="pill-option" data-visibility="mine">My Tickets</div>
-                    <div class="pill-option active" data-visibility="all">All Tickets</div>
+                <div class="pill-toggle" id="visibilityPill" data-active="{{ 'all' if user.role == 'admin' else 'mine' }}">
+                    <div class="pill-option {{ 'active' if user.role != 'admin' else '' }}" data-visibility="mine">My Tickets</div>
+                    <div class="pill-option {{ 'active' if user.role == 'admin' else '' }}" data-visibility="all">All Tickets</div>
                     <div class="pill-slider"></div>
                 </div>
                 <span class="filter-separator"></span>
 
-                <button class="filter-btn active" data-filter="all">All</button>
-                <button class="filter-btn" data-filter="Open">Open</button>
+                <button class="filter-btn {{ 'active' if user.role != 'admin' else '' }}" data-filter="all">All</button>
+                <button class="filter-btn {{ 'active' if user.role == 'admin' else '' }}" data-filter="Open">Open</button>
                 <button class="filter-btn" data-filter="Closed">Closed</button>
 
                 <div class="combobox-wrapper filter-combobox-wrapper" id="filterAssignedWrapper">
