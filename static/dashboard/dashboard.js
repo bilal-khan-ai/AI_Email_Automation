@@ -386,6 +386,25 @@ function getActiveTicketCount(username, roleField) {
     }).length;
 }
 
+/**
+ * Calculates the number of active/open tickets associated with a customer domain.
+ * @param {string} domain - Target customer domain (e.g. gmail.com)
+ * @returns {number} Active/open ticket count
+ */
+function getCustomerActiveTicketCount(domain) {
+    if (!domain || !currentTickets || currentTickets.length === 0) return 0;
+    const targetDomain = domain.toLowerCase().trim();
+    return currentTickets.filter(t => {
+        if (!t.customer_email) return false;
+        const emailParts = t.customer_email.trim().split('@');
+        if (emailParts.length < 2) return false;
+        const ticketDomain = emailParts.pop().toLowerCase();
+        if (ticketDomain !== targetDomain) return false;
+        const status = normalizeStatus(t.status);
+        return status === 'Open' || status === 'Review';
+    }).length;
+}
+
 function renderFilterComboboxDropdown(type, query) {
     const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
     const dropdown = document.getElementById(dropdownId);
@@ -405,12 +424,23 @@ function renderFilterComboboxDropdown(type, query) {
             return a.username.localeCompare(b.username);
         });
 
+        const unassignedCount = currentTickets ? currentTickets.filter(t => {
+            const isUnassigned = !t.assigned_to || t.assigned_to === 'Unassigned' || !t.assigned_to.trim();
+            if (!isUnassigned) return false;
+            const status = normalizeStatus(t.status);
+            return status === 'Open' || status === 'Review';
+        }).length : 0;
+        const unassignedBadge = unassignedCount > 0
+            ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${unassignedCount} active ticket${unassignedCount === 1 ? '' : 's'}">${unassignedCount} active</span>`
+            : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
+
         html += `
             <div class="combobox-item ${currentAssignmentFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', null);" onclick="selectFilterCombobox('assigned', null);">
                 <span><i class="fa fa-users me-2 text-muted"></i> <em>All Assignments</em></span>
             </div>
             <div class="combobox-item ${currentAssignmentFilter === 'Unassigned' ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('assigned', 'Unassigned');" onclick="selectFilterCombobox('assigned', 'Unassigned');">
                 <span><i class="fa fa-user-slash me-2 text-muted"></i> <em>Unassigned</em></span>
+                ${unassignedBadge}
             </div>
         `;
 
@@ -458,12 +488,23 @@ function renderFilterComboboxDropdown(type, query) {
             return a.username.localeCompare(b.username);
         });
 
+        const noCoworkerCount = currentTickets ? currentTickets.filter(t => {
+            const hasNoCoworker = !t.co_worker || !t.co_worker.trim();
+            if (!hasNoCoworker) return false;
+            const status = normalizeStatus(t.status);
+            return status === 'Open' || status === 'Review';
+        }).length : 0;
+        const noCoworkerBadge = noCoworkerCount > 0
+            ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${noCoworkerCount} active ticket${noCoworkerCount === 1 ? '' : 's'}">${noCoworkerCount} active</span>`
+            : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
+
         html += `
             <div class="combobox-item ${currentCoworkerFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', null);" onclick="selectFilterCombobox('coworker', null);">
                 <span><i class="fa fa-users me-2 text-muted"></i> <em>All Co-Workers</em></span>
             </div>
             <div class="combobox-item ${currentCoworkerFilter === 'None' ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('coworker', 'None');" onclick="selectFilterCombobox('coworker', 'None');">
                 <span><i class="fa fa-ban me-2 text-muted"></i> <em>None (No Co-Worker)</em></span>
+                ${noCoworkerBadge}
             </div>
         `;
 
@@ -508,8 +549,15 @@ function renderFilterComboboxDropdown(type, query) {
                 if (domain) customerDomains.add(domain);
             }
         });
-        const domainList = Array.from(customerDomains).sort();
+        const domainList = Array.from(customerDomains);
         const matches = domainList.filter(d => d.toLowerCase().includes(lowerQuery));
+
+        matches.sort((a, b) => {
+            const countA = getCustomerActiveTicketCount(a);
+            const countB = getCustomerActiveTicketCount(b);
+            if (countB !== countA) return countB - countA;
+            return a.localeCompare(b);
+        });
 
         html += `
             <div class="combobox-item ${currentCustomerFilter === null ? 'active' : ''}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', null);" onclick="selectFilterCombobox('customer', null);">
@@ -520,9 +568,14 @@ function renderFilterComboboxDropdown(type, query) {
         if (matches.length > 0) {
             matches.forEach(domain => {
                 const isSelected = currentCustomerFilter === domain ? 'active' : '';
+                const count = getCustomerActiveTicketCount(domain);
+                const ticketBadge = count > 0
+                    ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${count} active ticket${count === 1 ? '' : 's'}">${count} active</span>`
+                    : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
                 html += `
                     <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', '${escapeHtml(domain)}');" onclick="selectFilterCombobox('customer', '${escapeHtml(domain)}');">
                         <span><i class="fa fa-envelope me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(domain)}</strong></span>
+                        ${ticketBadge}
                     </div>
                 `;
             });
