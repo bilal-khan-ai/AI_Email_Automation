@@ -1566,15 +1566,31 @@ function renderAttachments(attachments, messageId) {
 
         attList.forEach((att, idx) => {
             const attName = escapeHtml(att.name || 'file');
-            const isImage = (att.content_type && att.content_type.startsWith('image/')) || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.name || '');
-            const isPDF = att.content_type === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
+            let effectiveCt = (att.content_type || '').split('@')[0].split(';')[0].trim();
+            if (!effectiveCt || effectiveCt === 'application/octet-stream') {
+                const ext = (att.name || '').split('.').pop().toLowerCase();
+                const mimeMap = {
+                    png: 'image/png',
+                    jpg: 'image/jpeg',
+                    jpeg: 'image/jpeg',
+                    gif: 'image/gif',
+                    webp: 'image/webp',
+                    bmp: 'image/bmp',
+                    svg: 'image/svg+xml',
+                    pdf: 'application/pdf'
+                };
+                if (mimeMap[ext]) effectiveCt = mimeMap[ext];
+            }
+
+            const isImage = (effectiveCt && effectiveCt.startsWith('image/')) || /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)$/i.test(att.name || '');
+            const isPDF = effectiveCt === 'application/pdf' || (att.name && att.name.toLowerCase().endsWith('.pdf'));
             const isTable = (att.name && /\.(xlsx|xls|csv|tsv)$/i.test(att.name));
             const isDoc = (att.name && /\.(docx|doc|txt)$/i.test(att.name));
             const isPreviewable = isImage || isPDF;
 
             let previewContent = '';
             if (isImage) {
-                const thumbUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId || '')}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(att.content_type || '')}&thumbnail=true`;
+                const thumbUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId || '')}&attachment_id=${encodeURIComponent(att.id)}&filename=${encodeURIComponent(att.name || 'image')}&content_type=${encodeURIComponent(effectiveCt || '')}`;
                 previewContent = `
                     <img loading="lazy" src="${thumbUrl}" class="attachment-tile-img" alt="${attName}" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';" />
                     <div class="attachment-tile-icon" style="display: none;">🖼️</div>
@@ -1591,7 +1607,7 @@ function renderAttachments(attachments, messageId) {
 
             attachmentsHtml += `
                 <div class="attachment-tile" 
-                     ${isPreviewable ? `data-att-id="${escapeHtml(att.id)}" data-msg-id="${escapeHtml(messageId || '')}" data-filename="${attName}" data-type="${escapeHtml(att.content_type || '')}" onclick="event.stopPropagation(); handlePreviewClick(this)" title="Click to preview ${attName}"` : `title="${attName}"`}>
+                     ${isPreviewable ? `data-att-id="${escapeHtml(att.id)}" data-msg-id="${escapeHtml(messageId || '')}" data-filename="${attName}" data-type="${escapeHtml(effectiveCt || '')}" onclick="event.stopPropagation(); handlePreviewClick(this)" title="Click to preview ${attName}"` : `title="${attName}"`}>
                     <div class="attachment-tile-preview">
                         ${previewContent}
                         ${isPreviewable ? `
@@ -1981,8 +1997,22 @@ window.addEventListener('message', function (event) {
 function handlePreviewClick(btn) {
     const attId = btn.getAttribute('data-att-id');
     const msgId = btn.getAttribute('data-msg-id');
-    const filename = btn.getAttribute('data-filename');
-    const type = btn.getAttribute('data-type');
+    const filename = btn.getAttribute('data-filename') || '';
+    let type = btn.getAttribute('data-type') || '';
+    if (!type || type === 'application/octet-stream') {
+        const ext = filename.split('.').pop().toLowerCase();
+        const mimeMap = {
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            gif: 'image/gif',
+            webp: 'image/webp',
+            bmp: 'image/bmp',
+            svg: 'image/svg+xml',
+            pdf: 'application/pdf'
+        };
+        if (mimeMap[ext]) type = mimeMap[ext];
+    }
     previewAttachment(attId, msgId, filename, type);
 }
 
@@ -2017,8 +2047,9 @@ async function previewAttachment(attachmentId, messageId, filename, contentType)
     };
 
     setTimeout(() => {
-        const isImage = contentType && contentType.startsWith('image/');
-        const isPDF = contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf');
+        const isImage = (contentType && contentType.startsWith('image/')) || 
+                        /\.(jpg|jpeg|png|gif|webp|bmp|svg|ico)$/i.test(filename || '');
+        const isPDF = contentType === 'application/pdf' || (filename && filename.toLowerCase().endsWith('.pdf'));
 
         if (isImage) {
             previewBody.innerHTML = `
@@ -2031,7 +2062,7 @@ async function previewAttachment(attachmentId, messageId, filename, contentType)
         } else {
             previewBody.innerHTML = '<div style="padding: 2rem; color: var(--text-primary);">Preview not available for this file type.</div>';
         }
-    }, 100);
+    }, 50);
 }
 
 function closePreview() {
