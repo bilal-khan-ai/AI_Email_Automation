@@ -1171,23 +1171,51 @@ class TicketRepository:
                     body_html_val = email.get('body_html') or email.get('body') or ''
                     to_email_val = email.get('to_email') or email.get('to') or ''
 
-                    cur.execute("""
-                        INSERT INTO ticket_messages (
-                            ticket_id, message_id, internet_message_id, sender, 
-                            to_email, body_text, body_html, timestamp, 
-                            attachments, cc, bcc, is_internal
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (message_id) DO NOTHING
-                    """, (
-                        ticket_id, email.get('id'), email.get('internet_message_id'),
-                        email.get('sender'), to_email_val,
-                        body_text_val, body_html_val,
-                        msg_timestamp, attachments_json,
-                        email.get('cc', ''), email.get('bcc', ''), is_internal
-                    ))
-                    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Robust field fallbacks for ticket_messages insertion - end
-                    
-                    inserted = cur.rowcount > 0
+                    msg_id_val = email.get('id')
+                    internet_msg_id_val = email.get('internet_message_id')
+
+                    # Idempotency / Reconciliation: If this incoming message is an internal reply with a real Graph API ID,
+                    # check if an optimistic 'sent_%' placeholder already exists on this ticket from the dashboard.
+                    reconciled = False
+                    if msg_id_val and not str(msg_id_val).startswith('sent_') and is_internal:
+                        cur.execute("""
+                            SELECT id, message_id FROM ticket_messages 
+                            WHERE ticket_id = %s 
+                              AND message_id LIKE 'sent_%'
+                              AND timestamp >= %s - INTERVAL '15 minutes'
+                              AND timestamp <= %s + INTERVAL '15 minutes'
+                            ORDER BY id DESC LIMIT 1
+                        """, (ticket_id, msg_timestamp, msg_timestamp))
+                        placeholder = cur.fetchone()
+                        if placeholder:
+                            cur.execute("""
+                                UPDATE ticket_messages 
+                                SET message_id = %s,
+                                    internet_message_id = COALESCE(%s, internet_message_id),
+                                    body_html = COALESCE(%s, body_html)
+                                WHERE id = %s
+                            """, (msg_id_val, internet_msg_id_val, body_html_val, placeholder[0]))
+                            logger.info(f"🔄 Reconciled optimistic placeholder {placeholder[1]} -> real Graph ID {str(msg_id_val)[:20]}... for ticket {ticket_id}")
+                            reconciled = True
+
+                    if not reconciled:
+                        cur.execute("""
+                            INSERT INTO ticket_messages (
+                                ticket_id, message_id, internet_message_id, sender, 
+                                to_email, body_text, body_html, timestamp, 
+                                attachments, cc, bcc, is_internal
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (message_id) DO NOTHING
+                        """, (
+                            ticket_id, msg_id_val, internet_msg_id_val,
+                            email.get('sender'), to_email_val,
+                            body_text_val, body_html_val,
+                            msg_timestamp, attachments_json,
+                            email.get('cc', ''), email.get('bcc', ''), is_internal
+                        ))
+                        inserted = cur.rowcount > 0
+                    else:
+                        inserted = False
                     if inserted:
                         if not is_internal:
                             cur.execute("""

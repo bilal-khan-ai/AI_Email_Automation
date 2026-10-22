@@ -35,7 +35,7 @@ class Config:
     POSTGRES_USER = os.getenv('POSTGRES_USER', 'postgres')
     POSTGRES_PASSWORD = os.getenv('POSTGRES_PASSWORD', '')
     POSTGRES_MIN_CONN = int(os.getenv('POSTGRES_MIN_CONN', 1))
-    POSTGRES_MAX_CONN = int(os.getenv('POSTGRES_MAX_CONN', 10))
+    POSTGRES_MAX_CONN = int(os.getenv('POSTGRES_MAX_CONN', 6))
 
     # Processing settings
     POLLING_INTERVAL = int(os.getenv('POLLING_INTERVAL', 600))  # seconds

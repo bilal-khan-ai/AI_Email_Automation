@@ -1,62 +1,34 @@
 """
-Microsoft Graph Connector with Resilient Retry Logic
-
-Improvements:
-1. Exponential backoff with jitter for all Graph API calls
-2. Automatic retry for transient failures
-3. Enhanced error logging with operation context
-4. Graceful degradation on persistent failures
-5. Maintains isolated asyncio worker design
+services/connectors/graph_connector.py
+Streamlined, native synchronous Microsoft Graph API connector.
+Uses MSAL for automatic token caching and requests.Session for pooled HTTP execution.
+Zero OS worker threads, zero asyncio event loops, zero queues.
 """
 
-from azure.identity import ClientSecretCredential
-from msgraph import GraphServiceClient
-from msgraph.generated.users.item.messages.messages_request_builder import MessagesRequestBuilder
-from typing import List, Dict, Optional, Any, Callable
-import logging
-import asyncio
-import base64
+import os
+import io
 import re
-import threading
-import queue
 import time
-import random
+import base64
+import logging
+import mimetypes
 from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass
-from enum import Enum
+from email.utils import parseaddr
+from typing import List, Dict, Optional, Any, Callable
 
-# Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Remove module-level basicConfig in library module
+import msal
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 logger = logging.getLogger(__name__)
 
-
-class RequestType(Enum):
-    """Types of requests that can be sent to the asyncio worker"""
-    FETCH_EMAILS = "fetch_emails"
-    GET_ATTACHMENT = "get_attachment"
-    SEND_EMAIL = "send_email"
-    REPLY_TO_EMAIL = "reply_to_email"
-    SHUTDOWN = "shutdown"
-
-
-@dataclass
-class GraphRequest:
-    """Request object sent to asyncio worker thread"""
-    request_type: RequestType
-    params: dict
-    response_queue: queue.Queue
-
-
-@dataclass
-class GraphResponse:
-    """Response object returned from asyncio worker thread"""
-    success: bool
-    data: Any = None
-    error: Optional[str] = None
+GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
+CHUNK_SIZE = 320 * 1024  # 320 KiB required by Microsoft Graph upload session
 
 
 class RetryConfig:
-    """Configuration for retry logic with exponential backoff"""
-    
+    """Backward-compatible configuration shim for callers importing RetryConfig."""
     def __init__(
         self,
         max_retries: int = 3,
@@ -65,670 +37,26 @@ class RetryConfig:
         exponential_base: float = 2.0,
         jitter: bool = True
     ):
-        """
-        Initialize retry configuration.
-        
-        Args:
-            max_retries: Maximum number of retry attempts
-            base_delay: Base delay in seconds
-            max_delay: Maximum delay in seconds
-            exponential_base: Base for exponential backoff
-            jitter: Whether to add random jitter to delay
-        """
         self.max_retries = max_retries
         self.base_delay = base_delay
         self.max_delay = max_delay
         self.exponential_base = exponential_base
         self.jitter = jitter
-    
-    def get_delay(self, attempt: int) -> float:
-        """
-        Calculate delay for a given attempt with exponential backoff.
-        
-        Args:
-            attempt: Attempt number (0-indexed)
-            
-        Returns:
-            Delay in seconds
-        """
-        # Calculate exponential delay
-        delay = min(
-            self.base_delay * (self.exponential_base ** attempt),
-            self.max_delay
-        )
-        
-        # Add jitter (±25% randomness)
-        if self.jitter:
-            jitter_range = delay * 0.25
-            delay += random.uniform(-jitter_range, jitter_range)
-        
-        return max(0, delay)
 
 
-# Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker auth detection - start
-_AUTH_ERROR_PATTERNS = (
-    "401",
-    "unauthorized",
-    "invalid_client",
-    "authentication_failed",
-    "client secret",
-    "credentials",
-    "access token",
-    "token is expired",
-)
-
-def _is_auth_error(exc: Exception) -> bool:
-    """
-    Returns True if the exception looks like an Azure authentication
-    failure (expired/invalid credentials) vs a transient network error.
-    Auth errors should NOT be retried — they will never succeed until
-    the secret is rotated.
-    """
-    msg = str(exc).lower()
-    return any(pat in msg for pat in _AUTH_ERROR_PATTERNS)
-# Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker auth detection - end
-
-
-async def retry_with_backoff(
-    operation: Callable,
-    config: RetryConfig,
-    operation_name: str = "operation"
-):
-    """
-    Retry an async operation with exponential backoff.
-
-    Auth errors (401 / invalid_client) are NOT retried — they break
-    immediately and re-raise so the circuit-breaker in GraphConnector
-    can count consecutive failures and open the circuit.
-
-    Args:
-        operation: Async callable to retry
-        config: Retry configuration
-        operation_name: Name for logging
-
-    Returns:
-        Result of operation
-
-    Raises:
-        Exception: If all retries fail
-    """
-    last_exception = None
-
-    for attempt in range(config.max_retries + 1):
-        try:
-            result = await operation()
-
-            if attempt > 0:
-                logger.info(f"✅ {operation_name} succeeded on attempt {attempt + 1}")
-
-            return result
-
-        except Exception as e:
-            last_exception = e
-
-            # Bilal Khan (12/08/2026) - P1 Fix #5: Break immediately on auth errors, no retry
-            if _is_auth_error(e):
-                logger.error(
-                    f"🔐 {operation_name} failed with authentication error (no retry): {e}"
-                )
-                break
-
-            # Don't retry on final attempt
-            if attempt >= config.max_retries:
-                logger.error(
-                    f"❌ {operation_name} failed after {config.max_retries + 1} attempts: {e}"
-                )
-                break
-
-            # Calculate delay
-            delay = config.get_delay(attempt)
-
-            logger.warning(
-                f"⚠️  {operation_name} failed (attempt {attempt + 1}/{config.max_retries + 1}): {e}. "
-                f"Retrying in {delay:.2f}s..."
-            )
-
-            # Wait before retry
-            await asyncio.sleep(delay)
-
-    # All retries failed
-    raise last_exception
-
-
-class AsyncioWorker:
-    """
-    Dedicated asyncio worker thread for Graph API calls with retry logic.
-    
-    Design principles:
-    - Owns its own event loop
-    - Automatic retry with exponential backoff
-    - Clean shutdown mechanism
-    - Exception isolation
-    """
-    
-    def __init__(
-        self,
-        client_id: str,
-        client_secret: str,
-        tenant_id: str,
-        retry_config: Optional[RetryConfig] = None
-    ):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.tenant_id = tenant_id
-        
-        # Retry configuration
-        self.retry_config = retry_config or RetryConfig(
-            max_retries=3,
-            base_delay=1.0,
-            max_delay=30.0
-        )
-        
-        # Thread-safe queue for incoming requests
-        self.request_queue: queue.Queue = queue.Queue()
-        
-        # Worker thread and loop
-        self.worker_thread: Optional[threading.Thread] = None
-        self.loop: Optional[asyncio.AbstractEventLoop] = None
-        self.client: Optional[GraphServiceClient] = None
-        
-        # Shutdown flag
-        self._shutdown = threading.Event()
-        self._started = threading.Event()
-    
-    def start(self):
-        """Start the asyncio worker thread"""
-        if self.worker_thread and self.worker_thread.is_alive():
-            logger.warning("⚠️  AsyncioWorker already running")
-            return
-        
-        self._shutdown.clear()
-        self.worker_thread = threading.Thread(
-            target=self._run_event_loop,
-            name="GraphAsyncioWorker",
-            daemon=True
-        )
-        self.worker_thread.start()
-        
-        if not self._started.wait(timeout=10):
-            raise RuntimeError("❌ AsyncioWorker failed to start within 10 seconds")
-        
-        logger.info("✅ AsyncioWorker started successfully")
-    
-    def _run_event_loop(self):
-        """Worker thread main loop with retry support"""
-        try:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self._initialize_client()
-            self._started.set()
-            
-            while not self._shutdown.is_set():
-                try:
-                    request = self.request_queue.get(timeout=0.5)
-                    
-                    if request.request_type == RequestType.SHUTDOWN:
-                        logger.info("🛑 Shutdown request received")
-                        break
-                    
-                    self._process_request(request)
-                    
-                except queue.Empty:
-                    continue
-                except Exception as e:
-                    logger.error(f"❌ Error processing request: {e}")
-        
-        finally:
-            logger.info("🧹 Shutting down AsyncioWorker event loop")
-            try:
-                if self.loop and self.loop.is_running():
-                    pending = asyncio.all_tasks(self.loop)
-                    for task in pending:
-                        task.cancel()
-                
-                if self.loop:
-                    self.loop.close()
-            except Exception as e:
-                logger.error(f"❌ Error during loop cleanup: {e}")
-    
-    def _initialize_client(self):
-        """Initialize Graph client (called within asyncio thread)"""
-        try:
-            credential = ClientSecretCredential(
-                tenant_id=self.tenant_id,
-                client_id=self.client_id,
-                client_secret=self.client_secret
-            )
-            scopes = ['https://graph.microsoft.com/.default']
-            self.client = GraphServiceClient(credentials=credential, scopes=scopes)
-            logger.info("✅ Graph client initialized in worker thread")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Graph client: {e}")
-            raise
-    
-    def _process_request(self, request: GraphRequest):
-        """
-        Process a single request with retry logic.
-        
-        Error handling: All exceptions are caught and returned as GraphResponse
-        """
-        try:
-            if request.request_type == RequestType.FETCH_EMAILS:
-                # Bilal Khan (05/08/2026) - Wave 1A: Timeout covers full retry cycle (3x30s per attempt + jitter)
-                result = self.loop.run_until_complete(
-                    asyncio.wait_for(
-                        retry_with_backoff(
-                            lambda: self._fetch_emails_async(**request.params),
-                            self.retry_config,
-                            f"fetch_emails({request.params.get('user_email', 'unknown')})"
-                        ),
-                        timeout=120.0
-                    )
-                )
-                response = GraphResponse(success=True, data=result)
-            
-            elif request.request_type == RequestType.GET_ATTACHMENT:
-                result = self.loop.run_until_complete(
-                    asyncio.wait_for(
-                        retry_with_backoff(
-                            lambda: self._get_attachment_async(**request.params),
-                            self.retry_config,
-                            f"get_attachment({request.params.get('attachment_id', 'unknown')[:20]}...)"
-                        ),
-                        # Bilal Khan (12/08/2026) - P0 Fix #1: Reduced from 60s → 25s.
-                        # Outer queue.get() in get_attachment_sync is 30s; inner MUST be
-                        # shorter so the worker always puts a GraphResponse on the queue
-                        # before the caller times out. 60s > 30s was causing the caller to
-                        # abandon the request while the async coroutine kept running,
-                        # orphaning SSL contexts and HTTP buffers in memory each poll cycle.
-                        timeout=25.0
-                    )
-                )
-                response = GraphResponse(success=True, data=result)
-
-            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Single-attempt transmission to prevent duplicate sends - start
-            elif request.request_type == RequestType.SEND_EMAIL:
-                result = self.loop.run_until_complete(
-                    asyncio.wait_for(
-                        self._send_email_async(**request.params),
-                        timeout=60.0
-                    )
-                )
-                response = GraphResponse(success=True, data=result)
-            
-            elif request.request_type == RequestType.REPLY_TO_EMAIL:
-                result = self.loop.run_until_complete(
-                    asyncio.wait_for(
-                        self._reply_to_email_async(**request.params),
-                        timeout=60.0
-                    )
-                )
-                response = GraphResponse(success=True, data=result)
-            # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Single-attempt transmission to prevent duplicate sends - end
-            
-            else:
-                response = GraphResponse(
-                    success=False,
-                    error=f"Unknown request type: {request.request_type}"
-                )
-        
-        except Exception as e:
-            logger.error(f"❌ Request failed after retries: {e}")
-            response = GraphResponse(success=False, error=str(e))
-        
-        request.response_queue.put(response)
-    
-    async def _fetch_emails_async(self, user_email: str, minutes: int, top: int) -> List[Dict]:
-        """Async implementation of email fetching"""
-        try:
-            # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Filter out draft messages to prevent stale IDs - start
-            time_threshold = (datetime.utcnow() - timedelta(minutes=minutes)).strftime('%Y-%m-%dT%H:%M:%SZ')
-            filter_query = f"isDraft eq false and receivedDateTime ge {time_threshold}"
-            
-            query_params = MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-                filter=filter_query,
-                select=['id', 'conversationId', 'subject', 'body', 'uniqueBody', 'bodyPreview', 'from', 'receivedDateTime', 'hasAttachments', 'ccRecipients', 'bccRecipients', 'toRecipients', 'internetMessageId', 'isDraft'],
-                orderby=['receivedDateTime ASC'],
-                top=top,
-                expand=['attachments']
-            )
-            # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Filter out draft messages to prevent stale IDs - end
-            
-            request_config = MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
-                query_parameters=query_params
-            )
-            
-            emails = []
-            messages = await self.client.users.by_user_id(user_email).messages.get(
-                request_configuration=request_config
-            )
-            
-            while messages and messages.value:
-                for msg in messages.value:
-                    if getattr(msg, 'is_draft', False):
-                        continue
-                    # FALLBACK: Fetch attachments if missing but referenced in body or has_attachments is true
-                    # Some clients don't set has_attachments flag for inline images
-                    body_content = getattr(msg.body, 'content', '') if msg.body else ''
-                    has_cid = 'cid:' in body_content
-                    if (getattr(msg, 'has_attachments', False) or has_cid) and (not hasattr(msg, 'attachments') or not msg.attachments):
-                        try:
-                            logger.info(f"🔍 Fetching missing attachments for message {msg.id[:10]}...")
-                            att_resp = await self.client.users.by_user_id(user_email).messages.by_message_id(msg.id).attachments.get()
-                            if att_resp and att_resp.value:
-                                msg.attachments = att_resp.value
-                                logger.info(f"✅ Found {len(msg.attachments)} missing attachments")
-                        except Exception as e:
-                            logger.warning(f"⚠️ Failed to fetch missing attachments for {msg.id[:10]}: {e}")
-
-                    emails.append(self._parse_email(msg))
-                
-                # Pagination
-                next_link = getattr(messages, 'odata_next_link', None)
-                if not next_link:
-                    break
-                messages = await self.client.users.by_user_id(user_email).messages.with_url(next_link).get()
-            
-            logger.info(f"📧 Fetched {len(emails)} emails for {user_email} (last {minutes} minutes)")
-            return emails
-        
-        except Exception as e:
-            logger.error(f"❌ Async fetch failed for {user_email}: {e}")
-            raise
-    
-    async def _get_attachment_async(self, user_email: str, message_id: str, attachment_id: str):
-        """Async implementation of attachment download"""
-        try:
-            attachment = await self.client.users.by_user_id(user_email)\
-                .messages.by_message_id(message_id)\
-                .attachments.by_attachment_id(attachment_id).get()
-            
-            if hasattr(attachment, 'content_bytes') and attachment.content_bytes:
-                content = attachment.content_bytes
-                
-                # Case 1: content is str -> definitely Base64
-                if isinstance(content, str):
-                    try:
-                        decoded = base64.b64decode(content)
-                        logger.info(
-                            f"📎 Decoded Base64 string attachment {attachment_id[:20]}... "
-                            f"({len(decoded)} bytes)"
-                        )
-                        return decoded
-                    except Exception as e:
-                        logger.warning(f"⚠️ Failed to decode Base64 string: {e}")
-                        return content.encode('utf-8')
-
-                # Case 2: content is bytes -> Check if it's actually Base64 bytes
-                if isinstance(content, bytes):
-                    try:
-                        # Optimization: Real binary (images/PDF) almost always contains non-ASCII bytes.
-                        # If decode('ascii') fails, it is definitely RAW BINARY.
-                        content_str = content.decode('ascii')
-                        
-                        # If we are here, the content is 100% ASCII. 
-                        # It is extremely likely to be Base64 encoded binary.
-                        # We use validate=True to ensure we don't corrupt plain text files.
-                        decoded = base64.b64decode(content_str, validate=True)
-                        
-                        logger.info(
-                            f"📎 Decoded Base64 bytes attachment {attachment_id[:20]}... "
-                            f"({len(decoded)} bytes)"
-                        )
-                        return decoded
-                    except (UnicodeDecodeError, base64.binascii.Error):
-                        # UnicodeDecodeError: Contains non-ASCII -> Raw Binary -> Keep as is
-                        # binascii.Error: Not valid Base64 -> Raw Binary -> Keep as is
-                        pass
-
-                logger.info(
-                    f"📎 Downloaded attachment {attachment_id[:20]}... "
-                    f"({len(content)} bytes)"
-                )
-                return content
-            
-            logger.warning(f"⚠️  Attachment {attachment_id[:20]}... has no content")
-            return None
-        
-        except Exception as e:
-            logger.warning(f"⚠️  Failed to download attachment {attachment_id[:20]}...: {e}")
-            raise
-    
-    def _parse_email(self, msg) -> Dict:
-        """Convert Graph Object to Dictionary (synchronous helper)"""
-        attachments = []
-        if hasattr(msg, 'attachments') and msg.attachments:
-            for att in msg.attachments:
-                if getattr(att, 'odata_type', '') == '#microsoft.graph.itemAttachment':
-                    continue
-                attachments.append({
-                    'id': getattr(att, 'id', ''),
-                    'name': getattr(att, 'name', 'unknown'),
-                    'content_type': getattr(att, 'content_type', ''),
-                    'size': getattr(att, 'size', 0),
-                    'is_inline': getattr(att, 'is_inline', False),
-                    'content_id': getattr(att, 'content_id', None)
-                })
-        
-        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Robust sender email extraction - start
-        sender_email = "unknown"
-        if hasattr(msg, 'from_') and msg.from_ and getattr(msg.from_, 'email_address', None):
-            sender_email = getattr(msg.from_.email_address, 'address', '') or getattr(msg.from_.email_address, 'name', 'unknown')
-        elif hasattr(msg, 'sender') and msg.sender and getattr(msg.sender, 'email_address', None):
-            sender_email = getattr(msg.sender.email_address, 'address', '') or getattr(msg.sender.email_address, 'name', 'unknown')
-        # Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Robust sender email extraction - end
-        
-        # Use uniqueBody for a cleaner body if available, otherwise fallback to full body
-        primary_html = msg.unique_body.content if (hasattr(msg, 'unique_body') and msg.unique_body) else None
-        if not primary_html:
-            primary_html = msg.body.content if (hasattr(msg, 'body') and msg.body) else ''
-            
-        return {
-            'id': msg.id,
-            'internet_message_id': getattr(msg, 'internet_message_id', None),
-            'conversation_id': getattr(msg, 'conversation_id', msg.id),
-            'subject': getattr(msg, 'subject', 'No Subject'),
-            'body_html': primary_html,
-            'body_text': getattr(msg, 'body_preview', primary_html[:255]),
-            'body': primary_html, # Deprecated legacy support
-            'sender': sender_email,
-            'received': msg.received_date_time.isoformat() if hasattr(msg, 'received_date_time') and msg.received_date_time else datetime.now(timezone.utc).isoformat(),
-            'attachments': attachments,
-            'to': ', '.join([r.email_address.address for r in msg.to_recipients if r.email_address]) if hasattr(msg, 'to_recipients') and msg.to_recipients else '',
-            'cc': ', '.join([r.email_address.address for r in msg.cc_recipients if r.email_address]) if hasattr(msg, 'cc_recipients') and msg.cc_recipients else '',
-            'bcc': ', '.join([r.email_address.address for r in msg.bcc_recipients if r.email_address]) if hasattr(msg, 'bcc_recipients') and msg.bcc_recipients else ''
-        }
-    
-    async def _send_email_async(
-        self,
-        user_email: str,
-        to_email: str,
-        subject: str,
-        body_html: str,
-        conversation_id: str = None,
-        cc: str = "",
-        bcc: str = "",
-        attachments: list = None
-    ) -> bool:
-        from msgraph.generated.users.item.send_mail.send_mail_post_request_body import SendMailPostRequestBody
-        from msgraph.generated.models.message import Message
-        from msgraph.generated.models.item_body import ItemBody
-        from msgraph.generated.models.body_type import BodyType
-        from msgraph.generated.models.recipient import Recipient
-        from msgraph.generated.models.email_address import EmailAddress
-        from msgraph.generated.models.file_attachment import FileAttachment
-
-        message = Message()
-        message.subject = subject
-
-        message.body = ItemBody()
-        message.body.content_type = BodyType.Html
-        message.body.content = body_html
-
-        if conversation_id:
-            message.conversation_id = conversation_id
-
-        def make_recipient(email):
-            r = Recipient()
-            r.email_address = EmailAddress()
-            r.email_address.address = email
-            return r
-
-        message.to_recipients = [make_recipient(to_email)]
-
-        if cc:
-            # Support both comma and semicolon separators
-            cc_list = cc.replace(';', ',').split(',')
-            message.cc_recipients = [make_recipient(e.strip()) for e in cc_list if e.strip()]
-        
-        if bcc:
-            # Support both comma and semicolon separators
-            bcc_list = bcc.replace(';', ',').split(',')
-            message.bcc_recipients = [make_recipient(e.strip()) for e in bcc_list if e.strip()]
-
-        if attachments:
-            files = []
-            for att in attachments:
-                fa = FileAttachment()
-                fa.name = att['name']
-                fa.content_type = att['contentType']
-                fa.content_bytes = base64.b64decode(att['content'])
-                if att.get('is_inline') or att.get('isInline'):
-                    fa.is_inline = True
-                    fa.content_id = att.get('content_id') or att.get('contentId')
-                files.append(fa)
-            message.attachments = files
-
-        body = SendMailPostRequestBody()
-        body.message = message
-        body.save_to_sent_items = True
-
-        await self.client.users.by_user_id(user_email).send_mail.post(body=body)
-        return True
-
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix Graph API reply body and comment payload - start
-    async def _reply_to_email_async(
-        self,
-        user_email: str,
-        parent_message_id: str,
-        body_html: str,
-        to_email: str = None,
-        cc: str = "",
-        bcc: str = "",
-        attachments: list = None
-    ) -> bool:
-        """
-        Reply to an existing message using the Graph API's dedicated reply endpoint.
-        This automatically handles In-Reply-To, References, and Subject (Re:).
-        """
-        from msgraph.generated.users.item.messages.item.reply.reply_post_request_body import ReplyPostRequestBody
-        from msgraph.generated.models.message import Message
-        from msgraph.generated.models.recipient import Recipient
-        from msgraph.generated.models.email_address import EmailAddress
-        from msgraph.generated.models.file_attachment import FileAttachment
-
-        # 1. Create the reply message structure (for recipient overrides and attachments)
-        reply_message = Message()
-
-        # 2. Add Recipients (To, CC, BCC)
-        def make_recipient(email):
-            r = Recipient()
-            r.email_address = EmailAddress()
-            r.email_address.address = email
-            return r
-
-        if to_email:
-            reply_message.to_recipients = [make_recipient(to_email)]
-
-        if cc:
-            # Support both comma and semicolon separators
-            cc_list = cc.replace(';', ',').split(',')
-            reply_message.cc_recipients = [make_recipient(e.strip()) for e in cc_list if e.strip()]
-
-        if bcc:
-            # Support both comma and semicolon separators
-            bcc_list = bcc.replace(';', ',').split(',')
-            reply_message.bcc_recipients = [make_recipient(e.strip()) for e in bcc_list if e.strip()]
-
-        # 3. Add attachments if provided
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Attachment data URL sanitization - start
-        if attachments:
-            files = []
-            for att in attachments:
-                fa = FileAttachment()
-                fa.name = att.get('name', 'attachment')
-                fa.content_type = att.get('contentType') or att.get('content_type', 'application/octet-stream')
-                
-                raw_payload = att.get('content') or ''
-                if isinstance(raw_payload, str):
-                    clean_b64 = re.sub(r'^data:[^;]+;base64,', '', raw_payload).strip()
-                    fa.content_bytes = base64.b64decode(clean_b64)
-                elif isinstance(raw_payload, bytes):
-                    fa.content_bytes = raw_payload
-                    
-                if att.get('is_inline') or att.get('isInline'):
-                    fa.is_inline = True
-                    fa.content_id = att.get('content_id') or att.get('contentId')
-                files.append(fa)
-            reply_message.attachments = files
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Attachment data URL sanitization - end
-
-        # 4. Prepare the request body: Graph API requires reply content in `comment`
-        request_body = ReplyPostRequestBody()
-        request_body.comment = body_html
-        request_body.message = reply_message
-
-        # 5. Execute the reply
-        # Graph API POST /users/{id}/messages/{messageId}/reply
-        await self.client.users.by_user_id(user_email)\
-            .messages.by_message_id(parent_message_id)\
-            .reply.post(body=request_body)
-
-        logger.info(f"✅ Successfully replied to message {parent_message_id[:10]}...")
-        return True
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Fix Graph API reply body and comment payload - end
-
-    
-    def shutdown(self, timeout: float = 5.0):
-        """Gracefully shutdown the worker thread"""
-        if not self.worker_thread or not self.worker_thread.is_alive():
-            return
-        
-        logger.info("🛑 Initiating AsyncioWorker shutdown")
-        
-        shutdown_queue = queue.Queue()
-        self.request_queue.put(GraphRequest(
-            request_type=RequestType.SHUTDOWN,
-            params={},
-            response_queue=shutdown_queue
-        ))
-        
-        self._shutdown.set()
-        self.worker_thread.join(timeout=timeout)
-        
-        if self.worker_thread.is_alive():
-            logger.warning("⚠️  AsyncioWorker did not shutdown within timeout")
-        else:
-            logger.info("✅ AsyncioWorker shutdown complete")
+class ParentMessageNotFoundError(Exception):
+    """Raised when target parent message does not exist or was moved in Microsoft Graph."""
+    pass
 
 
 class GraphConnector:
     """
-    Thread-safe Graph API connector with resilient retry logic.
-    
-    Public interface is synchronous - all async complexity is hidden.
-    Safe to use from any thread (Flask, SocketIO, main thread, etc.)
-    
-    Features:
-    - Automatic retry with exponential backoff
-    - Graceful error handling
-    - Enhanced logging
+    Thread-safe, synchronous Microsoft Graph connector with connection pooling,
+    automatic token caching, large attachment upload session support, and
+    circuit-breaker protection.
     """
-    
-    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker constants
-    # Trip after this many consecutive auth failures across any operation
+
     CIRCUIT_TRIP_THRESHOLD: int = 3
-    # Stay open for this many seconds before auto-resetting
     CIRCUIT_COOLDOWN_SECONDS: float = 300.0  # 5 minutes
 
     def __init__(
@@ -742,266 +70,291 @@ class GraphConnector:
         self.client_secret = client_secret
         self.tenant_id = tenant_id
         self.retry_config = retry_config or RetryConfig()
-        self.worker: Optional[AsyncioWorker] = None
+
         self._authenticated = False
-        # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker state
         self._consecutive_auth_failures: int = 0
-        self._circuit_open_until: float = 0.0  # epoch seconds
-    
-    def authenticate(self) -> bool:
-        """
-        Initialize and start the asyncio worker thread.
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        try:
-            self.worker = AsyncioWorker(
-                self.client_id,
-                self.client_secret,
-                self.tenant_id,
-                self.retry_config
-            )
-            self.worker.start()
-            self._authenticated = True
-            logger.info("✅ GraphConnector authenticated and worker started")
-            return True
-        
-        except Exception as e:
-            logger.error(f"❌ Authentication failed: {e}")
-            self._authenticated = False
-            return False
-    
-    def _send_request(self, request_type: RequestType, params: dict, timeout: float = 150.0) -> GraphResponse:  # Bilal Khan (05/08/2026) - Wave 1A: 60→150s so inner async timeout (120s) always fires first
-        """
-        Send a request to the asyncio worker and wait for response.
-        
-        Args:
-            request_type: Type of request
-            params: Request parameters
-            timeout: Maximum time to wait for response (seconds)
-            
-        Returns:
-            GraphResponse object
-            
-        Raises:
-            RuntimeError: If not authenticated or timeout occurs
-        """
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Worker thread liveness check - start
-        if not self._authenticated or not self.worker or not self.worker.worker_thread or not self.worker.worker_thread.is_alive():
-            logger.error("❌ GraphConnector request aborted: worker thread is not running")
-            raise RuntimeError("Not authenticated or Graph API worker thread is not running.")
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Worker thread liveness check - end
-        
-        response_queue = queue.Queue()
-        
-        request = GraphRequest(
-            request_type=request_type,
-            params=params,
-            response_queue=response_queue
+        self._circuit_open_until: float = 0.0
+        self._msal_client = None
+        self._scopes = ["https://graph.microsoft.com/.default"]
+
+        # Reusable HTTP Session with connection pooling and transient backoff
+        self.session = requests.Session()
+        retries = Retry(
+            total=self.retry_config.max_retries,
+            backoff_factor=self.retry_config.base_delay,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PATCH", "PUT"]
         )
-        self.worker.request_queue.put(request)
-        
-        try:
-            response = response_queue.get(timeout=timeout)
-            return response
-        except queue.Empty:
-            # Bilal Khan (05/08/2026) - Wave 1A: Removed re-authenticate-on-timeout.
-            # Previously: shutdown() + authenticate() spawned a new thread while the old one
-            # was still alive (5s join not enough), causing a thread accumulation leak that
-            # exhausted RAM under sustained Graph API throttling. Now we log and raise only.
-            # The inner asyncio.wait_for (120s) always fires before this outer timeout (150s),
-            # so the worker thread always puts a response on the queue before we get here.
-            thread_alive = self.worker.worker_thread.is_alive() if self.worker else 'N/A'
-            logger.error(
-                f"❌ Graph request timed out after {timeout}s (outer queue). "
-                f"Worker thread alive: {thread_alive}. This should not happen with aligned timeouts."
+        adapter = HTTPAdapter(pool_connections=5, pool_maxsize=15, max_retries=retries)
+        self.session.mount("https://", adapter)
+
+    @property
+    def _msal_app(self):
+        """Lazily initialize MSAL Confidential Client."""
+        if self._msal_client is None:
+            self._msal_client = msal.ConfidentialClientApplication(
+                client_id=self.client_id,
+                client_credential=self.client_secret,
+                authority=f"https://login.microsoftonline.com/{self.tenant_id}"
             )
-            raise RuntimeError(f"Request timed out after {timeout} seconds")
-    
-    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker helpers - start
+        return self._msal_client
+
     def _is_circuit_open(self) -> bool:
-        """Returns True if the circuit is currently open (tripped)."""
+        """Checks if auth circuit breaker is tripped."""
         if self._circuit_open_until > 0:
             remaining = self._circuit_open_until - time.time()
             if remaining > 0:
                 logger.warning(
-                    f"⚡ Circuit OPEN — Azure auth failure threshold hit. "
-                    f"Skipping Graph API call. Resets in {remaining:.0f}s. "
-                    f"Rotate the Azure client secret in .env and redeploy."
+                    f"Circuit OPEN — Azure auth failure threshold hit. "
+                    f"Skipping Graph API call. Resets in {remaining:.0f}s."
                 )
                 return True
             else:
-                # Auto-reset after cooldown
-                logger.info("⚡ Circuit RESET — cooldown elapsed, allowing Graph API calls again.")
+                logger.info("Circuit RESET — cooldown elapsed, allowing Graph API calls again.")
                 self._circuit_open_until = 0.0
                 self._consecutive_auth_failures = 0
         return False
 
-    def _record_outcome(self, success: bool, error: str = "") -> None:
-        """Track consecutive auth failures and trip/reset the circuit."""
-        if not success and _is_auth_error(Exception(error or "")):
+    def _record_outcome(self, success: bool, is_auth_error: bool = False) -> None:
+        """Tracks auth outcomes to trip or reset the circuit breaker."""
+        if not success and is_auth_error:
             self._consecutive_auth_failures += 1
             logger.warning(
-                f"🔐 Auth failure #{self._consecutive_auth_failures} / "
+                f"Auth failure #{self._consecutive_auth_failures} / "
                 f"{self.CIRCUIT_TRIP_THRESHOLD} before circuit trips."
             )
             if self._consecutive_auth_failures >= self.CIRCUIT_TRIP_THRESHOLD:
                 self._circuit_open_until = time.time() + self.CIRCUIT_COOLDOWN_SECONDS
                 logger.critical(
-                    f"🚨 CIRCUIT TRIPPED — {self._consecutive_auth_failures} consecutive Azure "
-                    f"authentication failures. All Graph API calls blocked for "
-                    f"{self.CIRCUIT_COOLDOWN_SECONDS:.0f}s. "
-                    f"ACTION REQUIRED: rotate AZURE_CLIENT_SECRET in .env and redeploy."
+                    f"CIRCUIT TRIPPED — {self._consecutive_auth_failures} consecutive Azure auth failures. "
+                    f"Calls blocked for {self.CIRCUIT_COOLDOWN_SECONDS:.0f}s."
                 )
         elif success:
             if self._consecutive_auth_failures > 0:
-                logger.info(
-                    f"✅ Circuit RESET — successful call after "
-                    f"{self._consecutive_auth_failures} prior auth failure(s)."
-                )
+                logger.info("Circuit RESET after successful call.")
             self._consecutive_auth_failures = 0
             self._circuit_open_until = 0.0
-    # Bilal Khan (12/08/2026) - P1 Fix #5: Circuit-breaker helpers - end
 
-    def fetch_latest_emails(self, user_email: str, minutes: int = 10, top: int = 100) -> List[Dict]:
-        """
-        Fetch emails from the last N minutes (SYNCHRONOUS with retry).
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Returns valid Bearer authorization header with cached token."""
+        result = self._msal_app.acquire_token_silent(self._scopes, account=None)
+        if not result:
+            result = self._msal_app.acquire_token_for_client(scopes=self._scopes)
 
-        Returns empty list immediately if the auth circuit is open.
+        if "access_token" not in result:
+            error_msg = result.get("error_description", result.get("error", "Unknown auth failure"))
+            self._record_outcome(False, is_auth_error=True)
+            raise PermissionError(f"Azure AD authentication failed: {error_msg}")
 
-        Args:
-            user_email: Email address to fetch from
-            minutes: Time window in minutes
-            top: Maximum number of emails to fetch
+        self._record_outcome(True)
+        return {
+            "Authorization": f"Bearer {result['access_token']}",
+            "Content-Type": "application/json"
+        }
 
-        Returns:
-            List of email dicts
-        """
-        # Bilal Khan (12/08/2026) - P1 Fix #5: Check circuit before issuing request
-        if self._is_circuit_open():
-            return []
+    def authenticate(self) -> bool:
+        """Validates credentials on startup."""
         try:
-            response = self._send_request(
-                RequestType.FETCH_EMAILS,
-                {
-                    'user_email': user_email,
-                    'minutes': minutes,
-                    'top': top
-                }
-            )
-
-            self._record_outcome(response.success, response.error or "")
-            if response.success:
-                return response.data
-            else:
-                logger.error(f"❌ Fetch emails failed: {response.error}")
-                return []
-
+            self._get_auth_headers()
+            self._authenticated = True
+            logger.info("GraphConnector authenticated successfully")
+            return True
         except Exception as e:
-            self._record_outcome(False, str(e))
-            logger.error(f"❌ Error fetching emails: {e}")
+            logger.error(f"GraphConnector authentication failed: {e}")
+            self._authenticated = False
+            return False
+
+    def _parse_recipient(self, raw_input: str) -> Optional[Dict[str, Any]]:
+        """Parses RFC-5322 string into Graph Recipient object."""
+        if not raw_input or not raw_input.strip():
+            return None
+        name, addr = parseaddr(raw_input.strip())
+        clean_addr = addr or name
+        if not clean_addr or "@" not in clean_addr:
+            return None
+        return {
+            "emailAddress": {
+                "address": clean_addr.strip(),
+                "name": name.strip() or clean_addr.strip()
+            }
+        }
+
+    def _parse_recipients_list(self, raw_str: str) -> List[Dict[str, Any]]:
+        """Splits comma/semicolon delimited string into list of Graph Recipient dicts."""
+        if not raw_str:
             return []
-    
-    def get_attachment_sync(self, user_email: str, message_id: str, attachment_id: str):
-        """
-        Download attachment bytes (SYNCHRONOUS with retry).
+        items = raw_str.replace(";", ",").split(",")
+        recipients = []
+        for item in items:
+            parsed = self._parse_recipient(item)
+            if parsed:
+                recipients.append(parsed)
+        return recipients
 
-        Returns None immediately if the auth circuit is open.
+    def _format_attachment(self, att: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalizes and prepares attachment dictionary for Graph API."""
+        raw_payload = att.get('content') or ''
+        if isinstance(raw_payload, str):
+            clean_b64 = re.sub(r'^data:[^;]+;base64,', '', raw_payload).strip()
+        elif isinstance(raw_payload, bytes):
+            clean_b64 = base64.b64encode(raw_payload).decode('utf-8')
+        else:
+            clean_b64 = ''
 
-        Args:
-            user_email: Email address
-            message_id: Message ID
-            attachment_id: Attachment ID
+        cid = att.get('content_id') or att.get('cid') or att.get('contentId')
+        is_inline = bool(att.get('is_inline') or att.get('isInline') or cid)
+        content_type = att.get('contentType') or att.get('content_type') or 'application/octet-stream'
 
-        Returns:
-            bytes: Attachment data, or None if failed
-        """
-        # Bilal Khan (12/08/2026) - P1 Fix #5: Check circuit before issuing request
-        if self._is_circuit_open():
-            return None
-        try:
-            response = self._send_request(
-                RequestType.GET_ATTACHMENT,
-                {
-                    'user_email': user_email,
-                    'message_id': message_id,
-                    'attachment_id': attachment_id
-                },
-                timeout=30.0
-            )
+        attachment_dict: Dict[str, Any] = {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": att.get('name', 'attachment'),
+            "contentType": content_type,
+            "contentBytes": clean_b64,
+            "isInline": is_inline
+        }
+        if cid:
+            attachment_dict["contentId"] = cid
 
-            self._record_outcome(response.success, response.error or "")
-            if response.success:
-                return response.data
-            else:
-                logger.error(f"❌ Get attachment failed: {response.error}")
-                return None
+        return attachment_dict
 
-        except Exception as e:
-            self._record_outcome(False, str(e))
-            logger.error(f"❌ Error getting attachment: {e}")
-            return None
+    def _parse_email(self, msg: Dict[str, Any]) -> Dict[str, Any]:
+        """Transforms Graph REST API JSON message into standardized dictionary."""
+        attachments = []
+        raw_attachments = msg.get('attachments') or []
+        for att in raw_attachments:
+            if att.get('@odata.type') == '#microsoft.graph.itemAttachment':
+                continue
+            attachments.append({
+                'id': att.get('id', ''),
+                'name': att.get('name', 'unknown'),
+                'content_type': att.get('contentType', ''),
+                'size': att.get('size', 0),
+                'is_inline': att.get('isInline', False),
+                'content_id': att.get('contentId', None)
+            })
 
-    def fetch_all_emails(
+        sender_email = "unknown"
+        from_dict = msg.get('from', {}) or {}
+        if from_dict.get('emailAddress'):
+            sender_email = from_dict['emailAddress'].get('address') or from_dict['emailAddress'].get('name', 'unknown')
+        elif msg.get('sender', {}).get('emailAddress'):
+            sender_email = msg['sender']['emailAddress'].get('address') or msg['sender']['emailAddress'].get('name', 'unknown')
+
+        unique_body = msg.get('uniqueBody', {}) or {}
+        full_body = msg.get('body', {}) or {}
+        primary_html = unique_body.get('content') or full_body.get('content') or ''
+        body_preview = msg.get('bodyPreview') or primary_html[:255]
+
+        to_recipients = [r.get('emailAddress', {}).get('address', '') for r in msg.get('toRecipients', []) if r.get('emailAddress', {}).get('address')]
+        cc_recipients = [r.get('emailAddress', {}).get('address', '') for r in msg.get('ccRecipients', []) if r.get('emailAddress', {}).get('address')]
+        bcc_recipients = [r.get('emailAddress', {}).get('address', '') for r in msg.get('bccRecipients', []) if r.get('emailAddress', {}).get('address')]
+
+        received_dt = msg.get('receivedDateTime')
+        if not received_dt:
+            received_dt = datetime.now(timezone.utc).isoformat()
+
+        return {
+            'id': msg.get('id'),
+            'internet_message_id': msg.get('internetMessageId'),
+            'conversation_id': msg.get('conversationId', msg.get('id')),
+            'subject': msg.get('subject', 'No Subject'),
+            'body_html': primary_html,
+            'body_text': body_preview,
+            'body': primary_html,
+            'sender': sender_email,
+            'received': received_dt,
+            'attachments': attachments,
+            'to': ', '.join(to_recipients),
+            'cc': ', '.join(cc_recipients),
+            'bcc': ', '.join(bcc_recipients)
+        }
+
+    # -------------------------------------------------------------------------
+    # 1. FETCH EMAILS
+    # -------------------------------------------------------------------------
+    def fetch_latest_emails(
         self,
         user_email: str,
-        max_emails: int = 1000,
-        skip: int = 0,
-        checkpoint_callback: Optional[Callable] = None
-    ):
-        """
-        Fetch all emails with pagination and checkpointing.
-        
-        This method is used by ingest.py for bulk email fetching.
-        
-        Args:
-            user_email: Email address to fetch from
-            max_emails: Maximum number of emails to fetch
-            skip: Number of emails to skip (for resumption)
-            checkpoint_callback: Optional callback(batch) called after each batch
-        """
-        try:
-            batch_size = 100
-            total_fetched = 0
-            
-            while total_fetched < max_emails:
-                batch = self.fetch_latest_emails(
-                    user_email,
-                    minutes=365 * 24 * 60,  # 1 year
-                    top=min(batch_size, max_emails - total_fetched)
-                )
-                
-                if not batch:
-                    logger.info("ℹ️  No more emails to fetch")
-                    break
-                
-                total_fetched += len(batch)
-                
-                if checkpoint_callback:
-                    checkpoint_callback(batch)
-                
-                logger.info(f"📊 Fetched {total_fetched}/{max_emails} emails...")
-                
-                if len(batch) < batch_size:
-                    break
-            
-            logger.info(f"✅ Fetch complete: {total_fetched} emails")
-        
-        except Exception as e:
-            logger.error(f"❌ Error in fetch_all_emails: {e}")
-    
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Deprecate legacy send_email in favor of reply_to_email - start
-    def send_email(self, *args, **kwargs) -> bool:
-        """
-        [DEPRECATED] Legacy email sending is deprecated. All email communications
-        are routed through reply_to_email() to maintain thread fidelity.
-        """
-        logger.warning("⚠️ send_email() is deprecated and disabled. Use reply_to_email() instead.")
-        return False
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Deprecate legacy send_email in favor of reply_to_email - end
+        minutes: int = 10,
+        top: int = 100,
+        folder: Optional[str] = "Inbox"
+    ) -> List[Dict]:
+        """Fetch emails from the last N minutes synchronously from specified mail folder (default: Inbox)."""
+        if self._is_circuit_open():
+            return []
 
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Add circuit-breaker and outcome tracking to reply_to_email - start
+        try:
+            threshold = (datetime.utcnow() - timedelta(minutes=minutes)).strftime('%Y-%m-%dT%H:%M:%SZ')
+            params = {
+                "$filter": f"isDraft eq false and receivedDateTime ge {threshold}",
+                "$select": "id,conversationId,subject,body,uniqueBody,bodyPreview,from,receivedDateTime,hasAttachments,ccRecipients,bccRecipients,toRecipients,internetMessageId,isDraft",
+                "$orderby": "receivedDateTime ASC",
+                "$top": str(top),
+                "$expand": "attachments"
+            }
+
+            if folder:
+                url = f"{GRAPH_BASE_URL}/users/{user_email}/mailFolders/{folder}/messages"
+            else:
+                url = f"{GRAPH_BASE_URL}/users/{user_email}/messages"
+            headers = self._get_auth_headers()
+            emails = []
+
+            while url:
+                resp = self.session.get(url, headers=headers, params=params if url.startswith(GRAPH_BASE_URL) and '?' not in url else None, timeout=30.0)
+                if resp.status_code == 401:
+                    self._record_outcome(False, is_auth_error=True)
+                    return []
+                resp.raise_for_status()
+                data = resp.json()
+
+                for msg in data.get('value', []):
+                    if msg.get('isDraft'):
+                        continue
+                    emails.append(self._parse_email(msg))
+
+                # Handle nextLink pagination
+                url = data.get('@odata.nextLink')
+                params = None  # Next link already contains query parameters
+
+            logger.info(f"Fetched {len(emails)} emails for {user_email} (last {minutes} minutes)")
+            return emails
+
+        except Exception as e:
+            logger.error(f"Error fetching emails for {user_email}: {e}")
+            return []
+
+    # -------------------------------------------------------------------------
+    # 2. GET ATTACHMENT
+    # -------------------------------------------------------------------------
+    def get_attachment_sync(self, user_email: str, message_id: str, attachment_id: str) -> Optional[bytes]:
+        """Download attachment bytes synchronously."""
+        if self._is_circuit_open():
+            return None
+
+        try:
+            url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{message_id}/attachments/{attachment_id}"
+            headers = self._get_auth_headers()
+            resp = self.session.get(url, headers=headers, timeout=30.0)
+            
+            if resp.status_code == 404:
+                logger.warning(f"Attachment {attachment_id[:15]} not found for message {message_id[:15]}")
+                return None
+            resp.raise_for_status()
+
+            data = resp.json()
+            content_b64 = data.get('contentBytes')
+            if content_b64:
+                return base64.b64decode(content_b64)
+            return None
+
+        except Exception as e:
+            logger.error(f"Error downloading attachment {attachment_id[:15]}: {e}")
+            return None
+
+    # -------------------------------------------------------------------------
+    # 3. REPLY TO EMAIL (Single-part & Upload Session Chunking)
+    # -------------------------------------------------------------------------
     def reply_to_email(
         self,
         user_email: str,
@@ -1013,41 +366,296 @@ class GraphConnector:
         attachments: list = None
     ) -> bool:
         """
-        Reply to an existing email (SYNCHRONOUS with retry).
+        Reply to an existing email with automatic payload size thresholding,
+        chunked upload session support for files >= 3 MB, and fallback routing.
         """
         if self._is_circuit_open():
             return False
-        try:
-            response = self._send_request(
-                RequestType.REPLY_TO_EMAIL,
-                {
-                    'user_email': user_email,
-                    'parent_message_id': parent_message_id,
-                    'body_html': body,
-                    'to_email': to_email,
-                    'cc': cc,
-                    'bcc': bcc,
-                    'attachments': attachments
-                }
-            )
-            self._record_outcome(response.success, response.error or "")
-            if response.success:
-                return True
-            else:
-                logger.error(f"❌ reply_to_email failed: {response.error}")
-                return False
-        except Exception as e:
-            self._record_outcome(False, str(e))
-            logger.error(f"❌ reply_to_email failed: {e}")
-            return False
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Add circuit-breaker and outcome tracking to reply_to_email - end
-    
-    def shutdown(self):
-        """Shutdown the asyncio worker thread cleanly"""
-        if self.worker:
-            self.worker.shutdown()
-            self.worker = None
-        self._authenticated = False
-        logger.info("✅ GraphConnector shutdown complete")
 
-    
+        if not parent_message_id:
+            logger.warning("No parent message ID provided. Raising ParentMessageNotFoundError.")
+            raise ParentMessageNotFoundError("No parent message ID provided.")
+
+        attachments = attachments or []
+        formatted_attachments = [self._format_attachment(a) for a in attachments]
+
+        # Calculate total payload size to decide between single-shot and upload session
+        total_size = sum(len(a.get('contentBytes', '')) for a in formatted_attachments)
+        has_large_file = any(len(a.get('contentBytes', '')) >= 3 * 1024 * 1024 for a in formatted_attachments)
+
+        try:
+            if not has_large_file and total_size < 3.5 * 1024 * 1024:
+                # FAST PATH: Standard single-shot reply
+                return self._send_standard_reply(
+                    user_email=user_email,
+                    parent_message_id=parent_message_id,
+                    body=body,
+                    to_email=to_email,
+                    cc=cc,
+                    bcc=bcc,
+                    formatted_attachments=formatted_attachments
+                )
+            else:
+                # CHUNKED PATH: Draft creation + Upload Session
+                logger.info(f"Payload size ({total_size / (1024*1024):.2f} MB) requires Graph Upload Session")
+                return self._send_draft_chunked_reply(
+                    user_email=user_email,
+                    parent_message_id=parent_message_id,
+                    body=body,
+                    to_email=to_email,
+                    cc=cc,
+                    bcc=bcc,
+                    formatted_attachments=formatted_attachments
+                )
+
+        except requests.HTTPError as http_err:
+            if http_err.response is not None and http_err.response.status_code == 404:
+                logger.warning(
+                    f"Parent message {parent_message_id[:10]} not found in Graph API (404). "
+                    "Raising ParentMessageNotFoundError for user confirmation."
+                )
+                raise ParentMessageNotFoundError(
+                    f"Parent message {parent_message_id} was not found in Microsoft Graph (404)."
+                )
+            logger.error(f"HTTP error during reply: {http_err}")
+            return False
+        except Exception as e:
+            if isinstance(e, ParentMessageNotFoundError):
+                raise
+            logger.error(f"Unexpected error during reply: {e}")
+            return False
+
+    def _send_standard_reply(
+        self,
+        user_email: str,
+        parent_message_id: str,
+        body: str,
+        to_email: str,
+        cc: str,
+        bcc: str,
+        formatted_attachments: list
+    ) -> bool:
+        """Single-shot POST /messages/{id}/reply."""
+        url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{parent_message_id}/reply"
+        headers = self._get_auth_headers()
+
+        reply_message: Dict[str, Any] = {}
+        if to_email:
+            parsed_to = self._parse_recipient(to_email)
+            if parsed_to:
+                reply_message['toRecipients'] = [parsed_to]
+        if cc:
+            reply_message['ccRecipients'] = self._parse_recipients_list(cc)
+        if bcc:
+            reply_message['bccRecipients'] = self._parse_recipients_list(bcc)
+
+        if formatted_attachments:
+            reply_message['attachments'] = formatted_attachments
+
+        payload = {
+            "comment": body,
+            "message": reply_message
+        }
+
+        resp = self.session.post(url, headers=headers, json=payload, timeout=45.0)
+        resp.raise_for_status()
+
+        if resp.status_code in (200, 202):
+            logger.info(f"Successfully replied to message {parent_message_id[:10]} via standard endpoint")
+            return True
+        return False
+
+    def _send_draft_chunked_reply(
+        self,
+        user_email: str,
+        parent_message_id: str,
+        body: str,
+        to_email: str,
+        cc: str,
+        bcc: str,
+        formatted_attachments: list
+    ) -> bool:
+        """Creates a draft reply, uploads large files via createUploadSession, and sends draft."""
+        headers = self._get_auth_headers()
+
+        # Step 1: Create draft reply
+        create_draft_url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{parent_message_id}/createReply"
+        resp = self.session.post(create_draft_url, headers=headers, json={}, timeout=30.0)
+        resp.raise_for_status()
+        draft_msg = resp.json()
+        draft_id = draft_msg['id']
+
+        # Step 2: Update draft body and recipient overrides
+        update_draft_url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{draft_id}"
+        patch_payload: Dict[str, Any] = {
+            "body": {
+                "contentType": "HTML",
+                "content": body
+            }
+        }
+        if to_email:
+            parsed_to = self._parse_recipient(to_email)
+            if parsed_to:
+                patch_payload['toRecipients'] = [parsed_to]
+        if cc:
+            patch_payload['ccRecipients'] = self._parse_recipients_list(cc)
+        if bcc:
+            patch_payload['bccRecipients'] = self._parse_recipients_list(bcc)
+
+        patch_resp = self.session.patch(update_draft_url, headers=headers, json=patch_payload, timeout=30.0)
+        patch_resp.raise_for_status()
+
+        # Step 3: Attach files
+        for att in formatted_attachments:
+            raw_bytes = base64.b64decode(att.get('contentBytes', ''))
+            file_size = len(raw_bytes)
+
+            if file_size < 3 * 1024 * 1024:
+                # Direct attachment for small files
+                add_att_url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{draft_id}/attachments"
+                att_resp = self.session.post(add_att_url, headers=headers, json=att, timeout=30.0)
+                att_resp.raise_for_status()
+            else:
+                # Large file upload session
+                session_url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{draft_id}/attachments/createUploadSession"
+                session_payload = {
+                    "AttachmentItem": {
+                        "attachmentType": "file",
+                        "name": att.get('name', 'attachment'),
+                        "size": file_size,
+                        "contentType": att.get('contentType', 'application/octet-stream')
+                    }
+                }
+                sess_resp = self.session.post(session_url, headers=headers, json=session_payload, timeout=30.0)
+                sess_resp.raise_for_status()
+                upload_url = sess_resp.json().get('uploadUrl')
+
+                # Stream chunks of 320 KiB
+                bytes_stream = io.BytesIO(raw_bytes)
+                start = 0
+                while start < file_size:
+                    chunk = bytes_stream.read(CHUNK_SIZE)
+                    chunk_len = len(chunk)
+                    end = start + chunk_len - 1
+                    chunk_headers = {
+                        "Content-Length": str(chunk_len),
+                        "Content-Range": f"bytes {start}-{end}/{file_size}"
+                    }
+                    put_resp = self.session.put(upload_url, headers=chunk_headers, data=chunk, timeout=60.0)
+                    put_resp.raise_for_status()
+                    start += chunk_len
+
+        # Step 4: Send the draft
+        send_url = f"{GRAPH_BASE_URL}/users/{user_email}/messages/{draft_id}/send"
+        send_resp = self.session.post(send_url, headers=headers, json={}, timeout=45.0)
+        send_resp.raise_for_status()
+
+        logger.info(f"Successfully sent chunked reply for parent message {parent_message_id[:10]}")
+        return True
+
+    # -------------------------------------------------------------------------
+    # 4. SEND EMAIL (POST /users/{id}/sendMail)
+    # -------------------------------------------------------------------------
+    def send_email(
+        self,
+        user_email: str,
+        to_email: str,
+        subject: str,
+        body_html: str,
+        conversation_id: str = None,
+        cc: str = "",
+        bcc: str = "",
+        attachments: list = None
+    ) -> bool:
+        """Standalone email transmission endpoint."""
+        if self._is_circuit_open():
+            return False
+
+        try:
+            url = f"{GRAPH_BASE_URL}/users/{user_email}/sendMail"
+            headers = self._get_auth_headers()
+
+            message: Dict[str, Any] = {
+                "subject": subject,
+                "body": {
+                    "contentType": "HTML",
+                    "content": body_html
+                }
+            }
+
+            if conversation_id:
+                message["conversationId"] = conversation_id
+
+            if to_email:
+                parsed_to = self._parse_recipient(to_email)
+                if parsed_to:
+                    message["toRecipients"] = [parsed_to]
+            if cc:
+                message["ccRecipients"] = self._parse_recipients_list(cc)
+            if bcc:
+                message["bccRecipients"] = self._parse_recipients_list(bcc)
+
+            if attachments:
+                message["attachments"] = [self._format_attachment(a) for a in attachments]
+
+            payload = {
+                "message": message,
+                "saveToSentItems": True
+            }
+
+            resp = self.session.post(url, headers=headers, json=payload, timeout=45.0)
+            resp.raise_for_status()
+            logger.info(f"Successfully sent email to {to_email}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending email to {to_email}: {e}")
+            return False
+
+    # -------------------------------------------------------------------------
+    # 5. FETCH ALL EMAILS (Pagination Helper for Ingest)
+    # -------------------------------------------------------------------------
+    def fetch_all_emails(
+        self,
+        user_email: str,
+        max_emails: int = 1000,
+        skip: int = 0,
+        checkpoint_callback: Optional[Callable] = None
+    ):
+        """Fetch all emails with pagination and checkpoint callbacks."""
+        try:
+            batch_size = 100
+            total_fetched = 0
+
+            while total_fetched < max_emails:
+                batch = self.fetch_latest_emails(
+                    user_email=user_email,
+                    minutes=365 * 24 * 60,
+                    top=min(batch_size, max_emails - total_fetched)
+                )
+
+                if not batch:
+                    logger.info("No more emails to fetch")
+                    break
+
+                total_fetched += len(batch)
+                if checkpoint_callback:
+                    checkpoint_callback(batch)
+
+                logger.info(f"Fetched {total_fetched}/{max_emails} emails...")
+                if len(batch) < batch_size:
+                    break
+
+            logger.info(f"Fetch complete: {total_fetched} emails")
+
+        except Exception as e:
+            logger.error(f"Error in fetch_all_emails: {e}")
+
+    def shutdown(self):
+        """Closes pooled HTTP sessions cleanly."""
+        self.session.close()
+        self._authenticated = False
+        logger.info("GraphConnector session closed")
+
+
+__all__ = ['GraphConnector', 'RetryConfig', 'ParentMessageNotFoundError']

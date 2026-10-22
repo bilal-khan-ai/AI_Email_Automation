@@ -99,6 +99,10 @@ $SSH_CMD $SSH_USER@$VM_IP << EOF
     tar -xzvf deploy_pkg.tar.gz
     rm deploy_pkg.tar.gz
 
+    # Ensure persistent volume directories exist with correct permissions
+    mkdir -p data uploads chroma_db
+    chmod -R 775 data uploads chroma_db 2>/dev/null || true
+
 # Bilal Khan (18/08/2026) Issue No  Sheet_Name  - Bulletproof swap verification, auto docker cache cleanup, and system health checks - start
     # Step 3.1: Bulletproof SWAP Setup (Check active swap, create 4G if missing, persist in fstab)
     if ! swapon --show | grep -q '/swapfile'; then

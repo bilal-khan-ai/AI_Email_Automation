@@ -181,7 +181,8 @@ def calculate_stats(tickets: List[Dict[str, Any]], user: Optional[Dict[str, Any]
 
 def extract_inline_images(html_content: str) -> tuple:
     """
-    Extract embedded base64 images from HTML and replace them with CID references.
+    Extract embedded base64 images and local /api/inline_image references from HTML
+    and replace them with CID references.
     
     Returns:
         tuple: (modified_html, inline_attachments_list)
@@ -192,6 +193,7 @@ def extract_inline_images(html_content: str) -> tuple:
     from bs4 import BeautifulSoup
     import re
     import uuid
+    import base64
     
     soup = BeautifulSoup(html_content, 'html.parser')
     inline_attachments = []
@@ -204,7 +206,6 @@ def extract_inline_images(html_content: str) -> tuple:
             content_type = match.group(1)
             base64_data = match.group(2).strip()
             
-            # Extract file extension
             ext = content_type.split('/')[-1]
             if ext == 'jpeg':
                 ext = 'jpg'
@@ -216,11 +217,34 @@ def extract_inline_images(html_content: str) -> tuple:
             
             inline_attachments.append({
                 'name': filename,
-                'cid': cid,
+                'content_id': cid,
                 'content_type': content_type,
                 'content': base64_data,
                 'is_inline': True
             })
+        elif '/api/inline_image/' in src:
+            stored_filename = src.split('/api/inline_image/')[-1].split('?')[0].split('#')[0]
+            filepath = os.path.join(INLINE_UPLOAD_FOLDER, stored_filename)
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, 'rb') as f:
+                        raw_bytes = f.read()
+                    base64_data = base64.b64encode(raw_bytes).decode('utf-8')
+                    ext = stored_filename.rsplit('.', 1)[-1].lower() if '.' in stored_filename else 'png'
+                    content_type = f"image/{ext.replace('jpg', 'jpeg')}"
+                    cid = f"inline_img_{uuid.uuid4().hex[:12]}"
+                    
+                    img['src'] = f"cid:{cid}"
+                    
+                    inline_attachments.append({
+                        'name': stored_filename,
+                        'content_id': cid,
+                        'content_type': content_type,
+                        'content': base64_data,
+                        'is_inline': True
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to read local inline image {filepath}: {e}")
             
     return str(soup), inline_attachments
 

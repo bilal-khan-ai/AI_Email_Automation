@@ -419,6 +419,27 @@
                             <div id="emailAttachmentPreviewList" class="devops-attachment-preview-list mt-2"></div>
                         </div>
 
+                        <!-- Friendly In-UI Fallback Confirmation Banner (No Popup) -->
+                        <div id="newEmailConfirmationBanner" class="d-none mt-2 mb-2 p-3" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-left: 4px solid #f59e0b; border-radius: 8px; backdrop-filter: blur(8px);">
+                            <div class="d-flex align-items-start gap-3">
+                                <i class="fa fa-envelope-circle-check text-warning mt-1" style="font-size: 1.3rem;"></i>
+                                <div class="flex-grow-1">
+                                    <h5 class="fw-bold mb-1" style="font-size: 0.95rem; color: var(--text-primary);">Original Inbound Email Not Found</h5>
+                                    <p class="mb-2 text-muted" style="font-size: 0.85rem; line-height: 1.45;" id="newEmailConfirmationMsg">
+                                        The original inbound email could not be located in Microsoft Graph (it may have been archived, moved, or the ticket was created manually). Would you like to send this as a new email message to start a new thread?
+                                    </p>
+                                    <div class="d-flex gap-2">
+                                        <button type="button" class="btn btn-warning btn-sm fw-bold px-3 py-1 shadow-sm" onclick="confirmSendAsNewEmail()">
+                                            <i class="fa fa-paper-plane me-1"></i> Send as New Email
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm px-3 py-1" onclick="dismissNewEmailConfirmation()">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="modal-actions" style="margin-top: 0.75rem; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
                             <div style="display: flex; gap: 0.75rem; justify-content: flex-end; width: 100%;">
                                 <button type="button" class="btn btn-secondary btn-sm" id="btnSave" onclick="saveTicket()">

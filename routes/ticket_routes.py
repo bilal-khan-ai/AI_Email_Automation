@@ -27,6 +27,7 @@ from dashboard_context import (
     calculate_stats, get_ai_agent, get_experience_db, get_documentation_db,
     get_socketio, extract_inline_images
 )
+from services.connectors.graph_connector import ParentMessageNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +343,7 @@ def send_to_customer():
                 attachments.append({
                     'name': secure_filename(file.filename),
                     'content': base64.b64encode(file.read()).decode('utf-8'),
-                    'contentType': file.content_type or 'application/octet-stream'
+                    'content_type': file.content_type or 'application/octet-stream'
                 })
 
         # Parse and extract copy-pasted inline images
@@ -377,23 +378,66 @@ def send_to_customer():
             ai_response += intended_msg
 
         # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Enforce reply-only communication - start
-        if not last_message_id:
-            logger.error(f"❌ Cannot reply to ticket {ticket_id}: No valid inbound Graph API message ID found in thread.")
-            return jsonify({'error': 'Cannot reply: No original inbound email found for this ticket in Microsoft Graph.'}), 400
+        force_new_email = request.form.get('force_new_email', 'false').lower() == 'true'
 
-        logger.info(f"📤 Replying to message {last_message_id[:10]}... for ticket {ticket_id}")
-        success = graph_connector.reply_to_email(
-            user_email=Config.USER_EMAIL,
-            parent_message_id=last_message_id,
-            to_email=final_recipient,
-            body=ai_response,
-            cc=final_cc,
-            bcc=final_bcc,
-            attachments=attachments
-        )
+        if not last_message_id and not force_new_email:
+            logger.info(f"ℹ️ Original inbound message not found for ticket {ticket_id}. Prompting user confirmation.")
+            return jsonify({
+                'requires_confirmation': True,
+                'reason': 'parent_not_found',
+                'message': 'The original inbound email was not found in Microsoft Graph (it may have been archived, moved, or the ticket was created manually). Would you like to send this as a new email message to start a new thread?'
+            }), 200
+
+        try:
+            if not last_message_id or force_new_email:
+                logger.info(f"📤 Sending as new email message for ticket {ticket_id}")
+                subject = ticket.get('subject') or 'Support Ticket Response'
+                if Config.TEST_MODE:
+                    subject = f"{Config.TEST_SUBJECT_TAG}{subject}"
+                success = graph_connector.send_email(
+                    user_email=Config.USER_EMAIL,
+                    to_email=final_recipient,
+                    subject=subject,
+                    body_html=ai_response,
+                    cc=final_cc,
+                    bcc=final_bcc,
+                    attachments=attachments
+                )
+            else:
+                logger.info(f"📤 Replying to message {last_message_id[:10]}... for ticket {ticket_id}")
+                success = graph_connector.reply_to_email(
+                    user_email=Config.USER_EMAIL,
+                    parent_message_id=last_message_id,
+                    to_email=final_recipient,
+                    body=ai_response,
+                    cc=final_cc,
+                    bcc=final_bcc,
+                    attachments=attachments
+                )
+        except ParentMessageNotFoundError as e:
+            logger.warning(f"Parent message missing in Graph for ticket {ticket_id}: {e}")
+            if not force_new_email:
+                return jsonify({
+                    'requires_confirmation': True,
+                    'reason': 'parent_not_found',
+                    'message': 'The original inbound email thread could not be found or has been moved in Microsoft Graph. Would you like to send this as a new email message?'
+                }), 200
+            else:
+                subject = ticket.get('subject') or 'Support Ticket Response'
+                if Config.TEST_MODE:
+                    subject = f"{Config.TEST_SUBJECT_TAG}{subject}"
+                success = graph_connector.send_email(
+                    user_email=Config.USER_EMAIL,
+                    to_email=final_recipient,
+                    subject=subject,
+                    body_html=ai_response,
+                    cc=final_cc,
+                    bcc=final_bcc,
+                    attachments=attachments
+                )
 
         if not success:
-            return jsonify({'error': 'Failed to send reply via Microsoft Graph API'}), 500
+            return jsonify({'error': 'Failed to send email via Microsoft Graph API'}), 500
         # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Enforce reply-only communication - end
 
         actor_username = session.get('user', {}).get('username', 'system')
@@ -416,8 +460,9 @@ def send_to_customer():
                 'id': f"att_sent_{uuid.uuid4().hex[:12]}",
                 'name': att.get('name'),
                 'size': len(att.get('content', '')) * 3 // 4,
-                'content_type': att.get('contentType'),
-                'content_id': att.get('content_id')
+                'content_type': att.get('content_type') or att.get('contentType') or 'application/octet-stream',
+                'content_id': att.get('content_id') or att.get('cid') or att.get('contentId'),
+                'is_inline': bool(att.get('is_inline') or att.get('content_id') or att.get('cid'))
             })
 
         sent_msg = {

@@ -4,12 +4,13 @@ External Integration Connectors
 Clients for Microsoft Graph API, Azure DevOps, and OpenAI services.
 """
 
-from .graph_connector import GraphConnector
+from .graph_connector import GraphConnector, ParentMessageNotFoundError
 from .devops_connector import AzureDevOpsConnector
 from .openai_agent import OpenAIAgent
 
 __all__ = [
     'GraphConnector',
+    'ParentMessageNotFoundError',
     'AzureDevOpsConnector',
     'OpenAIAgent'
 ]

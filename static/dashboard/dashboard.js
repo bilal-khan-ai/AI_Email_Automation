@@ -1432,6 +1432,7 @@ async function openTicket(ticketId, rowNumber) {
 
         renderThread(messages);
         populateEmailTicketChips(messages);
+        dismissNewEmailConfirmation();
 
         const emailCC = document.getElementById('emailCC');
         const emailBCC = document.getElementById('emailBCC');
@@ -1687,8 +1688,26 @@ function renderThread(messages) {
     const sortedMessages = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     container.innerHTML = '';
 
+    // Deduplicate thread messages: collapse duplicate identical entries within 15-minute window
+    const uniqueMessages = [];
+    const seenSignatures = new Set();
+    sortedMessages.forEach(m => {
+        const cleanSnippet = (m.body_text || m.body || '').slice(0, 150).trim().toLowerCase().replace(/\s+/g, ' ');
+        const timeBucket = Math.floor(new Date(m.timestamp).getTime() / 900000);
+        const sig = `${m.sender || ''}_${timeBucket}_${cleanSnippet}`;
+        if (!seenSignatures.has(sig)) {
+            seenSignatures.add(sig);
+            uniqueMessages.push(m);
+        } else {
+            const existingIdx = uniqueMessages.findIndex(x => `${x.sender || ''}_${Math.floor(new Date(x.timestamp).getTime() / 900000)}_${(x.body_text || x.body || '').slice(0, 150).trim().toLowerCase().replace(/\s+/g, ' ')}` === sig);
+            if (existingIdx !== -1 && String(uniqueMessages[existingIdx].message_id).startsWith('sent_') && !String(m.message_id).startsWith('sent_')) {
+                uniqueMessages[existingIdx] = m;
+            }
+        }
+    });
+
     const globalCidMap = {};
-    messages.forEach(m => {
+    uniqueMessages.forEach(m => {
         try {
             const atts = typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments || []);
             atts.forEach(a => {
@@ -1706,10 +1725,10 @@ function renderThread(messages) {
         } catch (e) { }
     });
 
-    sortedMessages.forEach((msg, index) => {
+    uniqueMessages.forEach((msg, index) => {
         // Calculate time gap with previous message in timeline (which is index + 1 in descending list)
         if (index > 0) {
-            const prevMsg = sortedMessages[index - 1];
+            const prevMsg = uniqueMessages[index - 1];
             const prevTime = new Date(prevMsg.timestamp).getTime();
             const currTime = new Date(msg.timestamp).getTime();
             const diffMs = prevTime - currTime;
@@ -3545,7 +3564,7 @@ async function sendToCustomer() {
     proceedWithSendToCustomer();
 }
 
-async function proceedWithSendToCustomer() {
+async function proceedWithSendToCustomer(forceNewEmail = false) {
     if (isTicketLocked || isSendingEmail) return;
 
     const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
@@ -3563,6 +3582,7 @@ async function proceedWithSendToCustomer() {
     formData.append('send_to', sendTo);
     formData.append('cc', document.getElementById('emailCC') ? document.getElementById('emailCC').value : '');
     formData.append('bcc', document.getElementById('emailBCC') ? document.getElementById('emailBCC').value : '');
+    formData.append('force_new_email', forceNewEmail ? 'true' : 'false');
 
     emailPendingAttachments.forEach((att, index) => {
         formData.append(`attachment_${index}`, att.file);
@@ -3579,11 +3599,20 @@ async function proceedWithSendToCustomer() {
 
         const data = await response.json();
 
+        // Check if user confirmation is required (friendly inline banner, NO popup)
+        if (data && data.requires_confirmation) {
+            hideSendingOverlay();
+            if (btnSend) btnSend.disabled = false;
+            showNewEmailConfirmation(data.message);
+            return;
+        }
+
         if (!response.ok) {
             alert(data.error || 'Failed to send email.');
             return;
         }
 
+        dismissNewEmailConfirmation();
         showToast('Email sent successfully! Ticket remains open.', false);
         emailPendingAttachments = [];
         renderEmailAttachmentPreviews();
@@ -3606,6 +3635,30 @@ async function proceedWithSendToCustomer() {
         if (btnSend) btnSend.disabled = false;
         hideSendingOverlay();
     }
+}
+
+function showNewEmailConfirmation(message) {
+    const banner = document.getElementById('newEmailConfirmationBanner');
+    const msgEl = document.getElementById('newEmailConfirmationMsg');
+    if (msgEl && message) {
+        msgEl.textContent = message;
+    }
+    if (banner) {
+        banner.classList.remove('d-none');
+        banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function dismissNewEmailConfirmation() {
+    const banner = document.getElementById('newEmailConfirmationBanner');
+    if (banner) {
+        banner.classList.add('d-none');
+    }
+}
+
+async function confirmSendAsNewEmail() {
+    dismissNewEmailConfirmation();
+    await proceedWithSendToCustomer(true);
 }
 // Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Strict duplicate send protection in sendToCustomer - end
 
