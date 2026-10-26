@@ -1130,6 +1130,27 @@ function displayTickets() {
             }
         }
 
+        const runningTitle = ticket.running_title ? escapeHtml(ticket.running_title) : null;
+        let titleBlockHtml = '';
+        if (runningTitle) {
+            titleBlockHtml = `
+            <div class="ticket-title-block">
+                <div class="ticket-primary-title" title="Running Title: ${runningTitle}">
+                    <i class="fa fa-tag rt-tag-icon"></i>${runningTitle}
+                </div>
+                <div class="ticket-secondary-subject" title="Subject: ${subject}">
+                    <span class="subject-prefix">Subject:</span> ${subject}
+                </div>
+            </div>
+            `;
+        } else {
+            titleBlockHtml = `
+            <div class="ticket-title-block">
+                <div class="ticket-subject">${subject}</div>
+            </div>
+            `;
+        }
+
         return `
         <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
             <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', ${JSON.stringify(subject).replace(/"/g, '&quot;')}, '${displayId}')"><i class="fa fa-history"></i></div>
@@ -1151,7 +1172,7 @@ function displayTickets() {
                     ${timeLimitBadgeHtml}
                 </div>
             </div>
-            <div class="ticket-subject">${subject}</div>
+            ${titleBlockHtml}
             <div class="ticket-meta">
                 <span><i class="fa fa-envelope me-1"></i> ${customerEmail}</span>
                 <span><i class="fa fa-calendar-alt me-1"></i> Last Replied: ${timestamp}</span>
@@ -1194,6 +1215,23 @@ function renderTicketSkeleton() {
     });
     const wrapper = document.getElementById('modalSubjectWrapper');
     if (wrapper) wrapper.classList.remove('is-overflowing');
+
+    const rtBadge = document.getElementById('modalRunningTitleBadge');
+    const rtAddBtn = document.getElementById('btnAddRunningTitle');
+    const rtEditBtn = document.getElementById('btnEditRunningTitle');
+    const rtClearBtn = document.getElementById('btnClearRunningTitle');
+    const rtInfo = document.getElementById('modal-info-running-title');
+    const rtDisplay = document.getElementById('runningTitleDisplayMode');
+    const rtEdit = document.getElementById('runningTitleEditMode');
+    const secSubjectWrapper = document.getElementById('modalSecondarySubject');
+    if (rtBadge) rtBadge.style.display = 'none';
+    if (rtEditBtn) rtEditBtn.style.display = 'none';
+    if (rtClearBtn) rtClearBtn.style.display = 'none';
+    if (rtAddBtn) rtAddBtn.style.display = 'none';
+    if (rtInfo) rtInfo.innerHTML = '<div class="skeleton skeleton-text" style="width: 100px; display: inline-block; vertical-align: middle;"></div>';
+    if (rtDisplay) rtDisplay.style.display = 'inline-flex';
+    if (rtEdit) rtEdit.style.display = 'none';
+    if (secSubjectWrapper) secSubjectWrapper.style.display = 'none';
 
     // Skeleton for message thread
     const threadContainer = document.getElementById('emailChainContainer');
@@ -1360,6 +1398,8 @@ async function openTicket(ticketId, rowNumber) {
         updateTimeLimitControls(ticket.co_worker_time_limit);
     }
 
+    updateModalRunningTitle(ticket.running_title, ticket.subject);
+
     document.body.classList.add('modal-open');
 
     // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Populate Tiptap editor and load DevOps items - start
@@ -1407,6 +1447,12 @@ async function openTicket(ticketId, rowNumber) {
         if (btnSave) btnSave.disabled = true;
         if (btnSend) btnSend.disabled = true;
         if (statusSelect) statusSelect.disabled = true;
+        const btnAddRt = document.getElementById('btnAddRunningTitle');
+        const btnEditRt = document.getElementById('btnEditRunningTitle');
+        const btnClearRt = document.getElementById('btnClearRunningTitle');
+        if (btnAddRt) btnAddRt.disabled = true;
+        if (btnEditRt) btnEditRt.disabled = true;
+        if (btnClearRt) btnClearRt.disabled = true;
     } else {
         isTicketLocked = false;
         if (lockStatus) {
@@ -1416,6 +1462,12 @@ async function openTicket(ticketId, rowNumber) {
         if (btnSave) btnSave.disabled = false;
         if (btnSend) btnSend.disabled = false;
         if (statusSelect) statusSelect.disabled = false;
+        const btnAddRt = document.getElementById('btnAddRunningTitle');
+        const btnEditRt = document.getElementById('btnEditRunningTitle');
+        const btnClearRt = document.getElementById('btnClearRunningTitle');
+        if (btnAddRt) btnAddRt.disabled = false;
+        if (btnEditRt) btnEditRt.disabled = false;
+        if (btnClearRt) btnClearRt.disabled = false;
 
         if (socket && socket.connected) {
             socket.emit('lock_ticket', { ticket_id: ticketId });
@@ -1429,6 +1481,11 @@ async function openTicket(ticketId, rowNumber) {
         if (!res.ok) throw new Error("Failed to fetch messages");
         const data = await res.json();
         const messages = data.messages || [];
+
+        if (ticket) ticket.messages = messages;
+        const currentActive = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        if (currentActive) currentActive.messages = messages;
+        window.currentTicketMessages = messages;
 
         renderThread(messages);
         populateEmailTicketChips(messages);
@@ -2119,6 +2176,7 @@ async function downloadAttachment(attachmentId, messageId, filename) {
 function closeModal() {
     try {
         console.log('Closing ticket modal...');
+        cancelRunningTitleEdit();
         stopLiveTimerCountdown();
         closeTimerActionMenu();
         if (currentTicketIdStr && socket && socket.connected) {
@@ -2550,6 +2608,159 @@ async function saveTicketAssignment(field, value) {
         }
     } else if (res) {
         showToast(res.error || 'Failed to update assignment', true);
+    }
+}
+
+function updateModalRunningTitle(title, rawSubject) {
+    const textEl = document.getElementById('modalRunningTitleText');
+    const btnAdd = document.getElementById('btnAddRunningTitle');
+    const btnEdit = document.getElementById('btnEditRunningTitle');
+    const btnClear = document.getElementById('btnClearRunningTitle');
+    const infoEl = document.getElementById('modal-info-running-title');
+    const displayMode = document.getElementById('runningTitleDisplayMode');
+    const editMode = document.getElementById('runningTitleEditMode');
+    const secSubjectWrapper = document.getElementById('modalSecondarySubject');
+    const rawSubjectText = document.getElementById('modalRawSubjectText');
+
+    if (displayMode) displayMode.style.display = 'inline-flex';
+    if (editMode) editMode.style.display = 'none';
+
+    if (!rawSubject) {
+        const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        rawSubject = activeTicket ? activeTicket.subject : '';
+    }
+
+    const hasTitle = Boolean(title && String(title).trim());
+    const displayTitle = hasTitle ? String(title).trim() : '';
+
+    if (textEl) textEl.textContent = displayTitle;
+
+    if (hasTitle) {
+        updateModalSubjectAutoScroll(displayTitle);
+        if (secSubjectWrapper) secSubjectWrapper.style.display = 'block';
+        if (rawSubjectText) rawSubjectText.textContent = rawSubject || 'No Subject';
+    } else {
+        updateModalSubjectAutoScroll(rawSubject || 'No Subject');
+        if (secSubjectWrapper) secSubjectWrapper.style.display = 'none';
+        if (rawSubjectText) rawSubjectText.textContent = '';
+    }
+
+    if (btnAdd) btnAdd.style.display = hasTitle ? 'none' : 'inline-flex';
+    if (btnEdit) btnEdit.style.display = hasTitle ? 'inline-flex' : 'none';
+    if (btnClear) btnClear.style.display = hasTitle ? 'inline-flex' : 'none';
+    if (infoEl) infoEl.textContent = hasTitle ? displayTitle : 'None';
+}
+
+function startRunningTitleEdit() {
+    if (isTicketLocked) return;
+    const displayMode = document.getElementById('runningTitleDisplayMode');
+    const editMode = document.getElementById('runningTitleEditMode');
+    const input = document.getElementById('modalRunningTitleInput');
+
+    if (displayMode) displayMode.style.display = 'none';
+    if (editMode) editMode.style.display = 'inline-flex';
+
+    if (input) {
+        const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        input.value = (activeTicket && activeTicket.running_title) ? activeTicket.running_title : '';
+        input.focus();
+        input.select();
+    }
+}
+
+function cancelRunningTitleEdit() {
+    const displayMode = document.getElementById('runningTitleDisplayMode');
+    const editMode = document.getElementById('runningTitleEditMode');
+    if (displayMode) displayMode.style.display = 'inline-flex';
+    if (editMode) editMode.style.display = 'none';
+}
+
+function handleRunningTitleKeydown(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        saveRunningTitle();
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelRunningTitleEdit();
+    }
+}
+
+async function saveRunningTitle() {
+    if (isTicketLocked || !currentTicketIdStr || currentTicketRow === null) return;
+    const input = document.getElementById('modalRunningTitleInput');
+    if (!input) return;
+
+    const newTitle = input.value.trim();
+
+    try {
+        const resp = await fetch('/api/update_running_title', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: currentTicketIdStr,
+                row_number: currentTicketRow,
+                running_title: newTitle || null
+            })
+        });
+
+        if (!resp.ok) {
+            let errorText = 'Failed to save running title';
+            try {
+                const errJson = await resp.json();
+                errorText = errJson.error || errorText;
+            } catch (_) {}
+            showToast(errorText, true);
+            return;
+        }
+
+        const data = await resp.json();
+        const savedTitle = data.running_title;
+
+        const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        if (activeTicket) {
+            activeTicket.running_title = savedTitle;
+        }
+
+        updateModalRunningTitle(savedTitle);
+        showToast(savedTitle ? 'Running Title updated' : 'Running Title removed', false);
+        displayTickets();
+    } catch (err) {
+        console.error('Error saving running title:', err);
+        showToast('Network error while saving running title', true);
+    }
+}
+
+async function clearRunningTitle() {
+    if (isTicketLocked || !currentTicketIdStr || currentTicketRow === null) return;
+    if (!confirm('Are you sure you want to remove the running title from this ticket?')) return;
+
+    try {
+        const resp = await fetch('/api/update_running_title', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: currentTicketIdStr,
+                row_number: currentTicketRow,
+                running_title: null
+            })
+        });
+
+        if (!resp.ok) {
+            showToast('Failed to remove running title', true);
+            return;
+        }
+
+        const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+        if (activeTicket) {
+            activeTicket.running_title = null;
+        }
+
+        updateModalRunningTitle(null);
+        showToast('Running Title removed', false);
+        displayTickets();
+    } catch (err) {
+        console.error('Error removing running title:', err);
+        showToast('Network error while removing running title', true);
     }
 }
 
@@ -3964,13 +4175,15 @@ function renderDevOpsAttachmentPreviews() {
     }).join('');
 }
 
+let currentDevOpsAvailableAttachments = [];
+
 function populateDevOpsTicketChips() {
     const chipsWrapper = document.getElementById('devopsTicketAttachmentChips');
     const container = document.getElementById('devopsTicketChipsContainer');
     if (!chipsWrapper || !container) return;
 
     const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
-    const messages = (activeTicket && activeTicket.messages) ? activeTicket.messages : [];
+    const messages = (activeTicket && activeTicket.messages) || window.currentTicketMessages || [];
     const allAttachments = [];
 
     messages.forEach(msg => {
@@ -3991,6 +4204,8 @@ function populateDevOpsTicketChips() {
         }
     });
 
+    currentDevOpsAvailableAttachments = allAttachments;
+
     if (allAttachments.length === 0) {
         chipsWrapper.classList.add('d-none');
         container.innerHTML = '';
@@ -3998,12 +4213,23 @@ function populateDevOpsTicketChips() {
     }
 
     chipsWrapper.classList.remove('d-none');
-    container.innerHTML = allAttachments.map(att => `
-        <button type="button" class="devops-ticket-chip" onclick="importTicketAttachmentToDevOps('${escapeHtml(att.name)}', '${encodeURIComponent(att.msgId || '')}', '${encodeURIComponent(att.id || '')}', '${encodeURIComponent(att.contentType || '')}')" title="Attach ${escapeHtml(att.name)} to Azure DevOps">
+    container.innerHTML = allAttachments.map((att, idx) => `
+        <button type="button" class="devops-ticket-chip" data-idx="${idx}" title="Attach ${escapeHtml(att.name)} to Azure DevOps">
             <span>📎 ${escapeHtml(att.name)}</span>
             <i class="fa fa-plus ms-1" style="font-size: 0.65rem;"></i>
         </button>
     `).join('');
+
+    container.querySelectorAll('.devops-ticket-chip').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const idx = parseInt(btn.getAttribute('data-idx'), 10);
+            const att = currentDevOpsAvailableAttachments[idx];
+            if (att) {
+                importTicketAttachmentToDevOps(att.name, att.msgId, att.id, att.contentType);
+            }
+        });
+    });
 }
 
 async function importTicketAttachmentToDevOps(filename, msgId, attId, contentType) {
@@ -4101,17 +4327,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const drawer = document.getElementById('devopsCreateDrawer');
         if (!drawer || !drawer.classList.contains('open')) return;
 
-        // If user is pasting inside an input, textarea, or contenteditable editor (Tiptap), let the editor handle it
+        // If user is pasting inside an active contenteditable editor (Tiptap), let the editor handle inline pasting
         const target = e.target;
-        if (target.closest('.tiptap-editor-element') || target.closest('.tiptap-wrapper') || target.isContentEditable || ['input', 'textarea'].includes(target.tagName?.toLowerCase())) {
+        if (target && (target.closest('.tiptap-editor-element') || target.closest('.tiptap-wrapper') || target.isContentEditable)) {
             return;
         }
 
-        const items = (e.clipboardData || window.clipboardData).items;
+        const items = (e.clipboardData || window.clipboardData)?.items;
         if (!items) return;
 
         for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
+            if (items[i].type && items[i].type.indexOf('image') !== -1) {
                 const blob = items[i].getAsFile();
                 if (blob) {
                     const nowStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -4510,7 +4736,10 @@ async function submitDevOpsCreate(e) {
     const btn = document.getElementById('btnSubmitDevOpsCreate');
     const originalText = btn ? btn.innerHTML : 'Create';
     const projSelect = document.getElementById('devopsProjectSelect');
-    const targetProject = projSelect ? projSelect.value : '';
+    let targetProject = projSelect ? projSelect.value : '';
+    if (!targetProject && projSelect && projSelect.options.length > 0) {
+        targetProject = projSelect.options[0].value;
+    }
 
     if (btn) {
         btn.disabled = true;
@@ -4543,7 +4772,10 @@ async function submitDevOpsCreate(e) {
                             uploadedAttachmentUrls.push(upData.url);
                         }
                     } else {
-                        console.warn(`Failed to upload attachment ${att.name} to DevOps`);
+                        const errData = await upResp.json().catch(() => ({}));
+                        const errMsg = errData.error || `Upload failed with status ${upResp.status}`;
+                        console.error(`Failed to upload attachment ${att.name} to DevOps:`, errMsg);
+                        throw new Error(`Failed to upload attachment "${att.name}": ${errMsg}`);
                     }
                 }
             }
@@ -4597,7 +4829,7 @@ async function submitDevOpsCreate(e) {
         }
     } catch (err) {
         console.error('Error creating DevOps item:', err);
-        alert('Network error while creating work item in Azure DevOps');
+        alert(err.message || 'Network error while creating work item in Azure DevOps');
     } finally {
         if (btn) {
             btn.disabled = false;
@@ -4916,6 +5148,9 @@ socket.on('ticket_updated', (data) => {
             if (typeof updateTimeLimitControls === 'function') {
                 updateTimeLimitControls(data.co_worker_time_limit);
             }
+        }
+        if (data.running_title !== undefined) {
+            updateModalRunningTitle(data.running_title);
         }
     }
 });

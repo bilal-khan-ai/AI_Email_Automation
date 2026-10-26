@@ -240,6 +240,55 @@ def take_ticket():
         return jsonify({'error': 'Failed to update assignment'}), 500
 
 
+@ticket_bp.route('/api/update_running_title', methods=['POST'])
+@login_required
+def update_running_title():
+    """Update or remove a ticket's running title."""
+    user = session.get('user', {})
+    if user.get('role') not in ('admin', 'staff'):
+        return jsonify({'error': 'Unauthorized: Only support staff and administrators can update running title'}), 403
+
+    data = request.json or {}
+    ticket_db_id = data.get('row_number')
+    ticket_id = data.get('ticket_id')
+    raw_title = data.get('running_title')
+
+    if not ticket_db_id or not ticket_id:
+        return jsonify({'error': 'Missing ticket identifiers'}), 400
+
+    user_id = session.get('user_id')
+    if ticket_id in user_locks and user_locks[ticket_id]['user_id'] != user_id:
+        return jsonify({
+            'error': 'Ticket is being edited by another user',
+            'locked_by': user_locks[ticket_id]['user_id']
+        }), 423
+
+    sanitized_title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else None
+    if sanitized_title and len(sanitized_title) > 200:
+        sanitized_title = sanitized_title[:200]
+
+    actor_username = user.get('username', 'system')
+    update_payload = {'running_title': sanitized_title}
+
+    success = sql_logger.update_ticket_fields(ticket_db_id, update_payload, actor=actor_username)
+    if success:
+        sio = get_socketio()
+        if sio:
+            sio.emit('ticket_updated', {
+                'ticket_id': ticket_id,
+                'row_number': ticket_db_id,
+                'updated_by': user_id,
+                'running_title': sanitized_title
+            })
+        return jsonify({
+            'success': True,
+            'ticket_id': ticket_id,
+            'running_title': sanitized_title
+        })
+    else:
+        return jsonify({'error': 'Failed to update running title'}), 500
+
+
 @ticket_bp.route('/api/toggle_ticket_status', methods=['POST'])
 @login_required
 def toggle_ticket_status():

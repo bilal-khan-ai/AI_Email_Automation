@@ -41,8 +41,8 @@ class AzureDevOpsConnector:
 
     @property
     def is_configured(self) -> bool:
-        """Check if organization and project are configured."""
-        return bool(self.org and self.project)
+        """Check if organization is configured."""
+        return bool(self.org)
 
     def _get_auth_headers(self) -> Dict[str, str]:
         """Obtain authorization headers via PAT or Azure AD App token."""
@@ -184,11 +184,20 @@ class AzureDevOpsConnector:
         if not self.is_configured or not file_data:
             return None
             
-        target_project = project or self.project
+        target_project = (project or self.project or '').strip('/')
+        if not target_project or target_project == 'support_dashboard':
+            projects = self.list_projects()
+            if projects:
+                target_project = projects[0]['name']
+
+        if not target_project:
+            return None
+
         try:
             import urllib.parse
             clean_filename = urllib.parse.quote(filename)
-            url = f"https://dev.azure.com/{self.org}/{target_project}/_apis/wit/attachments?fileName={clean_filename}&api-version=7.1"
+            quoted_project = urllib.parse.quote(target_project)
+            url = f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/wit/attachments?fileName={clean_filename}&api-version=7.1"
             
             headers = self._get_auth_headers()
             headers["Content-Type"] = "application/octet-stream"
@@ -197,26 +206,26 @@ class AzureDevOpsConnector:
             resp = requests.post(url, headers=headers, data=file_data, timeout=60)
             if resp.status_code in [200, 201]:
                 data = resp.json()
-                logger.info(f"✅ Successfully uploaded attachment '{filename}' to Azure DevOps: {data.get('id')}")
+                logger.info(f"Successfully uploaded attachment '{filename}' to Azure DevOps: {data.get('id')}")
                 return {
                     'url': data.get('url'),
                     'id': data.get('id'),
                     'filename': filename
                 }
             else:
-                logger.error(f"❌ Failed to upload DevOps attachment '{filename}': HTTP {resp.status_code} - {resp.text}")
+                logger.error(f"Failed to upload DevOps attachment '{filename}': HTTP {resp.status_code} - {resp.text}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Exception uploading DevOps attachment '{filename}': {e}")
+            logger.error(f"Exception uploading DevOps attachment '{filename}': {e}")
             return None
 
-    # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project resolution & schema sanitization - start
     def create_work_item(
         self,
         work_item_type: str,
         fields: Dict[str, Any],
         project: Optional[str] = None,
-        attachment_urls: List[str] = None
+        attachment_urls: List[str] = None,
+        validate_only: bool = False
     ) -> Optional[Dict[str, Any]]:
         """
         Create a new Work Item in Azure DevOps using JSON Patch payload.
@@ -226,15 +235,28 @@ class AzureDevOpsConnector:
             fields: Dictionary mapping field reference names to values.
             project: Optional target project name (defaults to configured project).
             attachment_urls: Optional list of Azure DevOps attachment URLs to link.
+            validate_only: If True, validates work item schema without saving to database.
         """
         if not self.is_configured:
-            logger.warning("Azure DevOps not configured (AZURE_DEVOPS_ORG or AZURE_DEVOPS_PROJECT missing)")
+            logger.warning("Azure DevOps not configured (AZURE_DEVOPS_ORG missing)")
             return None
             
-        target_project = (project or self.project).strip('/')
+        target_project = (project or self.project or '').strip('/')
+        if not target_project or target_project == 'support_dashboard':
+            projects = self.list_projects()
+            if projects:
+                target_project = projects[0]['name']
+
+        if not target_project:
+            logger.warning("Target project missing for DevOps work item creation")
+            return None
+
         try:
+            import urllib.parse
             clean_type = work_item_type.strip()
-            url = f"https://dev.azure.com/{self.org}/{target_project}/_apis/wit/workitems/${clean_type}?api-version=7.1"
+            quoted_project = urllib.parse.quote(target_project)
+            validate_query = "&validateOnly=true" if validate_only else ""
+            url = f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/wit/workitems/${clean_type}?api-version=7.1{validate_query}"
             
             # Sanitize fields by work item type: Bug-specific fields should not be sent for Task/Story/Issue
             is_bug = clean_type.lower() == 'bug'
@@ -277,20 +299,25 @@ class AzureDevOpsConnector:
             resp = requests.post(url, headers=headers, json=patch_ops, timeout=15)
             if resp.status_code in [200, 201]:
                 created_item = resp.json()
-                logger.info(f"✅ Successfully created Azure DevOps work item #{created_item.get('id')} in project '{target_project}'")
+                logger.info(f"Successfully created Azure DevOps work item #{created_item.get('id')} in project '{target_project}'")
                 return self.format_work_item(created_item)
             else:
-                logger.error(f"❌ Failed to create DevOps work item in project '{target_project}': HTTP {resp.status_code} - {resp.text}")
+                logger.error(f"Failed to create DevOps work item in project '{target_project}': HTTP {resp.status_code} - {resp.text}")
                 return None
         except Exception as e:
-            logger.error(f"❌ Exception creating DevOps work item in project '{target_project}': {e}")
+            logger.error(f"Exception creating DevOps work item in project '{target_project}': {e}")
             return None
     # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project resolution & schema sanitization - end
 
     # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project metadata and iteration retrieval - start
     def get_metadata(self, project: Optional[str] = None) -> Dict[str, Any]:
         """Fetch work item types, area paths, iteration paths, and project users for dropdown forms."""
-        target_project = (project or self.project).strip('/')
+        target_project = (project or self.project or '').strip('/')
+        if not target_project or target_project == 'support_dashboard':
+            projects = self.list_projects()
+            if projects:
+                target_project = projects[0]['name']
+
         result = {
             'work_item_types': ['Bug', 'Task', 'User Story', 'Issue'],
             'area_paths': [],
@@ -299,15 +326,17 @@ class AzureDevOpsConnector:
             'project': target_project
         }
         
-        if not self.is_configured:
+        if not self.is_configured or not target_project:
             return result
             
+        import urllib.parse
+        quoted_project = urllib.parse.quote(target_project)
         headers = self._get_auth_headers()
         headers["Accept"] = "application/json"
         
         # 1. Work Item Types
         try:
-            url = f"https://dev.azure.com/{self.org}/{target_project}/_apis/wit/workitemtypes?api-version=7.1"
+            url = f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/wit/workitemtypes?api-version=7.1"
             resp = requests.get(url, headers=headers, timeout=8)
             if resp.status_code == 200:
                 types = resp.json().get('value', [])
@@ -319,7 +348,7 @@ class AzureDevOpsConnector:
             
         # 2. Area Paths
         try:
-            url = f"https://dev.azure.com/{self.org}/{target_project}/_apis/wit/classificationnodes/areas?$depth=4&api-version=7.1"
+            url = f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/wit/classificationnodes/areas?$depth=4&api-version=7.1"
             resp = requests.get(url, headers=headers, timeout=8)
             if resp.status_code == 200:
                 areas = self._flatten_nodes(resp.json())
@@ -330,7 +359,7 @@ class AzureDevOpsConnector:
             
         # 3. Iteration Paths
         try:
-            url = f"https://dev.azure.com/{self.org}/{target_project}/_apis/wit/classificationnodes/iterations?$depth=4&api-version=7.1"
+            url = f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/wit/classificationnodes/iterations?$depth=4&api-version=7.1"
             resp = requests.get(url, headers=headers, timeout=8)
             if resp.status_code == 200:
                 iterations = self._flatten_nodes(resp.json())
@@ -425,14 +454,24 @@ class AzureDevOpsConnector:
         if not self.is_configured:
             return None
         
-        target_project = (project or self.project).strip('/')
-        team_name = team or target_project
+        target_project = (project or self.project or '').strip('/')
+        if not target_project or target_project == 'support_dashboard':
+            projects = self.list_projects()
+            if projects:
+                target_project = projects[0]['name']
+
+        if not target_project:
+            return None
+
+        import urllib.parse
+        quoted_project = urllib.parse.quote(target_project)
+        team_name = urllib.parse.quote(team or target_project)
         headers = self._get_auth_headers()
         headers["Accept"] = "application/json"
         
         endpoints = [
-            f"https://dev.azure.com/{self.org}/{target_project}/{team_name}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.1",
-            f"https://dev.azure.com/{self.org}/{target_project}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.1"
+            f"https://dev.azure.com/{self.org}/{quoted_project}/{team_name}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.1",
+            f"https://dev.azure.com/{self.org}/{quoted_project}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=7.1"
         ]
         
         for url in endpoints:

@@ -80,7 +80,8 @@ class TicketRepository:
                             deleted_at TIMESTAMPTZ,
                             reopened BOOLEAN DEFAULT FALSE,
                             needs_ai_generation BOOLEAN DEFAULT FALSE,
-                            has_unread_response BOOLEAN DEFAULT FALSE
+                            has_unread_response BOOLEAN DEFAULT FALSE,
+                            running_title TEXT DEFAULT NULL
                         )
                     """)
                     
@@ -136,6 +137,11 @@ class TicketRepository:
                             IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
                                            WHERE table_name='tickets' AND column_name='co_worker_time_limit') THEN 
                                 ALTER TABLE tickets ADD COLUMN co_worker_time_limit TIMESTAMPTZ DEFAULT NULL;
+                            END IF;
+
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='tickets' AND column_name='running_title') THEN 
+                                ALTER TABLE tickets ADD COLUMN running_title TEXT DEFAULT NULL;
                             END IF;
                         END $$;
                     """)
@@ -1026,11 +1032,12 @@ class TicketRepository:
                             OR t.customer_email ILIKE %s 
                             OR t.display_id ILIKE %s 
                             OR t.ticket_id ILIKE %s 
+                            OR t.running_title ILIKE %s 
                             OR m.body_text ILIKE %s)
                           AND t.deleted_at IS NULL
                         ORDER BY t.last_updated DESC
                         LIMIT 50
-                    """, (search_term, search_term, search_term, search_term, search_term))
+                    """, (search_term, search_term, search_term, search_term, search_term, search_term))
                     return [self._convert_ticket_row(dict(r)) for r in cur.fetchall()]
         except Exception as e:
             logger.error(f"❌ Error searching tickets: {e}")
@@ -1061,11 +1068,12 @@ class TicketRepository:
                     old_status = None
                     old_coworker = None
                     old_timelimit = None
+                    old_running_title = None
                     t_id = identifier if where_col == "ticket_id" else None
                     
-                    audit_fields = {'assigned_to', 'status', 'co_worker', 'co_worker_time_limit'}
+                    audit_fields = {'assigned_to', 'status', 'co_worker', 'co_worker_time_limit', 'running_title'}
                     if any(k in fields for k in audit_fields):
-                        check_query = sql.SQL("SELECT ticket_id, assigned_to, status, co_worker, co_worker_time_limit FROM tickets WHERE {} = %s").format(sql.Identifier(where_col))
+                        check_query = sql.SQL("SELECT ticket_id, assigned_to, status, co_worker, co_worker_time_limit, running_title FROM tickets WHERE {} = %s").format(sql.Identifier(where_col))
                         cur.execute(check_query, (identifier,))
                         row = cur.fetchone()
                         if row:
@@ -1074,6 +1082,7 @@ class TicketRepository:
                             old_status = row[2]
                             old_coworker = row[3]
                             old_timelimit = row[4]
+                            old_running_title = row[5]
                         
                     query = sql.SQL("UPDATE tickets SET {} WHERE {} = %s").format(
                         sql.SQL(", ").join(
@@ -1138,6 +1147,18 @@ class TicketRepository:
                                 self.log_ticket_event(t_id, 'timelimit_changed', actor or 'system', {
                                     'from': old_tl_str or None,
                                     'to': new_tl_str or None,
+                                    'description': desc
+                                }, cur=cur)
+
+                        if 'running_title' in fields and t_id:
+                            new_rt = fields['running_title']
+                            old_rt_str = str(old_running_title or '')
+                            new_rt_str = str(new_rt or '')
+                            if old_rt_str != new_rt_str:
+                                desc = f"Running title set to: '{new_rt}'." if new_rt else "Running title removed."
+                                self.log_ticket_event(t_id, 'running_title_changed', actor or 'system', {
+                                    'from': old_running_title,
+                                    'to': new_rt,
                                     'description': desc
                                 }, cur=cur)
 

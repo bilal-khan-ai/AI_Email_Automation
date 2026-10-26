@@ -14,7 +14,7 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Dashboard Header & Shared Styles - start -->
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_2">
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20260904_7">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20261026_2">
     <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_2"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -168,8 +168,39 @@
         <div class="modal-content" style="max-height: 95vh; display: flex; flex-direction: column;">
             <div class="modal-header-actions"
                 style="border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
-                <div class="modal-subject-wrapper" id="modalSubjectWrapper">
-                    <h2 id="modal-subject" class="modal-subject-text"></h2>
+                <div class="modal-title-column">
+                    <div class="modal-subject-wrapper" id="modalSubjectWrapper">
+                        <h2 id="modal-subject" class="modal-subject-text"></h2>
+                    </div>
+                    <div class="modal-secondary-subject" id="modalSecondarySubject" style="display: none;" title="Original Email Subject">
+                        <span class="subject-prefix">Subject:</span>
+                        <span id="modalRawSubjectText"></span>
+                    </div>
+                    <div class="modal-running-title-bar" id="modalRunningTitleBar">
+                        <div class="running-title-display-mode" id="runningTitleDisplayMode">
+                            <span class="running-title-badge" id="modalRunningTitleBadge" style="display: none;" title="Running Title">
+                                <i class="fa fa-tag me-1"></i>
+                                <span id="modalRunningTitleText"></span>
+                            </span>
+                            <button type="button" class="btn-running-title-action btn-add-rt" id="btnAddRunningTitle" onclick="startRunningTitleEdit()" title="Add a running title to this ticket">
+                                <i class="fa fa-plus me-1"></i> Add Running Title
+                            </button>
+                            <button type="button" class="btn-running-title-action btn-edit-rt" id="btnEditRunningTitle" style="display: none;" onclick="startRunningTitleEdit()" title="Edit running title">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                            <button type="button" class="btn-running-title-action btn-clear-rt" id="btnClearRunningTitle" style="display: none;" onclick="clearRunningTitle()" title="Remove running title">
+                                <i class="fa fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="running-title-edit-mode" id="runningTitleEditMode" style="display: none;">
+                            <div class="running-title-input-group">
+                                <i class="fa fa-tag running-title-input-icon"></i>
+                                <input type="text" id="modalRunningTitleInput" class="running-title-input" placeholder="Enter running title..." maxlength="150" onkeydown="handleRunningTitleKeydown(event)">
+                                <button type="button" class="btn-rt-save" onclick="saveRunningTitle()" title="Save (Enter)"><i class="fa fa-check"></i></button>
+                                <button type="button" class="btn-rt-cancel" onclick="cancelRunningTitleEdit()" title="Cancel (Esc)"><i class="fa fa-times"></i></button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Open Ticket Modal & Composer - start -->
@@ -319,6 +350,10 @@
                         <div class="info-item">
                             <strong>Last Activity:</strong>
                             <span id="modal-date"></span>
+                        </div>
+                        <div class="info-item" id="info-running-title-row">
+                            <strong>Running Title:</strong>
+                            <span id="modal-info-running-title" style="color: var(--text-primary); font-weight: 500;">None</span>
                         </div>
                         <div class="info-item" id="info-coworker-row">
                             <strong>Co-Worker:</strong>
@@ -912,7 +947,7 @@
         }
     </script>
     <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - end -->
-    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20260904_7"></script>
+    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20261026_2"></script>
 </body>
 
 </html>

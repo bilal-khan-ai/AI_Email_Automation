@@ -12,6 +12,7 @@ Azure DevOps integration HTTP routes:
 - Work item linking & unlinking (/api/devops/link, /api/devops/unlink)
 """
 
+import os
 import re
 import base64
 import logging
@@ -21,7 +22,7 @@ from flask import Blueprint, jsonify, request, session
 from auth import login_required
 from config import Config
 from dashboard_context import (
-    sql_logger, devops_connector, get_socketio
+    sql_logger, devops_connector, get_socketio, INLINE_UPLOAD_FOLDER
 )
 
 logger = logging.getLogger(__name__)
@@ -54,9 +55,12 @@ def get_devops_projects():
     """List all accessible Azure DevOps projects."""
     try:
         projects = devops_connector.list_projects()
+        default_proj = Config.AZURE_DEVOPS_PROJECT
+        if not any(p.get('name') == default_proj for p in projects):
+            default_proj = projects[0]['name'] if projects else default_proj
         return jsonify({
             'projects': projects,
-            'default_project': Config.AZURE_DEVOPS_PROJECT,
+            'default_project': default_proj,
             'configured': devops_connector.is_configured
         })
     except Exception as e:
@@ -106,6 +110,45 @@ def get_devops_metadata_for_project(project_name):
         }), 500
 
 
+def sync_inline_images_to_devops(html_content: str, project: str) -> tuple:
+    """
+    Extract any local inline images (/api/inline_image/<filename>) in HTML content,
+    upload them to Azure DevOps attachment store, replace their src attributes with
+    the official Azure DevOps attachment URLs, and return the modified HTML and list
+    of uploaded attachment URLs for work item relation linking.
+    """
+    if not html_content or '/api/inline_image/' not in html_content:
+        return html_content, []
+
+    pattern = re.compile(r'/api/inline_image/([a-zA-Z0-9_\-\.]+)')
+    matches = pattern.findall(html_content)
+    if not matches:
+        return html_content, []
+
+    uploaded_urls = []
+    replacement_map = {}
+
+    for stored_filename in set(matches):
+        filepath = os.path.join(INLINE_UPLOAD_FOLDER, stored_filename)
+        if os.path.exists(filepath):
+            try:
+                with open(filepath, 'rb') as f:
+                    file_bytes = f.read()
+                upload_res = devops_connector.upload_attachment(project, file_bytes, stored_filename)
+                if upload_res and upload_res.get('url'):
+                    ado_url = upload_res['url']
+                    replacement_map[f"/api/inline_image/{stored_filename}"] = ado_url
+                    uploaded_urls.append(ado_url)
+            except Exception as ex:
+                logger.error(f"Error promoting inline image {stored_filename} to DevOps: {ex}")
+
+    modified_html = html_content
+    for local_url, ado_url in replacement_map.items():
+        modified_html = modified_html.replace(local_url, ado_url)
+
+    return modified_html, uploaded_urls
+
+
 @devops_bp.route('/api/devops/upload_attachment', methods=['POST'])
 @login_required
 def upload_devops_attachment():
@@ -114,7 +157,14 @@ def upload_devops_attachment():
     Zero persistent disk usage, non-blocking streaming.
     """
     try:
-        project = request.form.get('project') or Config.AZURE_DEVOPS_PROJECT
+        project = request.form.get('project')
+        if not project or project == 'support_dashboard':
+            projects = devops_connector.list_projects()
+            if projects:
+                project = projects[0]['name']
+            else:
+                project = Config.AZURE_DEVOPS_PROJECT
+
         file = request.files.get('file') or request.files.get('media')
         
         if not file:
@@ -153,22 +203,36 @@ def create_devops_work_item():
         ticket_id = data.get('ticket_id')
         work_item_type = data.get('type') or 'Bug'
         title = data.get('title')
-        target_project = data.get('project') or Config.AZURE_DEVOPS_PROJECT
-        attachment_urls = data.get('attachment_urls') or []
+
+        target_project = data.get('project')
+        if not target_project or target_project == 'support_dashboard':
+            projects = devops_connector.list_projects()
+            if projects:
+                target_project = projects[0]['name']
+            else:
+                target_project = Config.AZURE_DEVOPS_PROJECT
+
+        attachment_urls = list(data.get('attachment_urls') or [])
 
         if not ticket_id or not title:
             return jsonify({'error': 'ticket_id and title are required'}), 400
 
+        desc_html = data.get('description', '')
+        if desc_html:
+            desc_html, desc_att_urls = sync_inline_images_to_devops(desc_html, target_project)
+            for u in desc_att_urls:
+                if u not in attachment_urls:
+                    attachment_urls.append(u)
+
         fields = {
             'System.Title': title,
-            'System.Description': data.get('description', ''),
+            'System.Description': desc_html,
             'System.AssignedTo': data.get('assigned_to', ''),
             'System.AreaPath': data.get('area_path', ''),
             'System.IterationPath': data.get('iteration_path', ''),
             'System.Tags': data.get('tags', '')
         }
 
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project creation & priority validation - start
         if data.get('priority'):
             try:
                 p_val = int(data.get('priority'))
@@ -180,8 +244,13 @@ def create_devops_work_item():
         if work_item_type.lower() == 'bug':
             if data.get('severity'):
                 fields['Microsoft.VSTS.Common.Severity'] = data.get('severity')
-            if data.get('repro_steps'):
-                fields['Microsoft.VSTS.TCM.ReproSteps'] = data.get('repro_steps')
+            repro_html = data.get('repro_steps', '')
+            if repro_html:
+                repro_html, repro_att_urls = sync_inline_images_to_devops(repro_html, target_project)
+                fields['Microsoft.VSTS.TCM.ReproSteps'] = repro_html
+                for u in repro_att_urls:
+                    if u not in attachment_urls:
+                        attachment_urls.append(u)
             if data.get('system_info'):
                 fields['Microsoft.VSTS.TCM.SystemInfo'] = data.get('system_info')
 
@@ -205,7 +274,6 @@ def create_devops_work_item():
     except Exception as e:
         logger.error(f"Error creating DevOps work item: {e}")
         return jsonify({'error': str(e)}), 500
-        # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Stateless project creation & priority validation - end
 
 
 # Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Require login for DevOps user directory enumeration - start

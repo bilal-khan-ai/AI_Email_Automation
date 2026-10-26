@@ -1208,7 +1208,7 @@ body.dark-mode .sla-badge-unanswered {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.75rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 0.5rem;
 }
 
@@ -1216,15 +1216,17 @@ body.dark-mode .sla-badge-unanswered {
     display: flex;
     align-items: center;
     gap: 0.55rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-width: 0;
 }
 
 .ticket-meta-badges {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     margin-left: auto;
+    flex-shrink: 0;
 }
 
 .ticket-id {
@@ -1453,6 +1455,68 @@ body.dark-mode .assignment-badge.unassigned {
     margin-bottom: 0.5rem;
     color: var(--text-primary);
     word-wrap: break-word;
+}
+
+.ticket-title-block {
+    margin-bottom: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.ticket-primary-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+}
+
+.ticket-primary-title .rt-tag-icon {
+    color: var(--accent);
+    font-size: 0.88rem;
+    margin-right: 0.35rem;
+}
+
+body.dark-mode .ticket-primary-title .rt-tag-icon {
+    color: #52B788;
+}
+
+.ticket-secondary-subject {
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ticket-secondary-subject .subject-prefix {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 0.25rem;
+}
+
+.modal-secondary-subject {
+    font-size: 0.84rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    margin-top: 2px;
+}
+
+.modal-secondary-subject .subject-prefix {
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-right: 0.3rem;
 }
 
 .ticket-meta {
@@ -4862,3 +4926,191 @@ body.dark-mode .flatpickr-am-pm {
         transform: translateX(0);
     }
 }
+
+/* Running Title Badge & Modal Component Styles */
+.running-title-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    height: 22px;
+    line-height: 1;
+    white-space: nowrap;
+    box-sizing: border-box;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(16, 185, 129, 0.12);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.28);
+    font-weight: 600;
+}
+
+body.dark-mode .running-title-badge {
+    background: rgba(16, 185, 129, 0.18);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.35);
+}
+
+.modal-title-column {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-right: 0.75rem;
+}
+
+.modal-title-column .modal-subject-wrapper {
+    margin-right: 0;
+}
+
+.modal-running-title-bar {
+    display: flex;
+    align-items: center;
+    min-height: 26px;
+}
+
+.running-title-display-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: nowrap;
+    max-width: 100%;
+}
+
+.modal-running-title-bar .running-title-badge {
+    max-width: 380px;
+    font-size: 0.78rem;
+    height: 24px;
+    padding: 2px 9px;
+}
+
+.btn-running-title-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px dashed var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 2px 8px;
+    height: 24px;
+    box-sizing: border-box;
+    line-height: 1;
+}
+
+.btn-running-title-action:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(45, 106, 79, 0.08);
+}
+
+body.dark-mode .btn-running-title-action:hover {
+    background: rgba(82, 183, 136, 0.12);
+}
+
+.btn-edit-rt,
+.btn-clear-rt {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.btn-clear-rt:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.running-title-edit-mode {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+}
+
+.running-title-input-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--input-bg);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 2px 6px;
+    box-shadow: 0 0 0 2px rgba(45, 106, 79, 0.15);
+}
+
+body.dark-mode .running-title-input-group {
+    box-shadow: 0 0 0 2px rgba(82, 183, 136, 0.25);
+}
+
+.running-title-input-icon {
+    font-size: 0.75rem;
+    color: var(--accent);
+    margin-left: 2px;
+}
+
+.running-title-input {
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-family: inherit;
+    width: 100%;
+    max-width: 360px;
+    min-width: 180px;
+    flex: 1;
+    padding: 2px 4px;
+    line-height: 1.3;
+}
+
+.running-title-input::placeholder {
+    color: var(--text-muted);
+}
+
+.btn-rt-save,
+.btn-rt-cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.72rem;
+    transition: all 0.15s ease;
+}
+
+.btn-rt-save {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.btn-rt-save:hover {
+    background: var(--accent-hover);
+    transform: scale(1.05);
+}
+
+.btn-rt-cancel {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.btn-rt-cancel:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-primary);
+}
+
+body.dark-mode .btn-rt-cancel:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
