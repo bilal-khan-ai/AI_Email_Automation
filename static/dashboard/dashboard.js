@@ -1131,25 +1131,13 @@ function displayTickets() {
         }
 
         const runningTitle = ticket.running_title ? escapeHtml(ticket.running_title) : null;
-        let titleBlockHtml = '';
-        if (runningTitle) {
-            titleBlockHtml = `
-            <div class="ticket-title-block">
-                <div class="ticket-primary-title" title="Running Title: ${runningTitle}">
-                    <i class="fa fa-tag rt-tag-icon"></i>${runningTitle}
-                </div>
-                <div class="ticket-secondary-subject" title="Subject: ${subject}">
-                    <span class="subject-prefix">Subject:</span> ${subject}
-                </div>
+        const runningTitleCommentHtml = runningTitle ? `
+            <div class="ticket-comment-row" title="Comment: ${runningTitle}">
+                <i class="fa fa-comment-dots comment-icon"></i>
+                <span class="comment-label">Comment:</span>
+                <span class="comment-text">${runningTitle}</span>
             </div>
-            `;
-        } else {
-            titleBlockHtml = `
-            <div class="ticket-title-block">
-                <div class="ticket-subject">${subject}</div>
-            </div>
-            `;
-        }
+        ` : '';
 
         return `
         <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
@@ -1172,7 +1160,8 @@ function displayTickets() {
                     ${timeLimitBadgeHtml}
                 </div>
             </div>
-            ${titleBlockHtml}
+            <div class="ticket-subject">${subject}</div>
+            ${runningTitleCommentHtml}
             <div class="ticket-meta">
                 <span><i class="fa fa-envelope me-1"></i> ${customerEmail}</span>
                 <span><i class="fa fa-calendar-alt me-1"></i> Last Replied: ${timestamp}</span>
@@ -2613,6 +2602,7 @@ async function saveTicketAssignment(field, value) {
 
 function updateModalRunningTitle(title, rawSubject) {
     const textEl = document.getElementById('modalRunningTitleText');
+    const badgeEl = document.getElementById('modalRunningTitleBadge');
     const btnAdd = document.getElementById('btnAddRunningTitle');
     const btnEdit = document.getElementById('btnEditRunningTitle');
     const btnClear = document.getElementById('btnClearRunningTitle');
@@ -2635,16 +2625,12 @@ function updateModalRunningTitle(title, rawSubject) {
 
     if (textEl) textEl.textContent = displayTitle;
 
-    if (hasTitle) {
-        updateModalSubjectAutoScroll(displayTitle);
-        if (secSubjectWrapper) secSubjectWrapper.style.display = 'block';
-        if (rawSubjectText) rawSubjectText.textContent = rawSubject || 'No Subject';
-    } else {
-        updateModalSubjectAutoScroll(rawSubject || 'No Subject');
-        if (secSubjectWrapper) secSubjectWrapper.style.display = 'none';
-        if (rawSubjectText) rawSubjectText.textContent = '';
-    }
+    // Primary modal heading always displays the email subject
+    updateModalSubjectAutoScroll(rawSubject || 'No Subject');
+    if (secSubjectWrapper) secSubjectWrapper.style.display = 'none';
+    if (rawSubjectText) rawSubjectText.textContent = '';
 
+    if (badgeEl) badgeEl.style.display = hasTitle ? 'inline-flex' : 'none';
     if (btnAdd) btnAdd.style.display = hasTitle ? 'none' : 'inline-flex';
     if (btnEdit) btnEdit.style.display = hasTitle ? 'inline-flex' : 'none';
     if (btnClear) btnClear.style.display = hasTitle ? 'inline-flex' : 'none';
