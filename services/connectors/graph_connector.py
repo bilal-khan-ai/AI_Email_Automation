@@ -277,9 +277,9 @@ class GraphConnector:
         user_email: str,
         minutes: int = 10,
         top: int = 100,
-        folder: Optional[str] = "Inbox"
+        folder: Optional[str] = None
     ) -> List[Dict]:
-        """Fetch emails from the last N minutes synchronously from specified mail folder (default: Inbox)."""
+        """Fetch emails from the last N minutes synchronously (default: all mailbox messages)."""
         if self._is_circuit_open():
             return []
 

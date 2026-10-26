@@ -46,14 +46,18 @@ def find_duplicate_messages(cur):
              AND m1.id < m2.id
              AND (m1.deleted_at IS NULL AND m2.deleted_at IS NULL)
              AND (
-                 -- Synthetic vs Real ID match
-                 (m1.message_id LIKE 'sent_%' AND m2.message_id NOT LIKE 'sent_%')
-                 OR (m1.message_id NOT LIKE 'sent_%' AND m2.message_id LIKE 'sent_%')
-                 -- Or exact same sender & body snippet within 15 minutes
-                 OR (
+                 -- Exact same sender & body content within 15 minutes
+                 (
                      m1.sender = m2.sender
                      AND MD5(COALESCE(m1.body_text, '')) = MD5(COALESCE(m2.body_text, ''))
                      AND ABS(EXTRACT(EPOCH FROM (m1.timestamp - m2.timestamp))) <= 900
+                     AND (
+                         -- Synthetic vs Real ID match
+                         (m1.message_id LIKE 'sent_%%' AND m2.message_id NOT LIKE 'sent_%%')
+                         OR (m1.message_id NOT LIKE 'sent_%%' AND m2.message_id LIKE 'sent_%%')
+                         -- Or duplicate webhook/poller injection
+                         OR (m1.message_id = m2.message_id)
+                     )
                  )
              )
         ORDER BY m1.ticket_id, m1.id;

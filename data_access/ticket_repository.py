@@ -1202,7 +1202,7 @@ class TicketRepository:
                         cur.execute("""
                             SELECT id, message_id FROM ticket_messages 
                             WHERE ticket_id = %s 
-                              AND message_id LIKE 'sent_%'
+                              AND message_id LIKE 'sent_%%'
                               AND timestamp >= %s - INTERVAL '15 minutes'
                               AND timestamp <= %s + INTERVAL '15 minutes'
                             ORDER BY id DESC LIMIT 1
@@ -1218,6 +1218,11 @@ class TicketRepository:
                             """, (msg_id_val, internet_msg_id_val, body_html_val, placeholder[0]))
                             logger.info(f"🔄 Reconciled optimistic placeholder {placeholder[1]} -> real Graph ID {str(msg_id_val)[:20]}... for ticket {ticket_id}")
                             reconciled = True
+                            cur.execute("""
+                                UPDATE tickets 
+                                SET last_updated = %s 
+                                WHERE ticket_id = %s
+                            """, (now, ticket_id))
 
                     if not reconciled:
                         cur.execute("""

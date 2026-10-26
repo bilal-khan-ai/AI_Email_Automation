@@ -1734,22 +1734,24 @@ function renderThread(messages) {
     const sortedMessages = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     container.innerHTML = '';
 
-    // Deduplicate thread messages: collapse duplicate identical entries within 15-minute window
+    // Deduplicate thread messages: only collapse synthetic dashboard placeholders (sent_%) against confirmed Graph API messages
     const uniqueMessages = [];
-    const seenSignatures = new Set();
     sortedMessages.forEach(m => {
-        const cleanSnippet = (m.body_text || m.body || '').slice(0, 150).trim().toLowerCase().replace(/\s+/g, ' ');
-        const timeBucket = Math.floor(new Date(m.timestamp).getTime() / 900000);
-        const sig = `${m.sender || ''}_${timeBucket}_${cleanSnippet}`;
-        if (!seenSignatures.has(sig)) {
-            seenSignatures.add(sig);
-            uniqueMessages.push(m);
-        } else {
-            const existingIdx = uniqueMessages.findIndex(x => `${x.sender || ''}_${Math.floor(new Date(x.timestamp).getTime() / 900000)}_${(x.body_text || x.body || '').slice(0, 150).trim().toLowerCase().replace(/\s+/g, ' ')}` === sig);
-            if (existingIdx !== -1 && String(uniqueMessages[existingIdx].message_id).startsWith('sent_') && !String(m.message_id).startsWith('sent_')) {
-                uniqueMessages[existingIdx] = m;
-            }
+        const msgIdStr = String(m.message_id || '');
+        if (msgIdStr.startsWith('sent_')) {
+            const hasRealCounterpart = sortedMessages.some(other => {
+                const otherId = String(other.message_id || '');
+                if (otherId.startsWith('sent_') || otherId === msgIdStr) return false;
+                if ((other.sender || '').toLowerCase() !== (m.sender || '').toLowerCase()) return false;
+                const timeDiff = Math.abs(new Date(other.timestamp).getTime() - new Date(m.timestamp).getTime());
+                if (timeDiff > 900000) return false;
+                const snippet1 = (m.body_text || '').slice(0, 100).trim().toLowerCase();
+                const snippet2 = (other.body_text || '').slice(0, 100).trim().toLowerCase();
+                return snippet1 && snippet2 && snippet1 === snippet2;
+            });
+            if (hasRealCounterpart) return;
         }
+        uniqueMessages.push(m);
     });
 
     const globalCidMap = {};
@@ -5138,10 +5140,34 @@ socket.on('ticket_updated', (data) => {
         if (data.running_title !== undefined) {
             updateModalRunningTitle(data.running_title);
         }
+
+        // Auto-refresh conversation thread if this ticket is open in the modal
+        fetch(`/api/ticket_messages/${encodeURIComponent(currentTicketIdStr)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(d => {
+                if (d && d.messages) {
+                    renderThread(d.messages);
+                    populateEmailTicketChips(d.messages);
+                }
+            })
+            .catch(err => console.error("Error refreshing open modal thread:", err));
     }
 });
 socket.on('ticket_status_toggled', () => loadTickets());
-socket.on('email_sent', () => loadTickets());
+socket.on('email_sent', (data) => {
+    loadTickets();
+    if (currentTicketIdStr && (!data || !data.ticket_id || String(data.ticket_id) === String(currentTicketIdStr))) {
+        fetch(`/api/ticket_messages/${encodeURIComponent(currentTicketIdStr)}`)
+            .then(res => res.ok ? res.json() : null)
+            .then(d => {
+                if (d && d.messages) {
+                    renderThread(d.messages);
+                    populateEmailTicketChips(d.messages);
+                }
+            })
+            .catch(err => console.error("Error refreshing open modal thread:", err));
+    }
+});
 
 // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Real-time State Update Socket Listener - start
 socket.on('devops_item_updated', (data) => {
