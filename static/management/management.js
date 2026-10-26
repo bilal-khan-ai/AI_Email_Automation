@@ -154,11 +154,26 @@ function populateSettingsForm(settings) {
     }
 }
 
+let currentSystemSettings = {};
+
+function isAiFeatureEnabled() {
+    const aiSwitch = document.getElementById('enableAiSwitch');
+    if (aiSwitch) {
+        return aiSwitch.checked;
+    }
+    if (currentSystemSettings && currentSystemSettings.ENABLE_AI !== undefined) {
+        const val = currentSystemSettings.ENABLE_AI;
+        return val === true || val === 'True' || val === 'true';
+    }
+    return false;
+}
+
 function loadSettings() {
     fetch('/api/settings')
         .then(res => res.json())
         .then(data => {
             if (data && data.settings) {
+                currentSystemSettings = data.settings;
                 populateSettingsForm(data.settings);
             }
         })
@@ -180,6 +195,7 @@ function togglePatVisibility(inputId, btn) {
 
 socket.on('settings_update', (data) => {
     if (data && data.settings) {
+        currentSystemSettings = data.settings;
         populateSettingsForm(data.settings);
     }
 });
@@ -258,13 +274,28 @@ function updateMergeDatalist(groups) {
     });
 }
 
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function escapeJsString(text) {
+    if (!text) return '';
+    return String(text).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function renderClientGroupsTable(groups) {
     const tbody = document.getElementById('clientGroupsTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
     
     if (groups.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-secondary">No clients found.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-secondary">No clients found.</td></tr>';
         return;
     }
 
@@ -272,26 +303,195 @@ function renderClientGroupsTable(groups) {
         const tr = document.createElement('tr');
         tr.style.cursor = 'pointer';
         tr.onclick = function(e) {
-            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && !e.target.closest('.form-switch')) {
                 const cb = this.querySelector('.client-checkbox');
-                cb.checked = !cb.checked;
-                updateMergeUI();
+                if (cb) {
+                    cb.checked = !cb.checked;
+                    updateMergeUI();
+                }
             }
         };
         
         const badge = g.type === 'group' ? '<span class="badge bg-primary">Group</span>' : '<span class="badge bg-secondary">Domain</span>';
-        const actions = g.type === 'group' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteClientGroup(${g.id}, '${g.name}'); event.stopPropagation();">🗑️ Delete</button>` : '';
+        const actions = g.type === 'group' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteClientGroup(${g.id}, '${escapeJsString(g.name)}'); event.stopPropagation();">🗑️ Delete</button>` : '';
+        const isAutoClose = g.auto_close === true || g.auto_close === 'true';
+        const switchId = `autoClose_${g.id || g.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
         tr.innerHTML = `
-            <td><input type="checkbox" class="form-check-input client-checkbox" value="${g.name}" data-domains="${g.domains}" onclick="updateMergeUI(); event.stopPropagation();"></td>
-            <td><strong>${g.name}</strong></td>
-            <td style="word-wrap: break-word; white-space: normal; max-width: 300px;">${g.domains}</td>
+            <td><input type="checkbox" class="form-check-input client-checkbox" value="${escapeHtml(g.name)}" data-domains="${escapeHtml(g.domains || '')}" onclick="updateMergeUI(); event.stopPropagation();"></td>
+            <td><strong>${escapeHtml(g.name)}</strong></td>
+            <td style="word-wrap: break-word; white-space: normal; max-width: 300px;">${escapeHtml(g.domains || '')}</td>
             <td>${badge}</td>
+            <td>
+                <div class="form-check form-switch m-0" onclick="event.stopPropagation();">
+                    <input class="form-check-input" type="checkbox" id="${switchId}" ${isAutoClose ? 'checked' : ''} onchange="handleAutoCloseToggle(event, ${g.id || 'null'}, '${escapeJsString(g.name)}', '${escapeJsString(g.domains || '')}', this.checked)">
+                    <label class="form-check-label small ${isAutoClose ? 'text-success fw-bold' : 'text-secondary'}" for="${switchId}">
+                        ${isAutoClose ? 'On' : 'Off'}
+                    </label>
+                </div>
+            </td>
             <td>${actions}</td>
         `;
         tbody.appendChild(tr);
     });
     updateMergeUI();
+}
+
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const bgClass = type === 'error' 
+        ? 'bg-danger text-white' 
+        : (type === 'info' 
+            ? 'bg-primary text-white' 
+            : (type === 'warning' ? 'bg-warning text-dark' : 'bg-success text-white'));
+    const iconClass = type === 'error' 
+        ? 'fa-circle-exclamation' 
+        : (type === 'info' 
+            ? 'fa-circle-info' 
+            : (type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-check'));
+
+    toast.className = `toast align-items-center ${bgClass} border-0 shadow-lg show mb-2`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.style.borderRadius = '10px';
+    toast.style.minWidth = '320px';
+    toast.style.maxWidth = '460px';
+
+    toast.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between p-3">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fa ${iconClass} fs-5 flex-shrink-0"></i>
+                <div class="toast-body p-0 small fw-medium">${escapeHtml(message)}</div>
+            </div>
+            <button type="button" class="btn-close ${type === 'warning' ? '' : 'btn-close-white'} ms-3 flex-shrink-0" onclick="this.closest('.toast').remove()"></button>
+        </div>
+    `;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        toast.style.transform = 'translateY(-10px)';
+        setTimeout(() => toast.remove(), 400);
+    }, 4000);
+}
+
+let pendingAutoCloseAction = null;
+
+function handleAutoCloseToggle(event, id, name, domains, targetChecked) {
+    if (event) event.stopPropagation();
+
+    const checkbox = event ? event.target : null;
+
+    if (targetChecked) {
+        if (checkbox) checkbox.checked = false;
+
+        pendingAutoCloseAction = {
+            id: id,
+            name: name,
+            domains: domains,
+            checkbox: checkbox
+        };
+
+        const nameEl = document.getElementById('autoCloseModalClientName');
+        const domsEl = document.getElementById('autoCloseModalDomains');
+        if (nameEl) nameEl.textContent = name;
+        if (domsEl) domsEl.textContent = domains || 'No domain registered';
+
+        const aiNotice = document.getElementById('autoCloseAiDraftNotice');
+        if (aiNotice) {
+            aiNotice.style.display = isAiFeatureEnabled() ? 'list-item' : 'none';
+        }
+
+        const modalEl = document.getElementById('autoCloseConfirmModal');
+        if (modalEl) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+    } else {
+        executeAutoCloseRequest(id, name, domains, false, checkbox);
+    }
+}
+
+function cancelAutoCloseModal() {
+    const modalEl = document.getElementById('autoCloseConfirmModal');
+    if (modalEl) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
+    if (pendingAutoCloseAction && pendingAutoCloseAction.checkbox) {
+        pendingAutoCloseAction.checkbox.checked = false;
+    }
+    pendingAutoCloseAction = null;
+}
+
+function confirmAutoCloseModal() {
+    if (!pendingAutoCloseAction) return;
+
+    const { id, name, domains, checkbox } = pendingAutoCloseAction;
+    const submitBtn = document.getElementById('confirmAutoCloseSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Enabling...';
+    }
+
+    executeAutoCloseRequest(id, name, domains, true, checkbox, () => {
+        const modalEl = document.getElementById('autoCloseConfirmModal');
+        if (modalEl) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+        }
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fa fa-check me-1"></i> Enable & Close Tickets';
+        }
+        pendingAutoCloseAction = null;
+    });
+}
+
+function executeAutoCloseRequest(id, name, domains, enabled, checkbox, onComplete) {
+    fetch('/api/client_groups/auto_close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            id: id,
+            name: name,
+            domains: domains,
+            auto_close: enabled
+        })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            if (checkbox) checkbox.checked = enabled;
+            if (enabled) {
+                const countMsg = data.closed_count > 0 
+                    ? ` (${data.closed_count} active ticket${data.closed_count === 1 ? '' : 's'} moved to Closed)` 
+                    : '';
+                showToast(`Auto Close enabled for "${name}"${countMsg}.`, 'success');
+            } else {
+                showToast(`Auto Close disabled for "${name}".`, 'info');
+            }
+            loadClientGroups();
+            if (typeof refreshMetrics === 'function') {
+                refreshMetrics();
+            }
+        } else {
+            if (checkbox) checkbox.checked = !enabled;
+            showToast(data.error || "Failed to update Auto Close state", 'error');
+            loadClientGroups();
+        }
+    })
+    .catch(err => {
+        console.error("Error toggling client auto close:", err);
+        if (checkbox) checkbox.checked = !enabled;
+        showToast("Network error while updating Auto Close state", 'error');
+        loadClientGroups();
+    })
+    .finally(() => {
+        if (typeof onComplete === 'function') onComplete();
+    });
 }
 
 function toggleAllClientRows(source) {

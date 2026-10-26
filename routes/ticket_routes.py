@@ -50,9 +50,11 @@ def get_tickets():
         ticket_id = ticket.get('ticket_id')
         if ticket_id in user_locks:
             ticket['locked_by'] = user_locks[ticket_id]['user_id']
+            ticket['locked_by_username'] = user_locks[ticket_id].get('username')
             ticket['locked_at'] = user_locks[ticket_id]['locked_at']
         else:
             ticket['locked_by'] = None
+            ticket['locked_by_username'] = None
 
     # Calculate statistics
     stats = calculate_stats(tickets)
@@ -72,9 +74,11 @@ def get_ticket_details(ticket_id):
         ticket['status'] = normalize_legacy_status(ticket.get('status'))
         if ticket_id in user_locks:
             ticket['locked_by'] = user_locks[ticket_id]['user_id']
+            ticket['locked_by_username'] = user_locks[ticket_id].get('username')
             ticket['locked_at'] = user_locks[ticket_id]['locked_at']
         else:
             ticket['locked_by'] = None
+            ticket['locked_by_username'] = None
         return jsonify(ticket)
     return jsonify({'error': 'Ticket not found'}), 404
 

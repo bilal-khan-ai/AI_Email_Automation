@@ -14,7 +14,7 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Dashboard Header & Shared Styles - start -->
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_2">
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20261026_3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20261026_4">
     <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_2"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -77,7 +77,7 @@
             <div class="search-box">
                 <i class="fa fa-search search-icon"></i>
                 <input type="search" id="search" name="search" autocomplete="off" role="searchbox"
-                    aria-label="Search tickets" placeholder="Search by email, subject, or ticket ID...">
+                    aria-label="Search tickets" placeholder="Search by email, subject, comment, assignee, coworker, or ticket ID...">
             </div>
             <div class="filter-buttons">
                 <div class="pill-toggle" id="visibilityPill" data-active="{{ 'all' if user.role == 'admin' else 'mine' }}">
@@ -948,7 +948,7 @@
         }
     </script>
     <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - end -->
-    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20261026_4"></script>
+    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20261026_6"></script>
 </body>
 
 </html>

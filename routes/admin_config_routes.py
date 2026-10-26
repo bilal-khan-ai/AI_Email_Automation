@@ -11,7 +11,7 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from auth import login_required
-from dashboard_context import sql_logger, get_ai_agent
+from dashboard_context import sql_logger, get_ai_agent, get_experience_db, get_socketio
 from services.env_manager import EnvManager
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,7 @@ def get_client_groups_api():
                     'id': g.get('id'),
                     'name': g.get('name'),
                     'domains': g.get('domains', ''),
+                    'auto_close': bool(g.get('auto_close', False)),
                     'type': 'group'
                 })
             for d in raw_data.get('unmerged_domains', []):
@@ -154,6 +155,7 @@ def get_client_groups_api():
                     'id': None,
                     'name': d,
                     'domains': d,
+                    'auto_close': False,
                     'type': 'domain'
                 })
         elif isinstance(raw_data, list):
@@ -162,7 +164,6 @@ def get_client_groups_api():
     except Exception as e:
         logger.error(f"Error fetching client groups: {e}")
         return jsonify({'error': str(e)}), 500
-# Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Format unified client groups and unmerged domain entities - end
 
 
 @admin_config_bp.route('/api/client_groups', methods=['POST'])
@@ -214,6 +215,56 @@ def delete_client_group_api(group_id):
         return jsonify({'error': 'Failed to delete client group'}), 500
     except Exception as e:
         logger.error(f"Error deleting client group: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@admin_config_bp.route('/api/client_groups/auto_close', methods=['POST'])
+@login_required
+def toggle_client_auto_close_api():
+    """Toggle Auto Close setting for a client group or unmerged domain."""
+    data = request.json or {}
+    group_id = data.get('id')
+    name = data.get('name')
+    domains = data.get('domains')
+    auto_close = bool(data.get('auto_close', False))
+
+    if not name or not domains:
+        return jsonify({'error': 'Missing client name or domains'}), 400
+
+    try:
+        success, closed_ticket_ids = sql_logger.set_client_auto_close(
+            group_id=group_id,
+            name=name,
+            domains=domains,
+            auto_close=auto_close
+        )
+        if not success:
+            return jsonify({'error': 'Failed to update auto_close status'}), 500
+
+        if auto_close and closed_ticket_ids:
+            exp_db = get_experience_db()
+            for ticket_id in closed_ticket_ids:
+                disp_id = sql_logger.get_display_id(ticket_id)
+                if exp_db is not None:
+                    try:
+                        exp_db.update_ticket_status(ticket_id, True, display_id=disp_id)
+                        exp_db.update_authority_status(ticket_id, True, display_id=disp_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to update vector status for auto-closed ticket {disp_id}: {e}")
+                sql_logger.mark_ticket_as_authority(ticket_id, True)
+
+            sio = get_socketio()
+            if sio:
+                sio.emit('ticket_status_toggled', {'source': 'client_auto_close'})
+                sio.emit('client_stats_update')
+
+        return jsonify({
+            'success': True,
+            'auto_close': auto_close,
+            'closed_count': len(closed_ticket_ids)
+        })
+    except Exception as e:
+        logger.error(f"Error updating client auto_close: {e}")
         return jsonify({'error': str(e)}), 500
 
 

@@ -353,8 +353,19 @@ class TicketRepository:
                             id SERIAL PRIMARY KEY,
                             name TEXT UNIQUE NOT NULL,
                             domains TEXT NOT NULL,
+                            auto_close BOOLEAN DEFAULT FALSE,
                             created_at TIMESTAMPTZ DEFAULT NOW()
                         )
+                    """)
+
+                    cur.execute("""
+                        DO $$ 
+                        BEGIN 
+                            IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                           WHERE table_name='client_groups' AND column_name='auto_close') THEN 
+                                ALTER TABLE client_groups ADD COLUMN auto_close BOOLEAN DEFAULT FALSE;
+                            END IF;
+                        END $$;
                     """)
                     
             logger.info("✅ PostgreSQL schema initialized (with provenance + soft-delete support)")
@@ -394,27 +405,37 @@ class TicketRepository:
                     display_id = f"{domain}-{date_str}-{seq:02d}"
                     assignee = 'Unassigned'
                     
+                    auto_close_active = self.is_client_auto_close(customer_email)
+                    initial_status = 'Closed' if auto_close_active else 'Open'
+                    
                     cur.execute("""
                         INSERT INTO tickets (
                             ticket_id, display_id, conversation_id, subject, 
                             customer_email, created_at, last_updated,
-                            assigned_to, source_received_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            assigned_to, source_received_at, status
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (ticket_id) DO NOTHING
-                    """, (ticket_id, display_id, conversation_id, subject, customer_email, now, now, assignee, parsed_source_time))
+                    """, (ticket_id, display_id, conversation_id, subject, customer_email, now, now, assignee, parsed_source_time, initial_status))
                     
                     created = cur.rowcount > 0
                     if created:
-                        logger.info(f"✅ Created ticket {display_id} | Customer: {customer_email} | Subject: {subject[:50]}")
+                        logger.info(f"✅ Created ticket {display_id} | Status: {initial_status} | Customer: {customer_email} | Subject: {subject[:50]}")
+                        desc = "Ticket created and auto-closed per client policy." if auto_close_active else "Ticket created in system."
                         self.log_audit_event(
                             ticket_id=ticket_id,
                             action_type=ActionType.TICKET_CREATED,
                             actor_type=ActorType.USER if actor != 'system' else ActorType.SYSTEM,
                             actor_id=actor,
-                            description=f"Ticket created in system.",
+                            description=desc,
                             cur=cur,
                             timestamp=parsed_source_time or now
                         )
+                        if auto_close_active:
+                            self.log_ticket_event(ticket_id, 'status_changed', 'system', {
+                                'from': 'Open',
+                                'to': 'Closed',
+                                'description': 'Auto-closed on arrival by client policy'
+                            }, cur=cur)
                     else:
                         logger.debug(f"ℹ️  Ticket {ticket_id} already exists (idempotent)")
             return True
@@ -598,7 +619,7 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                    cur.execute("SELECT * FROM client_groups ORDER BY name ASC")
+                    cur.execute("SELECT id, name, domains, auto_close, created_at FROM client_groups ORDER BY name ASC")
                     return [dict(r) for r in cur.fetchall()]
         except Exception as e:
             logger.error(f"❌ Error fetching client groups: {e}")
@@ -631,7 +652,7 @@ class TicketRepository:
         try:
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                    cur.execute("SELECT id, name, domains FROM client_groups ORDER BY name ASC")
+                    cur.execute("SELECT id, name, domains, auto_close FROM client_groups ORDER BY name ASC")
                     groups = [dict(r) for r in cur.fetchall()]
                     
                     cur.execute("""
@@ -646,6 +667,7 @@ class TicketRepository:
                         doms = [d.strip() for d in g['domains'].split(',') if d.strip()]
                         merged_domains.update(doms)
                         g['domain_list'] = doms
+                        g['auto_close'] = bool(g.get('auto_close', False))
                     
                     unmerged = [d for d in all_domains if d not in merged_domains]
                     return {'groups': groups, 'unmerged_domains': unmerged}
@@ -672,6 +694,95 @@ class TicketRepository:
         except Exception as e:
             logger.error(f"❌ Error merging client entities: {e}")
             return False
+
+    def is_client_auto_close(self, customer_email_or_domain: str) -> bool:
+        """Check if a customer email or domain has auto_close policy enabled."""
+        if not customer_email_or_domain:
+            return False
+        raw = str(customer_email_or_domain).strip().lower()
+        domain = raw.split('@')[-1] if '@' in raw else raw
+        if not domain:
+            return False
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT 1 FROM client_groups 
+                        WHERE auto_close = TRUE 
+                          AND (
+                              string_to_array(lower(replace(domains, ' ', '')), ',') @> ARRAY[%s]
+                          )
+                        LIMIT 1
+                    """, (domain,))
+                    return cur.fetchone() is not None
+        except Exception as e:
+            logger.error(f"❌ Error checking auto_close for domain {domain}: {e}")
+            return False
+
+    def set_client_auto_close(self, group_id: Optional[int], name: str, domains: str, auto_close: bool) -> tuple[bool, List[str]]:
+        """
+        Set auto_close state for a client group or unmerged domain.
+        When auto_close is enabled, all active (non-closed) tickets matching the client's domains are set to 'Closed'.
+        Returns (success, list_of_closed_ticket_ids).
+        """
+        closed_ticket_ids = []
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    resolved_domains = domains or ''
+                    if group_id:
+                        cur.execute("""
+                            UPDATE client_groups 
+                            SET auto_close = %s 
+                            WHERE id = %s 
+                            RETURNING domains
+                        """, (auto_close, group_id))
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            resolved_domains = row[0]
+                    else:
+                        cur.execute("""
+                            INSERT INTO client_groups (name, domains, auto_close) 
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (name) DO UPDATE SET auto_close = EXCLUDED.auto_close
+                            RETURNING domains
+                        """, (name.strip(), domains.strip(), auto_close))
+                        row = cur.fetchone()
+                        if row and row[0]:
+                            resolved_domains = row[0]
+
+                    if auto_close and resolved_domains:
+                        domain_list = [d.strip().lower() for d in resolved_domains.split(',') if d.strip()]
+                        if domain_list:
+                            now = datetime.now(timezone.utc)
+                            cur.execute("""
+                                UPDATE tickets 
+                                SET status = 'Closed', reopened = FALSE, last_updated = %s 
+                                WHERE status != 'Closed' 
+                                  AND lower(split_part(customer_email, '@', 2)) = ANY(%s)
+                                RETURNING ticket_id, display_id, status
+                            """, (now, domain_list))
+                            rows = cur.fetchall()
+                            for r in rows:
+                                t_id = r[0]
+                                closed_ticket_ids.append(t_id)
+                                self.log_ticket_event(t_id, 'status_changed', 'system', {
+                                    'from': r[2] if len(r) > 2 else 'Open',
+                                    'to': 'Closed',
+                                    'description': 'Auto-closed by client policy'
+                                }, cur=cur)
+                                self.log_audit_event(
+                                    ticket_id=t_id,
+                                    action_type=ActionType.STATUS_CHANGED,
+                                    actor_type=ActorType.SYSTEM,
+                                    actor_id='system',
+                                    description="Ticket auto-closed per client Auto Close policy.",
+                                    cur=cur
+                                )
+                    return True, closed_ticket_ids
+        except Exception as e:
+            logger.error(f"❌ Error setting auto_close for client {name}: {e}")
+            return False, []
 
     def store_attachment_context(self, ticket_id: str, message_id: str, filename: str, 
                                  content_summary: str, metadata: Optional[Dict] = None) -> bool:
@@ -1033,11 +1144,13 @@ class TicketRepository:
                             OR t.display_id ILIKE %s 
                             OR t.ticket_id ILIKE %s 
                             OR t.running_title ILIKE %s 
+                            OR t.assigned_to ILIKE %s 
+                            OR t.co_worker ILIKE %s 
                             OR m.body_text ILIKE %s)
                           AND t.deleted_at IS NULL
                         ORDER BY t.last_updated DESC
                         LIMIT 50
-                    """, (search_term, search_term, search_term, search_term, search_term, search_term))
+                    """, (search_term, search_term, search_term, search_term, search_term, search_term, search_term, search_term))
                     return [self._convert_ticket_row(dict(r)) for r in cur.fetchall()]
         except Exception as e:
             logger.error(f"❌ Error searching tickets: {e}")

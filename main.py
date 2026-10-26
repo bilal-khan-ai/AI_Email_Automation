@@ -664,10 +664,14 @@ class SupportAgent:
             ticket_id = existing['ticket_id']
             display_id = self.sql.get_display_id(ticket_id)
             if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
-                self.sql.reopen_ticket(ticket_id)
-                if self.experience_db:
-                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+                cust_email = existing.get('customer_email') or sender
+                if self.sql.is_client_auto_close(cust_email):
+                    logger.info(f"🔒 Ticket {display_id} remains Closed (Client Auto Close policy active) | Sender: {sender}")
+                else:
+                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
+                    self.sql.reopen_ticket(ticket_id)
+                    if self.experience_db:
+                        self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
             logger.info(f"🔗 Linked to existing ticket {display_id} | ConvID match | Sender: {sender}")
             return ticket_id, display_id
 
@@ -719,10 +723,14 @@ class SupportAgent:
             ticket_id = existing['ticket_id']
             display_id = self.sql.get_display_id(ticket_id)
             if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
-                self.sql.reopen_ticket(ticket_id)
-                if self.experience_db:
-                    self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+                cust_email = existing.get('customer_email') or ''
+                if self.sql.is_client_auto_close(cust_email):
+                    logger.info(f"🔒 Ticket {display_id} remains Closed (Client Auto Close policy active) | Staff: {sender}")
+                else:
+                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
+                    self.sql.reopen_ticket(ticket_id)
+                    if self.experience_db:
+                        self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
             logger.info(f"📨 Internal reply to ticket {display_id} | Sender: {sender}")
             return ticket_id, display_id, False
 
@@ -827,6 +835,11 @@ class SupportAgent:
 
         # Resolve friendly ID early for all function logs
         display_id = self.sql.get_display_id(ticket_id)
+
+        ticket = self.sql.get_ticket_by_id(ticket_id)
+        if ticket and ticket.get('status') == 'Closed':
+            logger.info(f"⏭️ Skipping AI response draft generation for Closed ticket {display_id}.")
+            return
 
         # 1. Fetch thread
         messages = self.sql.get_thread_messages(ticket_id)

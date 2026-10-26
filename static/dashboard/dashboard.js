@@ -862,6 +862,23 @@ function formatTimeFirstAmPm(dateObj) {
     return `${strHours}:${minutes} ${ampm}, ${day}-${month}-${year}`;
 }
 
+/**
+ * Extracts a clean first name from a user identifier or session key.
+ * e.g., 'bilal_khan_fcd03ee2' -> 'Bilal', 'tehsin_ghoniya' -> 'Tehsin'
+ */
+function getLockUserFirstName(userIdentifier) {
+    if (!userIdentifier) return 'User';
+    let str = String(userIdentifier).trim();
+    if (str.includes('@')) {
+        str = str.split('@')[0];
+    }
+    str = str.replace(/_[0-9a-fA-F]{6,16}$/, '');
+    const parts = str.split(/[\s_.\-]+/).filter(Boolean);
+    if (parts.length === 0) return str;
+    const first = parts[0];
+    return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 function displayTickets() {
     const container = document.getElementById('tickets');
     const searchInput = document.getElementById('search');
@@ -961,7 +978,11 @@ function displayTickets() {
         filteredTickets = filteredTickets.filter(t =>
             (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
             (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
-            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery))
+            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
+            (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
+            (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
+            (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
+            (t.running_title && t.running_title.toLowerCase().includes(searchQuery))
         );
     }
 
@@ -995,7 +1016,11 @@ function displayTickets() {
         statsBase = statsBase.filter(t =>
             (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
             (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
-            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery))
+            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
+            (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
+            (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
+            (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
+            (t.running_title && t.running_title.toLowerCase().includes(searchQuery))
         );
     }
     statsBase = statsBase.filter(filterByDateRange);
@@ -1101,7 +1126,9 @@ function displayTickets() {
 
         const isLocked = ticket.locked_by && ticket.locked_by !== null;
         const lockClass = isLocked ? 'locked-by-other' : '';
-        const lockBadge = isLocked ? `<span style="font-size:0.8rem; margin-left:5px"><i class="fa fa-lock me-1"></i> ${escapeHtml(ticket.locked_by)}</span>` : '';
+        const lockUserFull = ticket.locked_by_username || ticket.locked_by || '';
+        const lockFirstName = getLockUserFirstName(lockUserFull);
+        const lockBadge = isLocked ? `<span class="ticket-lock-badge" title="Viewing: ${escapeHtml(lockUserFull)}"><i class="fa fa-eye lock-eye-icon"></i> <span class="lock-user-name">${escapeHtml(lockFirstName)}</span></span>` : '';
 
         // Co-Worker Badge
         const coWorker = ticket.co_worker ? escapeHtml(ticket.co_worker) : null;
@@ -1429,7 +1456,10 @@ async function openTicket(ticketId, rowNumber) {
     if (ticket.locked_by) {
         isTicketLocked = true;
         if (lockStatus) {
-            lockStatus.textContent = `🔒 Locked by ${ticket.locked_by}`;
+            const lockUser = ticket.locked_by_username || ticket.locked_by;
+            const firstName = getLockUserFirstName(lockUser);
+            lockStatus.innerHTML = `<i class="fa fa-eye me-1"></i> Locked by ${escapeHtml(firstName)}`;
+            lockStatus.title = `Locked by ${lockUser}`;
             lockStatus.classList.add('active');
         }
         if (tiptapEditor) tiptapEditor.setEditable(false);
@@ -5383,16 +5413,26 @@ function exportTimeline() {
 }
 
 socket.on('ticket_locked', (data) => {
-    const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);
-    if (card) card.classList.add('locked-by-other');
+    const t = currentTickets.find(x => x.ticket_id === data.ticket_id);
+    if (t) {
+        t.locked_by = data.locked_by;
+        t.locked_by_username = data.locked_by_username;
+        displayTickets();
+    } else {
+        const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);
+        if (card) card.classList.add('locked-by-other');
+    }
 
     if (currentTicketIdStr === data.ticket_id && data.locked_by !== 'me') {
         const lockStatus = document.getElementById('lockStatus');
         if (lockStatus) {
-            lockStatus.textContent = `🔒 Locked by ${data.locked_by}`;
+            const lockUser = data.locked_by_username || data.locked_by;
+            const firstName = getLockUserFirstName(lockUser);
+            lockStatus.innerHTML = `<i class="fa fa-eye me-1"></i> Locked by ${escapeHtml(firstName)}`;
+            lockStatus.title = `Locked by ${lockUser}`;
             lockStatus.classList.add('active');
         }
-        if (quillEditor) quillEditor.disable();
+        if (typeof tiptapEditor !== 'undefined' && tiptapEditor) tiptapEditor.setEditable(false);
         const btnSave = document.getElementById('btnSave');
         const btnSend = document.getElementById('btnSend');
         const statusSelect = document.getElementById('modal-status');
@@ -5404,13 +5444,20 @@ socket.on('ticket_locked', (data) => {
 });
 
 socket.on('ticket_unlocked', (data) => {
-    const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);
-    if (card) card.classList.remove('locked-by-other');
+    const t = currentTickets.find(x => x.ticket_id === data.ticket_id);
+    if (t) {
+        t.locked_by = null;
+        t.locked_by_username = null;
+        displayTickets();
+    } else {
+        const card = document.querySelector(`.ticket-card[data-ticket-id="${data.ticket_id}"]`);
+        if (card) card.classList.remove('locked-by-other');
+    }
 
     if (currentTicketIdStr === data.ticket_id) {
         const lockStatus = document.getElementById('lockStatus');
         if (lockStatus) lockStatus.classList.remove('active');
-        if (quillEditor) quillEditor.enable();
+        if (typeof tiptapEditor !== 'undefined' && tiptapEditor) tiptapEditor.setEditable(true);
         const btnSave = document.getElementById('btnSave');
         const btnSend = document.getElementById('btnSend');
         const statusSelect = document.getElementById('modal-status');

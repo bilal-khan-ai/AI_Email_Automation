@@ -1210,14 +1210,17 @@ body.dark-mode .sla-badge-unanswered {
     margin-bottom: 0.75rem;
     flex-wrap: nowrap;
     gap: 0.5rem;
+    min-width: 0;
 }
 
 .ticket-id-row {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.45rem;
     flex-wrap: nowrap;
     min-width: 0;
+    overflow: hidden;
+    flex-shrink: 1;
 }
 
 .ticket-meta-badges {
@@ -1227,6 +1230,43 @@ body.dark-mode .sla-badge-unanswered {
     flex-wrap: nowrap;
     margin-left: auto;
     flex-shrink: 0;
+}
+
+/* Compact Viewing / Lock Indicator Pill */
+.ticket-lock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    height: 22px;
+    line-height: 1;
+    white-space: nowrap;
+    box-sizing: border-box;
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    max-width: 105px;
+    flex-shrink: 0;
+}
+
+body.dark-mode .ticket-lock-badge {
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.ticket-lock-badge .lock-eye-icon {
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
+.ticket-lock-badge .lock-user-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ticket-id {
@@ -1354,6 +1394,9 @@ body.dark-mode .ticket-status-inline.status-pending-review {
     line-height: 1;
     white-space: nowrap;
     box-sizing: border-box;
+    max-width: 135px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .assignment-badge.assigned {
@@ -4470,6 +4513,9 @@ body.dark-mode .combobox-item.active {
     line-height: 1;
     white-space: nowrap;
     box-sizing: border-box;
+    max-width: 135px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 body.dark-mode .coworker-badge {
