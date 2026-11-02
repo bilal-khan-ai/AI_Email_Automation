@@ -176,8 +176,12 @@ body.dark-mode .status-resolved {
 }
 
 /* Preview Modal */
+#previewModal {
+    z-index: 2500 !important;
+}
+
 #previewModal.active {
-    display: flex;
+    display: flex !important;
     align-items: center;
     justify-content: center;
 }
@@ -1997,7 +2001,7 @@ body.dark-mode .email-iframe-container {
 }
 
 .modal.active {
-    display: flex;
+    display: flex !important;
     align-items: flex-start;
     justify-content: center;
     padding: 1rem 0;
@@ -5199,4 +5203,438 @@ body.dark-mode .running-title-input-group {
 
 body.dark-mode .btn-rt-cancel:hover {
     background: rgba(255, 255, 255, 0.1);
-}
+}
+
+
+/* ==========================================================================
+   Ticket Merge Button & Modal Styles
+   ========================================================================== */
+.info-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.btn-merge-ticket {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-merge-ticket:hover {
+    background: rgba(245, 158, 11, 0.22);
+    border-color: #d97706;
+    color: #b45309;
+    transform: translateY(-1px);
+}
+
+body.dark-mode .btn-merge-ticket {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+}
+
+body.dark-mode .btn-merge-ticket:hover {
+    background: rgba(245, 158, 11, 0.28);
+    color: #fde68a;
+}
+
+.merge-suggestion-badge {
+    background: #f59e0b;
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    line-height: 1.2;
+}
+
+.merge-modal-content {
+    max-width: 680px;
+    width: 90%;
+    margin: 5vh auto;
+    background: var(--bg-card, #ffffff);
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 12px;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+}
+
+.merge-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.merge-modal-icon-box {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #f59e0b;
+    font-size: 1.1rem;
+}
+
+.merge-modal-title {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.merge-modal-subtitle {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.merge-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.25rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: color 0.15s ease;
+}
+
+.merge-modal-close:hover {
+    color: var(--text-primary);
+}
+
+.merge-modal-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.merge-notice-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+    margin-bottom: 1rem;
+}
+
+.merge-section-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+}
+
+.merge-search-bar-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.merge-search-icon {
+    position: absolute;
+    left: 12px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    pointer-events: none;
+}
+
+.merge-search-input {
+    width: 100%;
+    padding: 0.6rem 2.2rem 0.6rem 2.2rem;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    border-radius: 8px;
+    font-size: 0.88rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+body.dark-mode .merge-search-input {
+    background-color: var(--input-bg) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode .merge-search-input::placeholder {
+    color: var(--text-muted) !important;
+}
+
+.merge-search-input:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.merge-search-clear {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.merge-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.merge-ticket-card {
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.merge-ticket-card:hover {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.05);
+}
+
+.merge-ticket-card.selected {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.1);
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.35);
+}
+
+body.dark-mode .merge-ticket-card {
+    background: var(--bg-surface-alt);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+body.dark-mode .merge-ticket-card:hover {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.12);
+}
+
+body.dark-mode .merge-ticket-card.selected {
+    border-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.22);
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45);
+}
+
+body.dark-mode .merge-notice-banner {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.35);
+    color: var(--text-primary);
+}
+
+.merge-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.merge-card-id {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--accent);
+}
+
+.merge-card-status {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.12rem 0.45rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.merge-score-pill {
+    background: rgba(16, 185, 129, 0.15);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+}
+
+body.dark-mode .merge-score-pill {
+    color: #34d399;
+}
+
+.merge-card-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+}
+
+.merge-card-dismiss:hover {
+    color: var(--danger, #ef4444);
+}
+
+.merge-card-subject {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.merge-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.76rem;
+    color: var(--text-secondary);
+}
+
+.merge-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.merge-confirm-btn {
+    font-weight: 600;
+    padding: 0.4rem 1rem;
+}
+
+/* ==========================================================================
+   Standardized Audit Grid Table Styles (Light & Dark Mode)
+   ========================================================================== */
+#auditGrid .gridjs-wrapper {
+    box-shadow: none !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-sm, 6px);
+    overflow: hidden;
+    background: transparent !important;
+}
+
+#auditGrid .gridjs-table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    margin-bottom: 0 !important;
+    width: 100% !important;
+}
+
+#auditGrid th.gridjs-th {
+    background-color: var(--bg-surface-alt, #f8fafc) !important;
+    color: var(--text-secondary, #64748b) !important;
+    border: none !important;
+    border-bottom: 2px solid var(--border-color) !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.03em !important;
+    padding: 10px 14px !important;
+}
+
+#auditGrid .gridjs-tbody,
+#auditGrid .table > :not(caption) > * > * {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+#auditGrid td.gridjs-td {
+    background-color: var(--bg-card, #ffffff) !important;
+    color: var(--text-primary) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    box-shadow: none !important;
+    padding: 10px 14px !important;
+    font-size: 0.85rem !important;
+    vertical-align: middle !important;
+}
+
+#auditGrid .gridjs-tr:nth-child(even) td.gridjs-td {
+    background-color: var(--bg-surface-alt, #f8f9fa) !important;
+}
+
+#auditGrid .gridjs-tr:hover td.gridjs-td,
+#auditGrid .table-hover tbody tr:hover td,
+#auditGrid .table-hover tbody tr:hover > * {
+    background-color: rgba(0, 0, 0, 0.03) !important;
+    box-shadow: none !important;
+    color: var(--text-primary) !important;
+}
+
+body.dark-mode #auditGrid .gridjs-wrapper {
+    background-color: var(--bg-card) !important;
+    border-color: var(--border-color) !important;
+}
+
+body.dark-mode #auditGrid th.gridjs-th {
+    background-color: var(--bg-surface-alt) !important;
+    color: var(--text-secondary) !important;
+    border-bottom-color: var(--border-color) !important;
+}
+
+body.dark-mode #auditGrid .gridjs-tbody,
+body.dark-mode #auditGrid .table > :not(caption) > * > * {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+body.dark-mode #auditGrid td.gridjs-td {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-bottom-color: var(--border-color) !important;
+    box-shadow: none !important;
+}
+
+body.dark-mode #auditGrid .gridjs-tr:nth-child(even) td.gridjs-td {
+    background-color: var(--bg-surface-alt) !important;
+}
+
+body.dark-mode #auditGrid .gridjs-tr:hover td.gridjs-td,
+body.dark-mode #auditGrid .gridjs-tr.gridjs-tr-selected td.gridjs-td,
+body.dark-mode #auditGrid .table-hover tbody tr:hover td,
+body.dark-mode #auditGrid .table-hover tbody tr:hover > * {
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    box-shadow: none !important;
+    color: var(--text-primary) !important;
+}
+
+#auditGrid .gridjs-tr.gridjs-tr-selected td.gridjs-td {
+    background-color: rgba(0, 0, 0, 0.04) !important;
+}

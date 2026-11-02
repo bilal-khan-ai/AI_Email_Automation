@@ -367,6 +367,24 @@ class TicketRepository:
                             END IF;
                         END $$;
                     """)
+
+                    # 10. TICKET MERGE SUGGESTIONS TABLE
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS ticket_merge_suggestions (
+                            id SERIAL PRIMARY KEY,
+                            source_ticket_id TEXT NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+                            target_ticket_id TEXT NOT NULL REFERENCES tickets(ticket_id) ON DELETE CASCADE,
+                            similarity_score FLOAT NOT NULL,
+                            suggested_at TIMESTAMPTZ DEFAULT NOW(),
+                            dismissed BOOLEAN DEFAULT FALSE,
+                            UNIQUE(source_ticket_id, target_ticket_id)
+                        )
+                    """)
+
+                    cur.execute("""
+                        CREATE INDEX IF NOT EXISTS idx_merge_suggestions_source 
+                        ON ticket_merge_suggestions(source_ticket_id)
+                    """)
                     
             logger.info("✅ PostgreSQL schema initialized (with provenance + soft-delete support)")
             return True
@@ -699,8 +717,9 @@ class TicketRepository:
         """Check if a customer email or domain has auto_close policy enabled."""
         if not customer_email_or_domain:
             return False
-        raw = str(customer_email_or_domain).strip().lower()
+        raw = str(customer_email_or_domain).strip().lower().strip('<>"\' ')
         domain = raw.split('@')[-1] if '@' in raw else raw
+        domain = domain.strip()
         if not domain:
             return False
         try:
@@ -711,9 +730,10 @@ class TicketRepository:
                         WHERE auto_close = TRUE 
                           AND (
                               string_to_array(lower(replace(domains, ' ', '')), ',') @> ARRAY[%s]
+                              OR lower(domains) LIKE %s
                           )
                         LIMIT 1
-                    """, (domain,))
+                    """, (domain, f"%{domain}%"))
                     return cur.fetchone() is not None
         except Exception as e:
             logger.error(f"❌ Error checking auto_close for domain {domain}: {e}")
@@ -862,7 +882,7 @@ class TicketRepository:
             logger.error(f"❌ Error soft-deleting ticket {ticket_id}: {e}")
             return False
 
-    def reopen_ticket(self, ticket_id: str) -> bool:
+    def reopen_ticket(self, ticket_id: str, actor_id: str = 'customer', actor_type: ActorType = ActorType.USER, description: str = "Ticket reopened via incoming message.") -> bool:
         """Restore a soft-deleted ticket and mark reopened."""
         try:
             with self.conn_manager.get_connection() as conn:
@@ -885,9 +905,9 @@ class TicketRepository:
                         self.log_audit_event(
                             ticket_id=ticket_id,
                             action_type=ActionType.TICKET_RESTORED,
-                            actor_type=ActorType.USER,
-                            actor_id='customer',
-                            description="Ticket reopened via incoming message.",
+                            actor_type=actor_type,
+                            actor_id=actor_id,
+                            description=description,
                             cur=cur
                         )
                         return True
@@ -1533,6 +1553,221 @@ class TicketRepository:
                     return True
         except Exception as e:
             logger.error(f"❌ Error unlinking devops work item #{work_item_id} from ticket {ticket_id}: {e}")
+            return False
+
+    def save_merge_suggestion(self, source_id: str, target_id: str, score: float) -> bool:
+        """
+        Record or refresh an automated similarity match between two tickets.
+        Keeps suggestions deduplicated by source/target pair so re-scans update scores.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO ticket_merge_suggestions (
+                            source_ticket_id, target_ticket_id, similarity_score, suggested_at, dismissed
+                        )
+                        VALUES (%s, %s, %s, NOW(), FALSE)
+                        ON CONFLICT (source_ticket_id, target_ticket_id)
+                        DO UPDATE SET 
+                            similarity_score = EXCLUDED.similarity_score, 
+                            suggested_at = NOW(), 
+                            dismissed = FALSE;
+                    """, (source_id, target_id, score))
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error saving merge suggestion ({source_id} -> {target_id}): {e}")
+            return False
+
+    def get_merge_suggestions(self, ticket_id: str) -> List[Dict]:
+        """
+        Fetch active, non-dismissed merge candidates for a ticket with target metadata.
+        Used by the UI to highlight potential duplicates requiring operator review.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT 
+                            s.id AS suggestion_id,
+                            s.source_ticket_id,
+                            s.target_ticket_id,
+                            s.similarity_score,
+                            s.suggested_at,
+                            t.ticket_id,
+                            t.display_id,
+                            t.subject,
+                            t.customer_email,
+                            t.status,
+                            t.created_at,
+                            t.last_updated
+                        FROM ticket_merge_suggestions s
+                        JOIN tickets t ON s.target_ticket_id = t.ticket_id
+                        WHERE s.source_ticket_id = %s
+                          AND s.dismissed = FALSE
+                          AND t.deleted_at IS NULL
+                        ORDER BY s.similarity_score DESC, s.suggested_at DESC;
+                    """, (ticket_id,))
+                    rows = [dict(r) for r in cur.fetchall()]
+                    for r in rows:
+                        for dt_field in ['suggested_at', 'created_at', 'last_updated']:
+                            if isinstance(r.get(dt_field), datetime):
+                                r[dt_field] = r[dt_field].isoformat()
+                    return rows
+        except Exception as e:
+            logger.error(f"❌ Error fetching merge suggestions for {ticket_id}: {e}")
+            return []
+
+    def dismiss_merge_suggestion(self, source_id: str, target_id: str) -> bool:
+        """
+        Mark a suggested ticket pair as dismissed so it no longer flags in the operator UI.
+        Prevents rejected suggestions from re-appearing on the active ticket view.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE ticket_merge_suggestions
+                        SET dismissed = TRUE
+                        WHERE source_ticket_id = %s AND target_ticket_id = %s;
+                    """, (source_id, target_id))
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error dismissing merge suggestion ({source_id} -> {target_id}): {e}")
+            return False
+
+    def search_tickets_for_merge(self, query: str, exclude_ticket_id: str, limit: int = 20) -> List[Dict]:
+        """
+        Search existing tickets by ID, display ID, subject, or customer email for manual merge.
+        Excludes the source ticket and deleted records to ensure safe target selection.
+        """
+        try:
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                    term = f"%{query.strip()}%"
+                    cur.execute("""
+                        SELECT 
+                            t.ticket_id,
+                            t.display_id,
+                            t.subject,
+                            t.customer_email,
+                            t.status,
+                            t.created_at,
+                            t.last_updated
+                        FROM tickets t
+                        WHERE t.deleted_at IS NULL
+                          AND t.ticket_id != %s
+                          AND (
+                              t.ticket_id ILIKE %s
+                              OR t.display_id ILIKE %s
+                              OR t.subject ILIKE %s
+                              OR t.customer_email ILIKE %s
+                          )
+                        ORDER BY t.last_updated DESC
+                        LIMIT %s;
+                    """, (exclude_ticket_id, term, term, term, term, limit))
+                    rows = [dict(r) for r in cur.fetchall()]
+                    for r in rows:
+                        for dt_field in ['created_at', 'last_updated']:
+                            if isinstance(r.get(dt_field), datetime):
+                                r[dt_field] = r[dt_field].isoformat()
+                    return rows
+        except Exception as e:
+            logger.error(f"❌ Error searching tickets for merge: {e}")
+            return []
+
+    def execute_merge(self, source_id: str, target_id: str, actor: str) -> bool:
+        """
+        Perform an atomic consolidation of source_id into target_id:
+        1. Reparents all message rows and attachment contexts to target_id.
+        2. Soft-deletes source_id and marks it Closed.
+        3. Updates target_id's timestamp and reopens target if currently Closed.
+        4. Cleans up pending suggestion records for source_id.
+        5. Commits audit records to both tickets for regulatory and operational traceability.
+        """
+        try:
+            source_disp = source_id
+            target_disp = target_id
+            with self.conn_manager.get_connection() as conn:
+                with conn.cursor() as cur:
+                    now = datetime.now(timezone.utc)
+
+                    cur.execute("SELECT display_id, subject FROM tickets WHERE ticket_id = %s", (source_id,))
+                    source_row = cur.fetchone()
+                    if source_row and source_row[0]:
+                        source_disp = source_row[0]
+
+                    cur.execute("SELECT display_id, status FROM tickets WHERE ticket_id = %s", (target_id,))
+                    target_row = cur.fetchone()
+                    if not target_row:
+                        logger.error(f"Target ticket {target_id} not found for merge operation.")
+                        return False
+                    target_disp = target_row[0] or target_id
+                    target_status = target_row[1] or 'Open'
+
+                    # Reparent message history
+                    cur.execute("""
+                        UPDATE ticket_messages
+                        SET ticket_id = %s, deleted_at = NULL
+                        WHERE ticket_id = %s;
+                    """, (target_id, source_id))
+
+                    # Reparent attachment metadata
+                    cur.execute("""
+                        UPDATE ticket_attachments_context
+                        SET ticket_id = %s
+                        WHERE ticket_id = %s;
+                    """, (target_id, source_id))
+
+                    # Archive source ticket
+                    cur.execute("""
+                        UPDATE tickets
+                        SET deleted_at = %s, status = 'Closed', last_updated = %s
+                        WHERE ticket_id = %s;
+                    """, (now, now, source_id))
+
+                    # Update target ticket status and timestamps
+                    if target_status == 'Closed':
+                        cur.execute("""
+                            UPDATE tickets
+                            SET last_updated = %s, status = 'Open', reopened = TRUE, has_unread_response = TRUE
+                            WHERE ticket_id = %s;
+                        """, (now, target_id))
+                    else:
+                        cur.execute("""
+                            UPDATE tickets
+                            SET last_updated = %s, has_unread_response = TRUE
+                            WHERE ticket_id = %s;
+                        """, (now, target_id))
+
+                    # Purge stale suggestions referencing the source ticket
+                    cur.execute("""
+                        DELETE FROM ticket_merge_suggestions
+                        WHERE source_ticket_id = %s OR target_ticket_id = %s;
+                    """, (source_id, source_id))
+
+            # Audit logging outside transaction to prevent rollback of merge on audit error
+            self.log_audit_event(
+                ticket_id=target_id,
+                action_type=ActionType.TICKET_MERGED,
+                actor_type=ActorType.USER,
+                actor_id=actor,
+                description=f"Merged ticket {source_disp} into this ticket.",
+                metadata={"merged_source_id": source_id, "merged_source_display_id": source_disp}
+            )
+            self.log_audit_event(
+                ticket_id=source_id,
+                action_type=ActionType.TICKET_MERGED,
+                actor_type=ActorType.USER,
+                actor_id=actor,
+                description=f"Ticket merged into {target_disp} and closed.",
+                metadata={"merged_into_target_id": target_id, "merged_into_display_id": target_disp}
+            )
+
+            logger.info(f"✅ Successfully merged ticket {source_disp} into {target_disp} by {actor}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error executing merge ({source_id} -> {target_id}): {e}")
             return False
 
     def _convert_ticket_row(self, row: Dict) -> Dict:

@@ -669,22 +669,13 @@ class SupportAgent:
                     logger.info(f"🔒 Ticket {display_id} remains Closed (Client Auto Close policy active) | Sender: {sender}")
                 else:
                     logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Re-opening due to new customer email.")
-                    self.sql.reopen_ticket(ticket_id)
+                    self.sql.reopen_ticket(ticket_id, actor_id=sender)
                     if self.experience_db:
                         self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
             logger.info(f"🔗 Linked to existing ticket {display_id} | ConvID match | Sender: {sender}")
             return ticket_id, display_id
 
-        # Try fuzzy subject match
-        active_tickets = self.sql.get_active_tickets()
-        fuzzy_match = self.subject_matcher.find_matching_ticket(subject, sender, active_tickets)
-        if fuzzy_match:
-            ticket_id = fuzzy_match['ticket_id']
-            display_id = self.sql.get_display_id(ticket_id)
-            logger.info(f"🔗 Linked to existing ticket {display_id} | Fuzzy match | Sender: {sender}")
-            return ticket_id, display_id
-
-        # Create new ticket
+        # Create new customer ticket (distinct conversationId always creates a dedicated ticket)
         ticket_id = f"TKT-{msg_id}"
         customer_email = self.find_customer_email(email)
         success = self.sql.create_ticket(
@@ -698,6 +689,38 @@ class SupportAgent:
 
         logger.error(f"❌ Failed to create ticket | Msg: {msg_id[:20]}... | Sender: {sender}")
         return None, None
+
+    def _scan_and_store_similarity(self, new_ticket_id: str, subject: str, sender: str) -> None:
+        """
+        Passive background similarity scanner.
+        Scans other active tickets for similar subjects and logs candidate pairs into
+        ticket_merge_suggestions for optional manual operator merge. Never alters ticket states.
+        """
+        try:
+            open_statuses = {'Open', 'Pending', 'In Progress', 'Review'}
+            active_tickets = self.sql.get_active_tickets()
+            candidates = [
+                t for t in active_tickets
+                if t.get('status') in open_statuses
+                and t.get('ticket_id') != new_ticket_id
+            ]
+
+            threshold = getattr(Config, 'FUZZY_SUGGESTION_THRESHOLD', 0.70)
+            for candidate in candidates:
+                cand_subject = candidate.get('subject', '')
+                score = self.subject_matcher.calculate_similarity(subject, cand_subject)
+                if score >= threshold:
+                    self.sql.save_merge_suggestion(
+                        source_id=new_ticket_id,
+                        target_id=candidate['ticket_id'],
+                        score=round(score, 4)
+                    )
+                    logger.info(
+                        f"💡 Merge suggestion stored: {new_ticket_id} -> {candidate['ticket_id']} "
+                        f"(score: {score:.2f})"
+                    )
+        except Exception as e:
+            logger.warning(f"⚠️ Similarity scan failed for ticket {new_ticket_id}: {e}")
 
     def _route_internal_email(self, email: dict, conv_id: str, msg_id: str, sender: str, subject: str) -> tuple[Optional[str], Optional[str], bool]:
         """
@@ -723,14 +746,7 @@ class SupportAgent:
             ticket_id = existing['ticket_id']
             display_id = self.sql.get_display_id(ticket_id)
             if existing.get('deleted_at') or existing.get('status') == 'Closed':
-                cust_email = existing.get('customer_email') or ''
-                if self.sql.is_client_auto_close(cust_email):
-                    logger.info(f"🔒 Ticket {display_id} remains Closed (Client Auto Close policy active) | Staff: {sender}")
-                else:
-                    logger.info(f"🔄 Ticket {display_id} was {existing.get('status', 'Deleted')}. Restoring due to internal reply.")
-                    self.sql.reopen_ticket(ticket_id)
-                    if self.experience_db:
-                        self.experience_db.update_ticket_status(ticket_id, False, display_id=display_id)
+                logger.info(f"🔒 Ticket {display_id} remains Closed on internal staff message | Staff: {sender}")
             logger.info(f"📨 Internal reply to ticket {display_id} | Sender: {sender}")
             return ticket_id, display_id, False
 
@@ -815,6 +831,14 @@ class SupportAgent:
         self._flush_attachment_contexts(ticket_id, msg_id, processed_attachments)
         self._update_issue_state_safe(ticket_id, display_id)
         self._persist_to_vector_db(ticket_id, display_id, redacted_email, attachment_descs)
+
+        # Trigger passive similarity scan for new customer tickets (non-blocking)
+        if not is_internal_msg and ticket_id:
+            threading.Thread(
+                target=self._scan_and_store_similarity,
+                args=(ticket_id, subject, sender),
+                daemon=True
+            ).start()
 
         return ticket_id
     # Bilal Khan (31/08/2026) Issue No 12 Sheet_Name  - Ingestion pipeline modularization - end

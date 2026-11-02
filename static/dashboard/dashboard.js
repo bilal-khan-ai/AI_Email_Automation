@@ -1,4 +1,3 @@
-
 let currentTickets = [];
 let currentFilter = typeof userRole !== 'undefined' && userRole === 'admin' ? 'Open' : 'all';
 let currentVisibility = typeof userRole !== 'undefined' && userRole === 'admin' ? 'all' : 'mine';
@@ -1240,6 +1239,8 @@ function renderTicketSkeleton() {
     const rtDisplay = document.getElementById('runningTitleDisplayMode');
     const rtEdit = document.getElementById('runningTitleEditMode');
     const secSubjectWrapper = document.getElementById('modalSecondarySubject');
+    const mergeBadge = document.getElementById('mergeSuggestionBadge');
+    if (mergeBadge) mergeBadge.style.display = 'none';
     if (rtBadge) rtBadge.style.display = 'none';
     if (rtEditBtn) rtEditBtn.style.display = 'none';
     if (rtClearBtn) rtClearBtn.style.display = 'none';
@@ -1443,6 +1444,7 @@ async function openTicket(ticketId, rowNumber) {
     if (devopsMenu) devopsMenu.classList.add('d-none');
     loadLinkedDevOpsItems(ticketId);
     // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Populate Tiptap editor and load DevOps items - end
+    loadMergeSuggestions(ticketId);
 
     const statusSelect = document.getElementById('modal-status');
     if (statusSelect) {
@@ -2134,6 +2136,7 @@ async function previewAttachment(attachmentId, messageId, filename, contentType)
         document.head.appendChild(style);
     }
 
+    previewModal.style.display = 'flex';
     previewModal.classList.add('active');
 
     const viewUrl = `/api/view_attachment?message_id=${encodeURIComponent(messageId)}&attachment_id=${encodeURIComponent(attachmentId)}&filename=${encodeURIComponent(filename)}&content_type=${encodeURIComponent(contentType || '')}`;
@@ -2164,7 +2167,10 @@ async function previewAttachment(attachmentId, messageId, filename, contentType)
 
 function closePreview() {
     const modal = document.getElementById('previewModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
     const body = document.getElementById('previewBody');
     if (body) body.innerHTML = '';
 }
@@ -4882,7 +4888,10 @@ async function closeTicketDialog() {
 
 function closeTimeline() {
     const modal = document.getElementById('timelineModal');
-    if (modal) modal.classList.remove('active');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
 }
 
 function showTimeline(ticketId, subject, displayId = '') {
@@ -4898,7 +4907,10 @@ function showTimeline(ticketId, subject, displayId = '') {
 
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) modal.classList.add('active');
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+    }
 }
 
 window.onTimeRangeChange = function() {
@@ -5566,3 +5578,363 @@ async function handleDashboardChangePassword(e) {
     }
 }
 // Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Require old password verification and confirmation - end
+// =============================================================================
+// Manual Ticket Merge and Similarity Suggestions Controller
+// =============================================================================
+
+let selectedMergeTargetId = null;
+let mergeSearchDebounceTimer = null;
+let currentMergeSuggestions = [];
+
+/**
+ * Fetch and display automated similarity suggestions for the active ticket.
+ * Shows a numeric indicator on the Merge Ticket button when duplicates are detected.
+ *
+ * @param {string} ticketId - Current ticket ID
+ */
+async function loadMergeSuggestions(ticketId) {
+    const badge = document.getElementById('mergeSuggestionBadge');
+    if (!badge || !ticketId) return;
+
+    try {
+        const resp = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/merge-suggestions`);
+        if (!resp.ok) {
+            badge.style.display = 'none';
+            return;
+        }
+        const data = await resp.json();
+        currentMergeSuggestions = data.suggestions || [];
+
+        if (currentMergeSuggestions.length > 0) {
+            badge.textContent = `${currentMergeSuggestions.length} Suggested`;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (err) {
+        console.error('Error fetching merge suggestions:', err);
+        badge.style.display = 'none';
+    }
+}
+
+/**
+ * Open the modal allowing staff to manually search or select a suggested target ticket.
+ */
+function openMergeModal() {
+    const modal = document.getElementById('mergeModal');
+    if (!modal) return;
+
+    selectedMergeTargetId = null;
+    const btnConfirm = document.getElementById('btnConfirmMerge');
+    if (btnConfirm) btnConfirm.disabled = true;
+
+    const searchInput = document.getElementById('mergeSearchInput');
+    if (searchInput) searchInput.value = '';
+
+    const clearBtn = document.getElementById('mergeSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    const searchResults = document.getElementById('mergeSearchResults');
+    if (searchResults) searchResults.innerHTML = '';
+
+    const container = document.getElementById('mergeSuggestionsContainer');
+    const list = document.getElementById('mergeSuggestionsList');
+    const countEl = document.getElementById('mergeSuggestionCount');
+
+    if (currentMergeSuggestions && currentMergeSuggestions.length > 0) {
+        if (countEl) countEl.textContent = currentMergeSuggestions.length;
+        if (list) {
+            list.innerHTML = currentMergeSuggestions.map(s => renderMergeTicketCard(s, true)).join('');
+        }
+        if (container) container.style.display = 'block';
+    } else {
+        if (container) container.style.display = 'none';
+    }
+
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+}
+
+/**
+ * Close the merge ticket modal and clear active selections.
+ */
+function closeMergeModal() {
+    const modal = document.getElementById('mergeModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+    selectedMergeTargetId = null;
+}
+
+/**
+ * Render an individual ticket card for suggested matches or manual search results.
+ *
+ * @param {Object} ticket - Ticket data object
+ * @param {boolean} isSuggestion - Whether card represents an automated suggestion
+ * @returns {string} HTML string
+ */
+function renderMergeTicketCard(ticket, isSuggestion = false) {
+    const targetId = ticket.target_ticket_id || ticket.ticket_id;
+    const isSelected = selectedMergeTargetId === targetId;
+    const scoreHtml = isSuggestion && ticket.similarity_score
+        ? `<span class="merge-score-pill">${Math.round(ticket.similarity_score * 100)}% Match</span>`
+        : '';
+    const dismissBtn = isSuggestion
+        ? `<button type="button" class="merge-card-dismiss" title="Dismiss suggestion" onclick="dismissMergeSuggestion('${escapeHtml(targetId)}', event)"><i class="fa fa-times"></i></button>`
+        : '';
+    const statusStr = ticket.status || 'Open';
+    const statusClass = `status-${statusStr.toLowerCase().replace(/\s+/g, '-')}`;
+
+    return `
+        <div class="merge-ticket-card ${isSelected ? 'selected' : ''}" data-ticket-id="${escapeHtml(targetId)}" onclick="selectMergeTarget('${escapeHtml(targetId)}', this)">
+            <div class="merge-card-header">
+                <span class="merge-card-id">${escapeHtml(ticket.display_id || truncateTicketId(targetId))}</span>
+                <span class="merge-card-status ${statusClass}">${escapeHtml(statusStr)}</span>
+                ${scoreHtml}
+                ${dismissBtn}
+            </div>
+            <div class="merge-card-subject">${escapeHtml(ticket.subject || 'No Subject')}</div>
+            <div class="merge-card-meta">
+                <span><i class="fa fa-envelope me-1"></i>${escapeHtml(ticket.customer_email || 'Unknown')}</span>
+                <span><i class="fa fa-clock me-1"></i>${formatDate(ticket.last_updated || ticket.created_at)}</span>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Highlight and select the target ticket for the consolidation process.
+ *
+ * @param {string} targetId - Selected target ticket ID
+ * @param {HTMLElement} el - Clicked card element
+ */
+function selectMergeTarget(targetId, el) {
+    selectedMergeTargetId = targetId;
+    document.querySelectorAll('.merge-ticket-card').forEach(c => c.classList.remove('selected'));
+    if (el) el.classList.add('selected');
+
+    const btnConfirm = document.getElementById('btnConfirmMerge');
+    if (btnConfirm) btnConfirm.disabled = false;
+}
+
+/**
+ * Dismiss an automated suggestion pair so it will no longer flag for staff attention.
+ *
+ * @param {string} targetId - Target ticket ID to dismiss
+ * @param {Event} event - DOM click event
+ */
+async function dismissMergeSuggestion(targetId, event) {
+    if (event) event.stopPropagation();
+    if (!currentTicketIdStr || !targetId) return;
+
+    try {
+        await fetch(`/api/tickets/${encodeURIComponent(currentTicketIdStr)}/merge-suggestions/${encodeURIComponent(targetId)}/dismiss`, {
+            method: 'POST'
+        });
+        await loadMergeSuggestions(currentTicketIdStr);
+
+        const container = document.getElementById('mergeSuggestionsContainer');
+        const list = document.getElementById('mergeSuggestionsList');
+        const countEl = document.getElementById('mergeSuggestionCount');
+
+        if (currentMergeSuggestions && currentMergeSuggestions.length > 0) {
+            if (countEl) countEl.textContent = currentMergeSuggestions.length;
+            if (list) {
+                list.innerHTML = currentMergeSuggestions.map(s => renderMergeTicketCard(s, true)).join('');
+            }
+            if (container) container.style.display = 'block';
+        } else {
+            if (container) container.style.display = 'none';
+        }
+    } catch (err) {
+        console.error('Error dismissing suggestion:', err);
+    }
+}
+
+/**
+ * Handle debounced typing in the manual target search input.
+ *
+ * @param {string} value - Current search input string
+ */
+function handleMergeSearchInput(value) {
+    const clearBtn = document.getElementById('mergeSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = value && value.trim() ? 'block' : 'none';
+
+    clearTimeout(mergeSearchDebounceTimer);
+    mergeSearchDebounceTimer = setTimeout(() => {
+        runMergeSearch(value);
+    }, 300);
+}
+
+/**
+ * Clear the search box and reset search results.
+ */
+function clearMergeSearch() {
+    const searchInput = document.getElementById('mergeSearchInput');
+    if (searchInput) searchInput.value = '';
+
+    const clearBtn = document.getElementById('mergeSearchClearBtn');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    const searchResults = document.getElementById('mergeSearchResults');
+    if (searchResults) searchResults.innerHTML = '';
+}
+
+/**
+ * Query the backend for tickets matching the search string.
+ *
+ * @param {string} query - Raw search query
+ */
+async function runMergeSearch(query) {
+    const resultsContainer = document.getElementById('mergeSearchResults');
+    if (!resultsContainer) return;
+
+    if (!query || query.trim().length < 2) {
+        resultsContainer.innerHTML = '';
+        return;
+    }
+
+    resultsContainer.innerHTML = `
+        <div class="p-3 text-center text-muted small">
+            <i class="fa fa-spinner fa-spin me-2"></i> Searching tickets...
+        </div>
+    `;
+
+    try {
+        const resp = await fetch(`/api/tickets/search-for-merge?q=${encodeURIComponent(query.trim())}&exclude=${encodeURIComponent(currentTicketIdStr || '')}`);
+        if (!resp.ok) {
+            resultsContainer.innerHTML = `<div class="p-3 text-center text-muted small">Search failed.</div>`;
+            return;
+        }
+
+        const data = await resp.json();
+        const tickets = data.tickets || [];
+
+        if (tickets.length === 0) {
+            resultsContainer.innerHTML = `
+                <div class="p-3 text-center text-muted small">
+                    <i class="fa fa-info-circle me-1"></i> No matching tickets found.
+                </div>
+            `;
+            return;
+        }
+
+        resultsContainer.innerHTML = tickets.map(t => renderMergeTicketCard(t, false)).join('');
+    } catch (err) {
+        console.error('Error searching tickets for merge:', err);
+        resultsContainer.innerHTML = `<div class="p-3 text-center text-danger small">Network error while searching.</div>`;
+    }
+}
+
+/**
+ * Execute the atomic merge request against the backend.
+ */
+async function confirmMergeExecution() {
+    if (!selectedMergeTargetId || !currentTicketIdStr) {
+        showToast('Please select a target ticket to merge into.', true);
+        return;
+    }
+
+    const btnConfirm = document.getElementById('btnConfirmMerge');
+    if (btnConfirm) {
+        btnConfirm.disabled = true;
+        btnConfirm.innerHTML = '<i class="fa fa-spinner fa-spin me-1"></i> Merging...';
+    }
+
+    try {
+        const resp = await fetch(`/api/tickets/${encodeURIComponent(currentTicketIdStr)}/merge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_ticket_id: selectedMergeTargetId })
+        });
+
+        const data = await resp.json();
+        if (resp.ok && data.success) {
+            showToast('✅ Ticket merged successfully.', false);
+            closeMergeModal();
+            closeModal();
+            loadTickets();
+        } else {
+            showToast(data.error || 'Failed to merge ticket.', true);
+            if (btnConfirm) {
+                btnConfirm.disabled = false;
+                btnConfirm.innerHTML = '<i class="fa fa-code-merge me-1"></i> Merge into Selected Ticket';
+            }
+        }
+    } catch (err) {
+        console.error('Error executing merge:', err);
+        showToast('Network error while processing merge.', true);
+        if (btnConfirm) {
+            btnConfirm.disabled = false;
+            btnConfirm.innerHTML = '<i class="fa fa-code-merge me-1"></i> Merge into Selected Ticket';
+        }
+    }
+}
+// =============================================================================
+// Universal Modal Stack Controller (Click Outside & ESC Key Management)
+// =============================================================================
+
+/**
+ * Return open modals ordered by descending z-index / stacking priority.
+ *
+ * @returns {Array<{id: string, close: Function}>} Active open modals
+ */
+function getActiveModalStack() {
+    const modalOrder = [
+        { id: 'stopTimerModal', close: closeStopTimerModal },
+        { id: 'quickAddModal', close: closeQuickAddModal },
+        { id: 'mergeModal', close: closeMergeModal },
+        { id: 'previewModal', close: closePreview },
+        { id: 'timelineModal', close: closeTimeline },
+        { id: 'ticketModal', close: closeModal }
+    ];
+
+    return modalOrder.filter(m => {
+        const el = document.getElementById(m.id);
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        return el.classList.contains('active') && style.display !== 'none' && style.visibility !== 'hidden';
+    });
+}
+
+/**
+ * Close only the topmost active modal dialog.
+ *
+ * @returns {boolean} True if a modal was closed
+ */
+function closeTopMostModal() {
+    const stack = getActiveModalStack();
+    if (stack.length > 0) {
+        stack[0].close();
+        return true;
+    }
+    return false;
+}
+
+// Universal modal backdrop click handler - clicking outside modal content closes the top modal
+document.addEventListener('click', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('modal')) {
+        // Find which modal was clicked
+        const clickedId = e.target.id;
+        const stack = getActiveModalStack();
+        const targetEntry = stack.find(m => m.id === clickedId);
+        if (targetEntry) {
+            targetEntry.close();
+        } else {
+            closeTopMostModal();
+        }
+    }
+});
+
+// Universal ESC key listener - closes the topmost active modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const activeEl = document.activeElement;
+        const isCombobox = activeEl && (activeEl.classList.contains('combobox-input') || activeEl.classList.contains('running-title-input'));
+        if (isCombobox && activeEl.value) {
+            return;
+        }
+        closeTopMostModal();
+    }
+});

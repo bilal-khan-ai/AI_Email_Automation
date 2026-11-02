@@ -412,6 +412,10 @@ function handleAutoCloseToggle(event, id, name, domains, targetChecked) {
             bootstrap.Modal.getOrCreateInstance(modalEl).show();
         }
     } else {
+        if (!confirm(`Are you sure you want to disable Auto Close for "${name}"? Existing and future emails will no longer be auto-closed.`)) {
+            if (checkbox) checkbox.checked = true;
+            return;
+        }
         executeAutoCloseRequest(id, name, domains, false, checkbox);
     }
 }

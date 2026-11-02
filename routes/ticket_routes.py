@@ -650,5 +650,82 @@ def regenerate_ai_sync():
         logger.error(f"Error in sync regeneration: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@ticket_bp.route('/api/tickets/<ticket_id>/merge-suggestions')
+@login_required
+def get_ticket_merge_suggestions(ticket_id):
+    """
+    Retrieve automated similarity merge suggestions for a given ticket.
+    Provides suggestion metadata to empower staff with deduplication insights.
+    """
+    suggestions = sql_logger.get_merge_suggestions(ticket_id)
+    return jsonify({'suggestions': suggestions})
+
+
+@ticket_bp.route('/api/tickets/<ticket_id>/merge-suggestions/<target_id>/dismiss', methods=['POST'])
+@login_required
+def dismiss_ticket_merge_suggestion(ticket_id, target_id):
+    """
+    Dismiss a specific merge suggestion between source and target tickets.
+    Clears the suggestion so it does not distract the support staff.
+    """
+    success = sql_logger.dismiss_merge_suggestion(ticket_id, target_id)
+    return jsonify({'success': success})
+
+
+@ticket_bp.route('/api/tickets/search-for-merge')
+@login_required
+def search_tickets_for_merge_api():
+    """
+    Search non-deleted tickets across subjects, customer emails, and IDs.
+    Powers the manual search bar in the ticket merge modal.
+    """
+    query = request.args.get('q', '').strip()
+    exclude_id = request.args.get('exclude', '').strip()
+    if not query:
+        return jsonify({'tickets': []})
+
+    tickets = sql_logger.search_tickets_for_merge(query, exclude_ticket_id=exclude_id, limit=20)
+    return jsonify({'tickets': tickets})
+
+
+@ticket_bp.route('/api/tickets/<source_id>/merge', methods=['POST'])
+@login_required
+def merge_ticket_api(source_id):
+    """
+    Consolidate source_id into a chosen target ticket.
+    Atomically migrates message history and attachments, soft-deletes the source,
+    and broadcasts a socket event to keep all staff clients in sync.
+    """
+    data = request.get_json() or {}
+    target_id = data.get('target_ticket_id')
+    if not target_id:
+        return jsonify({'error': 'Target ticket ID is required'}), 400
+
+    if source_id == target_id:
+        return jsonify({'error': 'Cannot merge a ticket into itself'}), 400
+
+    current_user = get_current_user() or {}
+    actor = current_user.get('username') or session.get('user', {}).get('username', 'system')
+
+    success = sql_logger.execute_merge(source_id, target_id, actor=actor)
+    if not success:
+        return jsonify({'error': 'Failed to merge tickets in database'}), 500
+
+    sio = get_socketio()
+    if sio:
+        sio.emit('ticket_updated', {
+            'ticket_id': target_id,
+            'updated_by': session.get('user_id'),
+            'action': 'merged'
+        })
+        sio.emit('ticket_deleted', {
+            'ticket_id': source_id
+        })
+
+    return jsonify({
+        'success': True,
+        'message': f'Ticket successfully merged into {target_id}'
+    })
+
 __all__ = ['ticket_bp']
 # Bilal Khan (31/08/2026) Issue No 14 Sheet_Name  - Ticket Management Blueprint - end

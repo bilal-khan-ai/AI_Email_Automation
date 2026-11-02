@@ -64,6 +64,7 @@ class Config:
     # Table processing settings
     TABLES_INCLUDE_PREVIEW = os.getenv('TABLES_INCLUDE_PREVIEW', 'False').lower() == 'true'
     TABLES_PREVIEW_ROWS = int(os.getenv('TABLES_PREVIEW_ROWS', 8))
+    FUZZY_SUGGESTION_THRESHOLD = float(os.getenv('FUZZY_SUGGESTION_THRESHOLD', '0.70'))
 
     # SLA Analytics Settings
     INTERNAL_NOTE_AS_RESPONSE = os.getenv('INTERNAL_NOTE_AS_RESPONSE', 'False').lower() == 'true'

@@ -338,7 +338,13 @@
             <div class="modal-layout">
                 <div class="modal-left-panel">
                     <div class="info-section">
-                        <h3><i class="fa fa-envelope-open-text me-2 text-success"></i> Ticket Information</h3>
+                        <div class="info-section-header">
+                            <h3 class="mb-0"><i class="fa fa-envelope-open-text me-2 text-success"></i> Ticket Information</h3>
+                            <button type="button" class="btn-merge-ticket" id="btnMergeTicket" onclick="openMergeModal()" title="Merge this ticket into an existing ticket">
+                                <i class="fa fa-code-merge me-1"></i> Merge Ticket
+                                <span class="merge-suggestion-badge" id="mergeSuggestionBadge" style="display: none;">0</span>
+                            </button>
+                        </div>
                         <div class="info-item">
                             <strong>Ticket ID:</strong>
                             <span id="modal-ticket-id" class="ticket-id"></span>
@@ -721,7 +727,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <!-- Timeline / Analytics Modal -->
-    <div id="timelineModal" class="modal">
+    <div id="timelineModal" class="modal" style="z-index: 2500;">
         <div class="modal-content"
             style="max-width: 1000px; max-height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden;">
             <div class="modal-header d-flex justify-content-between align-items-center"
@@ -731,8 +737,9 @@
                     <button class="btn btn-outline-light btn-sm" onclick="exportTimeline()" id="btnExportLogs">
                         <i class="fa fa-file-export me-1"></i> Export Logs
                     </button>
-                    <button type="button" class="close-btn" onclick="closeTimeline()" title="Close"
-                        style="color: white; position: static;"><i class="fa fa-times"></i></button>
+                    <button type="button" class="modal-action-btn modal-close-btn" onclick="closeTimeline()" title="Close (ESC)">
+                        <i class="fa fa-times"></i>
+                    </button>
                 </div>
             </div>
 
@@ -793,14 +800,15 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Modals and SLA Analytics - end -->
 
     <!-- Preview Modal -->
-    <div id="previewModal" class="modal">
+    <div id="previewModal" class="modal" style="z-index: 2500;">
         <div class="modal-content">
             <div class="preview-header">
                 <h3 id="previewTitle" style="margin:0; font-size: 1.1rem; color: var(--text-primary);">Preview</h3>
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                     <button class="btn btn-secondary btn-sm" id="btnDownloadPreview">Download</button>
-                    <button type="button" class="close-btn" style="position:static;"
-                        onclick="closePreview()">&times;</button>
+                    <button type="button" class="modal-action-btn modal-close-btn" onclick="closePreview()" title="Close (ESC)">
+                        <i class="fa fa-times"></i>
+                    </button>
                 </div>
             </div>
             <div class="preview-body" id="previewBody">
@@ -920,6 +928,80 @@
                 </button>
                 <button type="button" class="btn btn-danger btn-sm d-inline-flex align-items-center gap-1" onclick="confirmSendWithTimerDecision(true)" style="font-weight: 600; padding: 7px 14px;">
                     <i class="fa fa-stop-circle"></i> Stop Timer & Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Merge Ticket Modal -->
+    <div id="mergeModal" class="modal" style="z-index: 2500; display: none;">
+        <div class="modal-content merge-modal-content">
+            <div class="merge-modal-header">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="merge-modal-icon-box">
+                        <i class="fa fa-code-merge"></i>
+                    </div>
+                    <div>
+                        <h4 class="merge-modal-title">Merge Ticket</h4>
+                        <p class="merge-modal-subtitle">Consolidate this ticket into an existing thread</p>
+                    </div>
+                </div>
+                <button type="button" class="modal-action-btn modal-close-btn" onclick="closeMergeModal()" title="Close (ESC)">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="merge-modal-body">
+                <div class="merge-notice-banner">
+                    <i class="fa fa-triangle-exclamation text-warning mt-1" style="flex-shrink: 0; font-size: 1.1rem;"></i>
+                    <div>
+                        <strong>Notice:</strong> All messages, replies, and attachments will be migrated to the target ticket. 
+                        This ticket will be marked as merged and archived. Target ticket will be reopened if closed.
+                    </div>
+                </div>
+
+                <!-- Suggestions Section (Dynamic) -->
+                <div id="mergeSuggestionsContainer" style="display: none;" class="mb-3">
+                    <div class="merge-section-label">
+                        <i class="fa fa-lightbulb me-1 text-warning"></i>
+                        Similar Tickets Detected (<span id="mergeSuggestionCount">0</span>)
+                    </div>
+                    <div id="mergeSuggestionsList" class="merge-cards-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- Search Bar Section -->
+                <div class="merge-section-label">
+                    <i class="fa fa-search me-1"></i> Search Target Ticket
+                </div>
+                <div class="merge-search-bar-wrapper">
+                    <i class="fa fa-search merge-search-icon"></i>
+                    <input type="text"
+                           id="mergeSearchInput"
+                           class="merge-search-input"
+                           placeholder="Search by subject, ticket ID (e.g. 360-0907-03), or customer email..."
+                           oninput="handleMergeSearchInput(this.value)"
+                           autocomplete="off">
+                    <button type="button" class="merge-search-clear" id="mergeSearchClearBtn" onclick="clearMergeSearch()" style="display: none;">
+                        <i class="fa fa-times"></i>
+                    </button>
+                </div>
+
+                <div id="mergeSearchResults" class="merge-cards-list mt-2">
+                    <!-- Populated by JS search results -->
+                </div>
+            </div>
+
+            <div class="merge-modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeMergeModal()">
+                    Cancel
+                </button>
+                <button type="button" class="btn btn-warning btn-sm d-inline-flex align-items-center gap-1 merge-confirm-btn"
+                        id="btnConfirmMerge" disabled onclick="confirmMergeExecution()">
+                    <i class="fa fa-code-merge"></i>
+                    <span>Merge into Selected Ticket</span>
                 </button>
             </div>
         </div>
