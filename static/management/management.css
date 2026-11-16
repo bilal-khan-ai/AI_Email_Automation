@@ -213,4 +213,45 @@ body.dark-mode .badge-admin {
     right: 1.5rem;
     z-index: 9999;
 }
+
+/* Client Management Responsive Grid Safeguards */
+#managementClientView .col-xl-8,
+#managementClientView .col-lg-7,
+#managementClientView .col-xl-4,
+#managementClientView .col-lg-5 {
+    min-width: 0 !important;
+}
+
+#managementClientView .table-responsive {
+    min-width: 0 !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+#clientGroupsTable {
+    width: 100%;
+    margin-bottom: 0;
+}
+
+#clientGroupsTable th,
+#clientGroupsTable td {
+    vertical-align: middle;
+}
+
+#clientGroupsTable td:last-child,
+#clientGroupsTable th:last-child {
+    white-space: nowrap !important;
+    width: 1%;
+}
+
+#clientGroupsTable .btn-outline-danger {
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+#mergeActionContainer {
+    max-width: 100%;
+}
 /* Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Streamlined Management Stylesheet - end */

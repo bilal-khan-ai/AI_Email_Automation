@@ -426,8 +426,8 @@ class TicketAnalytics:
                                    COALESCE(
                                        (SELECT cg.name 
                                         FROM client_groups cg 
-                                        WHERE string_to_array(cg.domains, ',') @> ARRAY[pd.raw_domain]
-                                           OR string_to_array(replace(cg.domains, ' ', ''), ',') @> ARRAY[pd.raw_domain]
+                                        WHERE string_to_array(lower(regexp_replace(cg.domains, '[[:space:]]+', '', 'g')), ',') @> ARRAY[lower(pd.raw_domain)]
+                                        ORDER BY cg.id DESC
                                         LIMIT 1),
                                        pd.raw_domain
                                    ) as domain

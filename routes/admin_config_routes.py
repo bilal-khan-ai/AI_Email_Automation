@@ -192,11 +192,21 @@ def merge_client_groups_api():
     data = request.json or {}
     name = data.get('name')
     domains = data.get('domains', [])
+    source_group_ids = data.get('source_group_ids', [])
+    source_group_names = data.get('source_group_names', [])
     if not name or not domains:
         return jsonify({'error': 'Missing name or domains to merge'}), 400
     try:
-        success = sql_logger.merge_client_entities(name, domains)
+        success = sql_logger.merge_client_entities(
+            name, 
+            domains, 
+            source_group_ids=source_group_ids, 
+            source_group_names=source_group_names
+        )
         if success:
+            sio = get_socketio()
+            if sio:
+                sio.emit('client_stats_update')
             return jsonify({'success': True})
         return jsonify({'error': 'Failed to merge client groups'}), 500
     except Exception as e:
@@ -211,6 +221,9 @@ def delete_client_group_api(group_id):
     try:
         success = sql_logger.delete_client_group(group_id)
         if success:
+            sio = get_socketio()
+            if sio:
+                sio.emit('client_stats_update')
             return jsonify({'success': True})
         return jsonify({'error': 'Failed to delete client group'}), 500
     except Exception as e:

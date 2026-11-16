@@ -12,10 +12,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Management Header & Vector Icons - start -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_7">
-    <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_7">
-    <link rel="stylesheet" href="{{ url_for('static', filename='management/management.css') }}?v=20260901_7">
-    <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_7"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20261116_ui_fix2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20261116_ui_fix2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='management/management.css') }}?v=20261116_ui_fix2">
+    <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20261116_ui_fix2"></script>
 </head>
 
 <body>
@@ -364,27 +364,29 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Vector Icons for Clients Settings Holidays & Modals - start -->
                 <!-- Client Management -->
                 <div id="managementClientView">
-                    <div class="row">
-                        <div class="col-lg-8">
-                            <div class="card">
-                                <div class="card-header d-flex justify-content-between align-items-center">
-                                    <span><i class="fa fa-building me-2 text-primary"></i> Client Management</span>
-                                    <div id="mergeActionContainer" class="d-none d-flex gap-2 align-items-center">
-                                        <input type="text" id="mergeClientNameInput" class="form-control form-control-sm" placeholder="Type new or select existing..." list="existingClientList" style="min-width: 250px;">
-                                        <datalist id="existingClientList"></datalist>
-                                        <button class="btn btn-sm btn-success text-nowrap" onclick="mergeSelectedClients()"><i class="fa fa-code-merge me-1"></i> Merge Selected</button>
+                    <div class="row g-4 align-items-start">
+                        <div class="col-xl-8 col-lg-7 col-12" style="min-width: 0;">
+                            <div class="card mb-0 shadow-sm">
+                                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                                    <span class="fw-semibold text-nowrap"><i class="fa fa-building me-2 text-success"></i> Client Management</span>
+                                    <div id="mergeActionContainer" class="d-none ms-auto">
+                                        <div class="input-group input-group-sm" style="max-width: 360px;">
+                                            <input type="text" id="mergeClientNameInput" class="form-control form-control-sm" placeholder="Merged Client Name..." list="existingClientList" style="min-width: 150px;">
+                                            <datalist id="existingClientList"></datalist>
+                                            <button class="btn btn-sm btn-success text-nowrap px-3 fw-semibold" onclick="mergeSelectedClients()"><i class="fa fa-code-merge me-1"></i> Merge Selected</button>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="table-responsive">
-                                    <table class="table table-hover" id="clientGroupsTable">
+                                <div class="table-responsive" style="min-width: 0;">
+                                    <table class="table table-hover align-middle mb-0" id="clientGroupsTable">
                                         <thead>
                                             <tr>
-                                                <th style="width: 40px;"><input type="checkbox" id="selectAllClients" class="form-check-input" onclick="toggleAllClientRows(this)"></th>
-                                                <th>Client Name</th>
+                                                <th style="width: 40px;" class="text-center"><input type="checkbox" id="selectAllClients" class="form-check-input m-0" onclick="toggleAllClientRows(this)"></th>
+                                                <th class="text-nowrap">Client Name</th>
                                                 <th>Domains (Comma Separated)</th>
-                                                <th>Type</th>
-                                                <th>Auto Close</th>
-                                                <th>Actions</th>
+                                                <th class="text-nowrap text-center">Type</th>
+                                                <th class="text-nowrap text-center">Auto Close</th>
+                                                <th class="text-nowrap text-center">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody id="clientGroupsTableBody">
@@ -394,10 +396,10 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-lg-4">
-                            <div class="card">
+                        <div class="col-xl-4 col-lg-5 col-12" style="min-width: 0;">
+                            <div class="card mb-0 shadow-sm">
                                 <div class="card-header">
-                                    <span><i class="fa fa-building-circle-check me-2 text-success"></i> Create Client</span>
+                                    <span class="fw-semibold"><i class="fa fa-building-circle-check me-2 text-success"></i> Create Client</span>
                                 </div>
                                 <div class="card-body">
                                     <form id="createClientForm" onsubmit="submitCreateClient(event)">
@@ -407,10 +409,10 @@
                                         </div>
                                         <div class="mb-3">
                                             <label class="form-label">Domains</label>
-                                            <textarea id="newClientDomains" class="form-control" required placeholder="acme.com, acme.org"></textarea>
+                                            <textarea id="newClientDomains" class="form-control" rows="3" required placeholder="acme.com, acme.org"></textarea>
                                             <div class="form-text">Comma separated list of domains.</div>
                                         </div>
-                                        <button type="submit" class="btn btn-primary w-100"><i class="fa fa-plus me-1"></i> Create Client</button>
+                                        <button type="submit" class="btn btn-success w-100 fw-semibold" style="background: var(--gradient-primary); border-color: var(--accent);"><i class="fa fa-plus me-1"></i> Create Client</button>
                                     </form>
                                 </div>
                             </div>
@@ -967,48 +969,48 @@ Sr.NO.	Holidays	Date	Day
 
         <div class="modal fade" id="autoCloseConfirmModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
             <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
-                    <div class="modal-header bg-warning bg-opacity-10 border-bottom border-warning border-opacity-25 py-3">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden; background: var(--bg-card);">
+                    <div class="modal-header border-bottom py-3" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.25) !important;">
                         <div class="d-flex align-items-center gap-2">
-                            <div class="rounded-circle bg-warning bg-opacity-25 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                            <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 38px; height: 38px; background: rgba(245, 158, 11, 0.25);">
                                 <i class="fa fa-triangle-exclamation text-warning fs-5"></i>
                             </div>
                             <div>
-                                <h5 class="modal-title fw-bold mb-0 text-dark">Confirm Auto Close Policy</h5>
+                                <h5 class="modal-title fw-bold mb-0" style="color: var(--text-primary);">Confirm Auto Close Policy</h5>
                                 <small class="text-secondary">Client Management Automation</small>
                             </div>
                         </div>
-                        <button type="button" class="btn-close" onclick="cancelAutoCloseModal()"></button>
+                        <button type="button" class="btn-close" onclick="cancelAutoCloseModal()" aria-label="Close"></button>
                     </div>
                     <div class="modal-body p-4">
                         <p class="text-secondary mb-3">
                             You are about to enable <strong>Auto Close</strong> for:
                         </p>
-                        <div class="p-3 bg-light rounded-3 mb-3 border">
+                        <div class="p-3 rounded-3 mb-3 border" style="background: var(--bg-surface-alt, rgba(255, 255, 255, 0.03)); border-color: var(--border-color) !important;">
                             <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span class="text-muted small">Client Name</span>
-                                <strong id="autoCloseModalClientName" class="text-primary fs-6"></strong>
+                                <span class="text-secondary small">Client Name</span>
+                                <strong id="autoCloseModalClientName" class="fs-6" style="color: var(--accent);"></strong>
                             </div>
                             <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">Target Domain(s)</span>
-                                <span id="autoCloseModalDomains" class="badge bg-secondary-subtle text-secondary border font-monospace"></span>
+                                <span class="text-secondary small">Target Domain(s)</span>
+                                <span id="autoCloseModalDomains" class="badge font-monospace text-wrap" style="background: rgba(255, 255, 255, 0.08); color: var(--text-primary); border: 1px solid var(--border-color); max-width: 280px; word-break: break-all;"></span>
                             </div>
                         </div>
-                        <div class="alert alert-warning d-flex gap-2 align-items-start mb-0 p-3 small border-0 bg-warning bg-opacity-10 text-dark">
+                        <div class="alert d-flex gap-2 align-items-start mb-0 p-3 small border" style="background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.3) !important; color: var(--text-primary);">
                             <i class="fa fa-circle-info text-warning mt-1 fs-6"></i>
                             <div>
-                                <strong>What happens when enabled:</strong>
-                                <ul class="mb-0 ps-3 mt-1">
-                                    <li>All currently active tickets for these domains will be transitioned to <strong>Closed</strong>.</li>
-                                    <li>Future incoming tickets and customer messages will be automatically set to <strong>Closed</strong>.</li>
+                                <strong class="text-warning">What happens when enabled:</strong>
+                                <ul class="mb-0 ps-3 mt-1" style="color: var(--text-secondary);">
+                                    <li>All currently active tickets for these domains will be transitioned to <strong style="color: var(--text-primary);">Closed</strong>.</li>
+                                    <li>Future incoming tickets and customer messages will be automatically set to <strong style="color: var(--text-primary);">Closed</strong>.</li>
                                     <li id="autoCloseAiDraftNotice">AI draft generation will be bypassed for this client.</li>
                                 </ul>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light py-2 px-4 border-top">
+                    <div class="modal-footer py-2 px-4 border-top" style="background: var(--bg-card); border-color: var(--border-color) !important;">
                         <button type="button" class="btn btn-outline-secondary px-3" onclick="cancelAutoCloseModal()">Cancel</button>
-                        <button type="button" class="btn btn-warning fw-semibold px-3" id="confirmAutoCloseSubmitBtn" onclick="confirmAutoCloseModal()">
+                        <button type="button" class="btn btn-warning fw-semibold px-3 text-dark" id="confirmAutoCloseSubmitBtn" onclick="confirmAutoCloseModal()">
                             <i class="fa fa-check me-1"></i> Enable & Close Tickets
                         </button>
                     </div>
@@ -1033,7 +1035,7 @@ Sr.NO.	Holidays	Date	Day
             const allUsers = JSON.parse(document.getElementById('users-data').textContent);
             const staffMembers = JSON.parse(document.getElementById('staff-data').textContent);
         </script>
-        <script src="{{ url_for('static', filename='management/management.js') }}?v=20261026_autoclose_ai_toggle"></script>
+        <script src="{{ url_for('static', filename='management/management.js') }}?v=20261116_ui_fix2"></script>
 
 </body>
 

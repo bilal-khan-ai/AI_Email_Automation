@@ -312,25 +312,29 @@ function renderClientGroupsTable(groups) {
             }
         };
         
-        const badge = g.type === 'group' ? '<span class="badge bg-primary">Group</span>' : '<span class="badge bg-secondary">Domain</span>';
-        const actions = g.type === 'group' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteClientGroup(${g.id}, '${escapeJsString(g.name)}'); event.stopPropagation();">🗑️ Delete</button>` : '';
+        const badge = g.type === 'group' 
+            ? '<span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 fw-semibold">Group</span>' 
+            : '<span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-50 fw-semibold">Domain</span>';
+        const actions = g.type === 'group' 
+            ? `<button class="btn btn-sm btn-outline-danger text-nowrap px-2 py-1" onclick="deleteClientGroup(${g.id}, '${escapeJsString(g.name)}'); event.stopPropagation();" title="Delete Client Group"><i class="fa fa-trash-can me-1"></i> Delete</button>` 
+            : '';
         const isAutoClose = g.auto_close === true || g.auto_close === 'true';
         const switchId = `autoClose_${g.id || g.name.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
 
         tr.innerHTML = `
-            <td><input type="checkbox" class="form-check-input client-checkbox" value="${escapeHtml(g.name)}" data-domains="${escapeHtml(g.domains || '')}" onclick="updateMergeUI(); event.stopPropagation();"></td>
-            <td><strong>${escapeHtml(g.name)}</strong></td>
-            <td style="word-wrap: break-word; white-space: normal; max-width: 300px;">${escapeHtml(g.domains || '')}</td>
-            <td>${badge}</td>
-            <td>
-                <div class="form-check form-switch m-0" onclick="event.stopPropagation();">
-                    <input class="form-check-input" type="checkbox" id="${switchId}" ${isAutoClose ? 'checked' : ''} onchange="handleAutoCloseToggle(event, ${g.id || 'null'}, '${escapeJsString(g.name)}', '${escapeJsString(g.domains || '')}', this.checked)">
-                    <label class="form-check-label small ${isAutoClose ? 'text-success fw-bold' : 'text-secondary'}" for="${switchId}">
+            <td class="text-center" style="width: 40px;"><input type="checkbox" class="form-check-input client-checkbox m-0" value="${escapeHtml(g.name)}" data-id="${g.id || ''}" data-type="${escapeHtml(g.type || '')}" data-domains="${escapeHtml(g.domains || '')}" onclick="updateMergeUI(); event.stopPropagation();"></td>
+            <td class="text-nowrap fw-bold">${escapeHtml(g.name)}</td>
+            <td style="word-break: break-word; white-space: normal; min-width: 180px; max-width: 320px;">${escapeHtml(g.domains || '')}</td>
+            <td class="text-center text-nowrap">${badge}</td>
+            <td class="text-center text-nowrap">
+                <div class="form-check form-switch d-inline-flex align-items-center gap-1 m-0" onclick="event.stopPropagation();">
+                    <input class="form-check-input m-0" type="checkbox" id="${switchId}" ${isAutoClose ? 'checked' : ''} onchange="handleAutoCloseToggle(event, ${g.id || 'null'}, '${escapeJsString(g.name)}', '${escapeJsString(g.domains || '')}', this.checked)">
+                    <label class="form-check-label small ${isAutoClose ? 'text-success fw-bold' : 'text-secondary'}" for="${switchId}" style="min-width: 22px; text-align: left;">
                         ${isAutoClose ? 'On' : 'Off'}
                     </label>
                 </div>
             </td>
-            <td>${actions}</td>
+            <td class="text-center text-nowrap">${actions}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -520,15 +524,31 @@ function mergeSelectedClients() {
     
     const inputName = document.getElementById('mergeClientNameInput').value.trim();
     if (!inputName) {
-        alert("Please enter or select a Client Name for the merged group.");
+        showToast("Please enter or select a Client Name for the merged group.", "warning");
         return;
     }
     
     let allDomains = [];
+    let sourceGroupIds = [];
+    let sourceGroupNames = [];
+
     checkboxes.forEach(cb => {
         const d = cb.getAttribute('data-domains');
+        const id = cb.getAttribute('data-id');
+        const name = cb.value;
+        const type = cb.getAttribute('data-type');
+
         if (d) {
-            d.split(',').forEach(domain => allDomains.push(domain.trim()));
+            d.split(',').forEach(domain => {
+                const trimmed = domain.trim();
+                if (trimmed) allDomains.push(trimmed);
+            });
+        }
+        if (type === 'group' && id) {
+            sourceGroupIds.push(parseInt(id, 10));
+        }
+        if (name) {
+            sourceGroupNames.push(name.trim());
         }
     });
     
@@ -538,48 +558,63 @@ function mergeSelectedClients() {
     fetch('/api/client_groups/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: inputName, domains: allDomains })
+        body: JSON.stringify({ 
+            name: inputName, 
+            domains: allDomains,
+            source_group_ids: sourceGroupIds,
+            source_group_names: sourceGroupNames
+        })
     })
     .then(res => res.json())
     .then(data => {
         if (data.success) {
             document.getElementById('mergeClientNameInput').value = '';
-            document.getElementById('selectAllClients').checked = false;
+            const selectAll = document.getElementById('selectAllClients');
+            if (selectAll) selectAll.checked = false;
+            checkboxes.forEach(cb => cb.checked = false);
+            updateMergeUI();
             loadClientGroups();
-            refreshMetrics();
+            if (typeof refreshMetrics === 'function') refreshMetrics();
+            showToast(`Successfully merged into client group '${inputName}'!`, "success");
         } else {
-            alert("Error merging clients: " + (data.error || "Unknown error"));
+            showToast("Error merging clients: " + (data.error || "Unknown error"), "error");
         }
     })
     .catch(err => {
         console.error("Error merging clients:", err);
-        alert("Failed to merge clients.");
+        showToast("Failed to merge clients.", "error");
     });
 }
 
 function submitCreateClient(event) {
     event.preventDefault();
-    const name = document.getElementById('newClientName').value;
-    const domains = document.getElementById('newClientDomains').value;
+    const nameEl = document.getElementById('newClientName');
+    const domainsEl = document.getElementById('newClientDomains');
+    const name = nameEl.value.trim();
+    const domainsRaw = domainsEl.value.trim();
+    if (!name || !domainsRaw) return;
+
+    const domains = domainsRaw.split(',').map(d => d.trim()).filter(Boolean);
     
     fetch('/api/client_groups/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, domains: domains.split(',').map(d => d.trim()) })
+        body: JSON.stringify({ name, domains })
     })
     .then(res => res.json())
     .then(data => {
         if (data.success) {
             document.getElementById('createClientForm').reset();
             loadClientGroups();
-            refreshMetrics();
+            if (typeof refreshMetrics === 'function') refreshMetrics();
+            showToast(`Client group '${name}' saved successfully!`, "success");
         } else {
-            alert("Error: " + (data.error || "Failed to add client group"));
+            showToast("Error: " + (data.error || "Failed to add client group"), "error");
         }
     })
     .catch(err => {
         console.error("Error adding client group:", err);
-        alert("Failed to add client group");
+        showToast("Failed to add client group", "error");
     });
 }
 
@@ -593,14 +628,15 @@ function deleteClientGroup(id, name) {
     .then(data => {
         if (data.success) {
             loadClientGroups();
-            refreshMetrics();
+            if (typeof refreshMetrics === 'function') refreshMetrics();
+            showToast(`Client group '${name}' deleted successfully.`, "success");
         } else {
-            alert("Error: " + (data.error || "Failed to delete client group"));
+            showToast("Error: " + (data.error || "Failed to delete client group"), "error");
         }
     })
     .catch(err => {
         console.error("Error deleting client group:", err);
-        alert("Failed to delete client group");
+        showToast("Failed to delete client group", "error");
     });
 }
 

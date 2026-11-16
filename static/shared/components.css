@@ -311,13 +311,21 @@ body.dark-mode div.text-secondary {
 }
 
 body.dark-mode .form-check-input {
-    background-color: var(--input-bg);
-    border-color: var(--border-color);
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+body.dark-mode .form-check-input:hover {
+    border-color: var(--accent);
 }
 
 body.dark-mode .form-check-input:checked {
     background-color: var(--accent);
     border-color: var(--accent);
+}
+
+body.dark-mode .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%);
 }
 
 body.dark-mode .input-group-text,

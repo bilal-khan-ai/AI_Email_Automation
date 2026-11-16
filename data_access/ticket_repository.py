@@ -693,21 +693,77 @@ class TicketRepository:
             logger.error(f"❌ Error getting client entities: {e}")
             return {'groups': [], 'unmerged_domains': []}
 
-    def merge_client_entities(self, new_name: str, domains_to_merge: List[str]) -> bool:
+    def merge_client_entities(
+        self, 
+        new_name: str, 
+        domains_to_merge: List[str],
+        source_group_ids: Optional[List[int]] = None,
+        source_group_names: Optional[List[str]] = None
+    ) -> bool:
         """Merge multiple domain entities into a unified organization."""
         try:
-            cleaned_domains = list(set([d.strip() for d in domains_to_merge if d.strip()]))
+            target_name = new_name.strip()
+            if not target_name:
+                return False
+            
+            cleaned_domains = set(d.strip().lower() for d in domains_to_merge if d and d.strip())
             if not cleaned_domains:
                 return False
-            domains_str = ", ".join(cleaned_domains)
             
             with self.conn_manager.get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO client_groups (name, domains) 
-                        VALUES (%s, %s)
-                        ON CONFLICT (name) DO UPDATE SET domains = EXCLUDED.domains
-                    """, (new_name.strip(), domains_str))
+                    # Check if target group already exists (case-insensitive)
+                    cur.execute("SELECT id, domains FROM client_groups WHERE lower(name) = lower(%s)", (target_name,))
+                    target_row = cur.fetchone()
+                    
+                    if target_row:
+                        target_id, existing_domains_str = target_row
+                        existing_domains = set(d.strip().lower() for d in existing_domains_str.split(',') if d.strip())
+                        all_domains = existing_domains | cleaned_domains
+                        domains_str = ", ".join(sorted(all_domains))
+                        cur.execute("UPDATE client_groups SET domains = %s WHERE id = %s", (domains_str, target_id))
+                    else:
+                        domains_str = ", ".join(sorted(cleaned_domains))
+                        cur.execute(
+                            "INSERT INTO client_groups (name, domains) VALUES (%s, %s) RETURNING id",
+                            (target_name, domains_str)
+                        )
+                        target_id = cur.fetchone()[0]
+
+                    # Prune explicitly specified source groups
+                    source_ids_to_delete = set()
+                    if source_group_ids:
+                        for s_id in source_group_ids:
+                            try:
+                                parsed_id = int(s_id)
+                                if parsed_id != target_id:
+                                    source_ids_to_delete.add(parsed_id)
+                            except (ValueError, TypeError):
+                                continue
+                    
+                    if source_group_names:
+                        for s_name in source_group_names:
+                            if s_name and s_name.strip().lower() != target_name.lower():
+                                cur.execute("SELECT id FROM client_groups WHERE lower(name) = lower(%s)", (s_name.strip(),))
+                                r = cur.fetchone()
+                                if r and r[0] != target_id:
+                                    source_ids_to_delete.add(r[0])
+
+                    if source_ids_to_delete:
+                        cur.execute("DELETE FROM client_groups WHERE id = ANY(%s)", (list(source_ids_to_delete),))
+
+                    # Remove merged domains from any other remaining groups to avoid duplicate ownership
+                    cur.execute("SELECT id, name, domains FROM client_groups WHERE id != %s", (target_id,))
+                    other_groups = cur.fetchall()
+                    for other_id, other_name, other_domains_str in other_groups:
+                        current_doms = set(d.strip().lower() for d in other_domains_str.split(',') if d.strip())
+                        remaining_doms = current_doms - cleaned_domains
+                        if not remaining_doms:
+                            cur.execute("DELETE FROM client_groups WHERE id = %s", (other_id,))
+                        elif remaining_doms != current_doms:
+                            new_str = ", ".join(sorted(remaining_doms))
+                            cur.execute("UPDATE client_groups SET domains = %s WHERE id = %s", (new_str, other_id))
+
                     return True
         except Exception as e:
             logger.error(f"❌ Error merging client entities: {e}")
