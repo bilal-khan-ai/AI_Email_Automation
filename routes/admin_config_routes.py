@@ -143,10 +143,13 @@ def get_client_groups_api():
         formatted_groups = []
         if isinstance(raw_data, dict):
             for g in raw_data.get('groups', []):
+                raw_domains = g.get('domains', '')
+                dom_list = g.get('domain_list') or [d.strip() for d in raw_domains.split(',') if d.strip()]
                 formatted_groups.append({
                     'id': g.get('id'),
                     'name': g.get('name'),
-                    'domains': g.get('domains', ''),
+                    'domains': raw_domains,
+                    'domain_list': dom_list,
                     'auto_close': bool(g.get('auto_close', False)),
                     'type': 'group'
                 })
@@ -155,6 +158,7 @@ def get_client_groups_api():
                     'id': None,
                     'name': d,
                     'domains': d,
+                    'domain_list': [d] if d else [],
                     'auto_close': False,
                     'type': 'domain'
                 })

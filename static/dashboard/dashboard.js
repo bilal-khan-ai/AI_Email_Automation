@@ -43,6 +43,32 @@ async function fetchContacts() {
     }
 }
 
+let clientGroupsList = [];
+let clientDomainToGroupMap = new Map();
+
+async function loadClientGroups() {
+    try {
+        const response = await fetch('/api/client_groups');
+        if (!response.ok) return;
+        const data = await response.json();
+        const rawGroups = data.groups || [];
+        clientGroupsList = rawGroups;
+
+        clientDomainToGroupMap.clear();
+        rawGroups.forEach(g => {
+            if (g.type === 'group' && g.domains) {
+                const domains = g.domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+                domains.forEach(d => {
+                    clientDomainToGroupMap.set(d, g);
+                });
+            }
+        });
+    } catch (err) {
+        console.error("Error fetching client groups:", err);
+    }
+}
+loadClientGroups();
+
 function setupAutocomplete(inputId, suggestionsId) {
     const input = document.getElementById(inputId);
     const suggestions = document.getElementById(suggestionsId);
@@ -256,6 +282,9 @@ function removeAttachment(index) {
 
 async function loadTickets() {
     try {
+        if (!clientGroupsList || clientGroupsList.length === 0) {
+            await loadClientGroups();
+        }
         const response = await fetch('/api/tickets');
         const data = await response.json();
 
@@ -386,19 +415,54 @@ function getActiveTicketCount(username, roleField) {
 }
 
 /**
- * Calculates the number of active/open tickets associated with a customer domain.
- * @param {string} domain - Target customer domain (e.g. gmail.com)
+ * Resolves a customer filter value (group name or domain) to a Set of matching lowercase domains.
+ * @param {string} filterValue - Group name (e.g. '360One') or domain (e.g. 'centrum.co.in')
+ * @returns {Set<string>|null} Set of lowercase domain strings
+ */
+function getDomainsForCustomerFilter(filterValue) {
+    if (!filterValue) return null;
+    const lower = filterValue.trim().toLowerCase();
+
+    if (clientGroupsList && clientGroupsList.length > 0) {
+        const matchedGroup = clientGroupsList.find(g => g.type === 'group' && g.name && g.name.toLowerCase() === lower);
+        if (matchedGroup && matchedGroup.domains) {
+            const doms = matchedGroup.domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+            return new Set(doms);
+        }
+    }
+
+    return new Set([lower]);
+}
+
+/**
+ * Calculates the number of active/open tickets associated with a customer entity (group or domain).
+ * @param {Object|string} entity - Group object or domain string
  * @returns {number} Active/open ticket count
  */
-function getCustomerActiveTicketCount(domain) {
-    if (!domain || !currentTickets || currentTickets.length === 0) return 0;
-    const targetDomain = domain.toLowerCase().trim();
+function getCustomerActiveTicketCount(entity) {
+    if (!entity || !currentTickets || currentTickets.length === 0) return 0;
+
+    let targetDomains = null;
+    if (typeof entity === 'object' && entity !== null) {
+        if (entity.type === 'group' && entity.domains) {
+            const doms = entity.domains.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+            targetDomains = new Set(doms);
+        } else {
+            const dom = (entity.domains || entity.name || '').trim().toLowerCase();
+            targetDomains = new Set([dom]);
+        }
+    } else if (typeof entity === 'string') {
+        targetDomains = getDomainsForCustomerFilter(entity);
+    }
+
+    if (!targetDomains || targetDomains.size === 0) return 0;
+
     return currentTickets.filter(t => {
-        if (!t.customer_email) return false;
+        if (!t.customer_email || !t.customer_email.includes('@')) return false;
         const emailParts = t.customer_email.trim().split('@');
         if (emailParts.length < 2) return false;
         const ticketDomain = emailParts.pop().toLowerCase();
-        if (ticketDomain !== targetDomain) return false;
+        if (!targetDomains.has(ticketDomain)) return false;
         const status = normalizeStatus(t.status);
         return status === 'Open' || status === 'Review';
     }).length;
@@ -541,21 +605,49 @@ function renderFilterComboboxDropdown(type, query) {
             `;
         }
     } else if (type === 'customer') {
-        const customerDomains = new Set();
+        const ticketDomains = new Set();
         currentTickets.forEach(ticket => {
-            if (ticket.customer_email) {
-                const domain = ticket.customer_email.trim().split('@').pop();
-                if (domain) customerDomains.add(domain);
+            if (ticket.customer_email && ticket.customer_email.includes('@')) {
+                const domain = ticket.customer_email.trim().split('@').pop().toLowerCase();
+                if (domain) ticketDomains.add(domain);
             }
         });
-        const domainList = Array.from(customerDomains);
-        const matches = domainList.filter(d => d.toLowerCase().includes(lowerQuery));
+
+        const registeredGroups = (clientGroupsList || [])
+            .filter(g => g.type === 'group')
+            .map(g => ({
+                id: g.id,
+                name: g.name,
+                domains: g.domains || '',
+                type: 'group'
+            }));
+
+        const standaloneDomains = [];
+        ticketDomains.forEach(domain => {
+            if (!clientDomainToGroupMap.has(domain)) {
+                standaloneDomains.push({
+                    id: null,
+                    name: domain,
+                    domains: domain,
+                    type: 'domain'
+                });
+            }
+        });
+
+        const allEntities = [...registeredGroups, ...standaloneDomains];
+
+        const matches = allEntities.filter(entity => {
+            if (!lowerQuery) return true;
+            if (entity.name && entity.name.toLowerCase().includes(lowerQuery)) return true;
+            if (entity.domains && entity.domains.toLowerCase().includes(lowerQuery)) return true;
+            return false;
+        });
 
         matches.sort((a, b) => {
             const countA = getCustomerActiveTicketCount(a);
             const countB = getCustomerActiveTicketCount(b);
             if (countB !== countA) return countB - countA;
-            return a.localeCompare(b);
+            return a.name.localeCompare(b.name);
         });
 
         html += `
@@ -565,18 +657,37 @@ function renderFilterComboboxDropdown(type, query) {
         `;
 
         if (matches.length > 0) {
-            matches.forEach(domain => {
-                const isSelected = currentCustomerFilter === domain ? 'active' : '';
-                const count = getCustomerActiveTicketCount(domain);
+            matches.forEach(entity => {
+                const isSelected = (currentCustomerFilter && currentCustomerFilter.toLowerCase() === entity.name.toLowerCase()) ? 'active' : '';
+                const count = getCustomerActiveTicketCount(entity);
                 const ticketBadge = count > 0
                     ? `<span class="badge bg-primary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px;" title="${count} active ticket${count === 1 ? '' : 's'}">${count} active</span>`
                     : `<span class="badge bg-secondary" style="font-size:0.68rem; padding: 2px 6px; border-radius: 10px; opacity: 0.75;" title="0 active tickets">0 active</span>`;
-                html += `
-                    <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', '${escapeHtml(domain)}');" onclick="selectFilterCombobox('customer', '${escapeHtml(domain)}');">
-                        <span><i class="fa fa-envelope me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(domain)}</strong></span>
-                        ${ticketBadge}
-                    </div>
-                `;
+
+                if (entity.type === 'group') {
+                    html += `
+                        <div class="combobox-item ${isSelected}" style="padding: 7px 12px;" onmousedown="event.preventDefault(); selectFilterCombobox('customer', '${escapeHtml(entity.name)}');" onclick="selectFilterCombobox('customer', '${escapeHtml(entity.name)}');">
+                            <div class="d-flex flex-column" style="min-width: 0; max-width: 78%;">
+                                <span class="d-flex align-items-center gap-1">
+                                    <i class="fa fa-building me-1" style="color: var(--accent); font-size: 0.85rem;"></i>
+                                    <strong>${escapeHtml(entity.name)}</strong>
+                                    <span class="badge" style="font-size:0.58rem; padding: 1px 5px; background: rgba(59, 130, 246, 0.18); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 4px;">Group</span>
+                                </span>
+                                <small class="text-muted text-truncate" style="font-size: 0.72rem; padding-left: 17px;" title="${escapeHtml(entity.domains)}">
+                                    ${escapeHtml(entity.domains)}
+                                </small>
+                            </div>
+                            ${ticketBadge}
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="combobox-item ${isSelected}" onmousedown="event.preventDefault(); selectFilterCombobox('customer', '${escapeHtml(entity.name)}');" onclick="selectFilterCombobox('customer', '${escapeHtml(entity.name)}');">
+                            <span><i class="fa fa-envelope me-2" style="color: var(--accent);"></i> <strong>${escapeHtml(entity.name)}</strong></span>
+                            ${ticketBadge}
+                        </div>
+                    `;
+                }
             });
         } else {
             // Customer filter specifically has NO quick add feature; zero screen is a generic message
@@ -623,15 +734,27 @@ function handleFilterComboboxKeydown(e, type) {
             else if (query === 'none') selectFilterCombobox('coworker', 'None');
             else triggerFilterQuickAdd('coworker');
         } else if (type === 'customer') {
+            const matchedGroup = (clientGroupsList || []).find(g => 
+                (g.name && g.name.toLowerCase() === query) ||
+                (g.domains && g.domains.toLowerCase().split(',').map(d => d.trim()).includes(query))
+            );
+            if (matchedGroup) {
+                selectFilterCombobox('customer', matchedGroup.name);
+                return;
+            }
             const customerDomains = new Set();
             currentTickets.forEach(t => {
-                if (t.customer_email) {
-                    const domain = t.customer_email.trim().split('@').pop();
+                if (t.customer_email && t.customer_email.includes('@')) {
+                    const domain = t.customer_email.trim().split('@').pop().toLowerCase();
                     if (domain) customerDomains.add(domain);
                 }
             });
-            const exact = Array.from(customerDomains).find(d => d.toLowerCase() === query);
-            if (exact) selectFilterCombobox('customer', exact);
+            const exactDomain = Array.from(customerDomains).find(d => d === query);
+            if (exactDomain) {
+                selectFilterCombobox('customer', exactDomain);
+            } else if (query) {
+                selectFilterCombobox('customer', input.value.trim());
+            }
         }
     } else if (e.key === 'Escape') {
         const dropdownId = type === 'assigned' ? 'filterAssignedDropdown' : (type === 'coworker' ? 'filterCoworkerDropdown' : 'filterCustomerDropdown');
@@ -966,23 +1089,29 @@ function displayTickets() {
     }
 
     if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
+        const targetDomains = getDomainsForCustomerFilter(currentCustomerFilter);
         filteredTickets = filteredTickets.filter(t => {
-            if (!t.customer_email) return false;
-            const ticketDomain = t.customer_email.trim().split('@').pop();
-            return ticketDomain === currentCustomerFilter;
+            if (!t.customer_email || !t.customer_email.includes('@')) return false;
+            const ticketDomain = t.customer_email.trim().split('@').pop().toLowerCase();
+            return targetDomains ? targetDomains.has(ticketDomain) : true;
         });
     }
 
     if (searchQuery) {
-        filteredTickets = filteredTickets.filter(t =>
-            (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
-            (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
-            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
-            (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
-            (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
-            (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
-            (t.running_title && t.running_title.toLowerCase().includes(searchQuery))
-        );
+        filteredTickets = filteredTickets.filter(t => {
+            const ticketDomain = (t.customer_email && t.customer_email.includes('@')) ? t.customer_email.trim().split('@').pop().toLowerCase() : '';
+            const group = ticketDomain ? clientDomainToGroupMap.get(ticketDomain) : null;
+            const groupName = group ? (group.name || '').toLowerCase() : '';
+
+            return (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
+                (groupName && groupName.includes(searchQuery)) ||
+                (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
+                (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
+                (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
+                (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
+                (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
+                (t.running_title && t.running_title.toLowerCase().includes(searchQuery));
+        });
     }
 
     filteredTickets = filteredTickets.filter(filterByDateRange);
@@ -1006,21 +1135,28 @@ function displayTickets() {
         });
     }
     if (typeof currentCustomerFilter !== 'undefined' && currentCustomerFilter !== null) {
+        const targetDomains = getDomainsForCustomerFilter(currentCustomerFilter);
         statsBase = statsBase.filter(t => {
-            if (!t.customer_email) return false;
-            return t.customer_email.trim().split('@').pop() === currentCustomerFilter;
+            if (!t.customer_email || !t.customer_email.includes('@')) return false;
+            const ticketDomain = t.customer_email.trim().split('@').pop().toLowerCase();
+            return targetDomains ? targetDomains.has(ticketDomain) : true;
         });
     }
     if (searchQuery) {
-        statsBase = statsBase.filter(t =>
-            (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
-            (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
-            (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
-            (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
-            (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
-            (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
-            (t.running_title && t.running_title.toLowerCase().includes(searchQuery))
-        );
+        statsBase = statsBase.filter(t => {
+            const ticketDomain = (t.customer_email && t.customer_email.includes('@')) ? t.customer_email.trim().split('@').pop().toLowerCase() : '';
+            const group = ticketDomain ? clientDomainToGroupMap.get(ticketDomain) : null;
+            const groupName = group ? (group.name || '').toLowerCase() : '';
+
+            return (t.customer_email && t.customer_email.toLowerCase().includes(searchQuery)) ||
+                (groupName && groupName.includes(searchQuery)) ||
+                (t.subject && t.subject.toLowerCase().includes(searchQuery)) ||
+                (t.ticket_id && t.ticket_id.toLowerCase().includes(searchQuery)) ||
+                (t.display_id && t.display_id.toLowerCase().includes(searchQuery)) ||
+                (t.assigned_to && t.assigned_to.toLowerCase().includes(searchQuery)) ||
+                (t.co_worker && t.co_worker.toLowerCase().includes(searchQuery)) ||
+                (t.running_title && t.running_title.toLowerCase().includes(searchQuery));
+        });
     }
     statsBase = statsBase.filter(filterByDateRange);
 
@@ -1165,6 +1301,12 @@ function displayTickets() {
             </div>
         ` : '';
 
+        const rawEmail = ticket.customer_email || '';
+        const ticketDomain = rawEmail.includes('@') ? rawEmail.trim().split('@').pop().toLowerCase() : '';
+        const clientGroup = ticketDomain ? clientDomainToGroupMap.get(ticketDomain) : null;
+        const clientGroupHtml = clientGroup ?
+            `<span class="ticket-client-group" style="font-weight: 600; color: #60a5fa;" title="Client Group: ${escapeHtml(clientGroup.name)}"><i class="fa fa-building me-1"></i> ${escapeHtml(clientGroup.name)}</span>` : '';
+
         return `
         <div class="ticket-card ${lockClass} ${slaCardClass}" data-ticket-id="${ticketId}" onclick="openTicket('${ticketId}', ${rowId})">
             <div class="btn-timeline" title="View Ticket Timeline (SLA)" onclick="event.stopPropagation(); showTimeline('${ticketId}', ${JSON.stringify(subject).replace(/"/g, '&quot;')}, '${displayId}')"><i class="fa fa-history"></i></div>
@@ -1189,6 +1331,7 @@ function displayTickets() {
             <div class="ticket-subject">${subject}</div>
             ${runningTitleCommentHtml}
             <div class="ticket-meta">
+                ${clientGroupHtml}
                 <span><i class="fa fa-envelope me-1"></i> ${customerEmail}</span>
                 <span><i class="fa fa-calendar-alt me-1"></i> Last Replied: ${timestamp}</span>
             </div>
@@ -5224,6 +5367,16 @@ socket.on('devops_item_updated', (data) => {
     showToast(`DevOps #${work_item_id}: ${old_state} ➔ ${new_state}`, false);
 });
 // Bilal Khan (28/08/2026) Issue No  Sheet_Name  - Azure DevOps Real-time State Update Socket Listener - end
+
+// Real-time synchronization for client groups
+socket.on('client_stats_update', async () => {
+    try {
+        await loadClientGroups();
+        displayTickets();
+    } catch (err) {
+        console.error("Error synchronizing client groups:", err);
+    }
+});
 
 // Global state for audit logs
 let cachedAuditLogs = [];
