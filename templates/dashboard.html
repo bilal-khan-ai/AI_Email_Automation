@@ -14,7 +14,7 @@
 <!-- Bilal Khan (01/09/2026) Issue No  Sheet_Name  - Standardized Dashboard Header & Shared Styles - start -->
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/theme.css') }}?v=20260901_2">
     <link rel="stylesheet" href="{{ url_for('static', filename='shared/components.css') }}?v=20260901_2">
-    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20261026_4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard/dashboard.css') }}?v=20261123_bubbles">
     <script src="{{ url_for('static', filename='shared/theme.js') }}?v=20260901_2"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -394,17 +394,26 @@
 
                             <div class="composer-field" style="margin-top: 0.75rem;">
                                 <label>To:</label>
-                                <input type="email" id="emailTo" placeholder="recipient@example.com">
+                                <div class="email-bubble-container" id="emailToContainer" onclick="focusBubbleInput('emailTo')">
+                                    <input type="text" class="bubble-inline-input" id="emailToInput" placeholder="Add recipient..." autocomplete="off">
+                                </div>
+                                <input type="hidden" id="emailTo" name="send_to">
                                 <div id="suggestionsTo" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="composer-field hidden" id="ccField">
                                 <label>CC:</label>
-                                <input type="text" id="emailCC" placeholder="email1@example.com, email2@example.com">
+                                <div class="email-bubble-container" id="emailCcContainer" onclick="focusBubbleInput('emailCC')">
+                                    <input type="text" class="bubble-inline-input" id="emailCcInput" placeholder="Add CC..." autocomplete="off">
+                                </div>
+                                <input type="hidden" id="emailCC" name="cc">
                                 <div id="suggestionsCC" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="composer-field hidden" id="bccField">
                                 <label>BCC:</label>
-                                <input type="text" id="emailBCC" placeholder="email1@example.com, email2@example.com">
+                                <div class="email-bubble-container" id="emailBccContainer" onclick="focusBubbleInput('emailBCC')">
+                                    <input type="text" class="bubble-inline-input" id="emailBccInput" placeholder="Add BCC..." autocomplete="off">
+                                </div>
+                                <input type="hidden" id="emailBCC" name="bcc">
                                 <div id="suggestionsBCC" class="autocomplete-suggestions"></div>
                             </div>
                             <div class="toggle-cc-bcc">
@@ -933,6 +942,48 @@
         </div>
     </div>
 
+    <!-- Recipient Domain Safety Confirmation Modal -->
+    <div id="domainSafetyModal" class="modal" style="z-index: 2600; display: none;">
+        <div class="modal-content" style="max-width: 500px; padding: 1.5rem; text-align: left; border-radius: 12px; background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 16px 40px rgba(0,0,0,0.35);">
+            <div class="d-flex align-items-center justify-content-between pb-3 mb-3" style="border-bottom: 1px solid var(--border-color);">
+                <div class="d-flex align-items-center gap-2">
+                    <div style="width: 38px; height: 38px; border-radius: 8px; background: rgba(245, 158, 11, 0.12); color: #f59e0b; display: flex; align-items: center; justify-content: center;">
+                        <i class="fa fa-shield-halved" style="font-size: 1.2rem;"></i>
+                    </div>
+                    <div>
+                        <h4 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-primary);">External Recipient Alert</h4>
+                        <p style="margin: 0; font-size: 0.78rem; color: var(--text-secondary);">Recipients outside customer group detected</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeDomainSafetyModal()" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 1.2rem; line-height: 1;">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-2 px-3 mb-3 d-flex align-items-center gap-2" style="background: rgba(45, 106, 79, 0.08); border: 1px solid rgba(45, 106, 79, 0.2); border-radius: 8px; font-size: 0.85rem; color: var(--text-primary);">
+                <i class="fa fa-building" style="color: var(--accent);"></i>
+                <span>Customer Group: <strong id="domainSafetyGroupName">--</strong></span>
+                <span class="badge ms-auto" id="domainSafetyAllowedDomainsBadge" style="background: var(--accent); color: #fff; font-size: 0.72rem;"></span>
+            </div>
+
+            <p class="mb-2 text-secondary" style="font-size: 0.85rem; line-height: 1.45;">
+                The following recipient addresses do not belong to the customer's registered group domains. Please verify that sharing this correspondence is intended:
+            </p>
+
+            <div id="domainSafetyRecipientList" class="p-2 mb-3" style="max-height: 160px; overflow-y: auto; background: var(--bg-surface-subtle); border: 1px solid var(--border-color); border-radius: 8px; display: flex; flex-direction: column; gap: 0.4rem;">
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 pt-2" style="border-top: 1px solid var(--border-color);">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeDomainSafetyModal()" style="font-weight: 600; padding: 7px 14px;">
+                    <i class="fa fa-arrow-left me-1"></i> Review Recipients
+                </button>
+                <button type="button" class="btn btn-warning btn-sm d-inline-flex align-items-center gap-1" onclick="confirmSendWithExternalDomains()" style="font-weight: 600; padding: 7px 14px;">
+                    <i class="fa fa-paper-plane me-1"></i> Confirm & Send Anyway
+                </button>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Merge Ticket Modal -->
     <div id="mergeModal" class="modal" style="z-index: 2500; display: none;">
@@ -1030,7 +1081,7 @@
         }
     </script>
     <!-- Bilal Khan (31/08/2026) Issue No  Sheet_Name  - Tiptap v2 ESM CDN Loader at Body Bottom - end -->
-    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20261116_client_filter"></script>
+    <script src="{{ url_for('static', filename='dashboard/dashboard.js') }}?v=20261123_bubbles"></script>
 </body>
 
 </html>

@@ -69,92 +69,349 @@ async function loadClientGroups() {
 }
 loadClientGroups();
 
-function setupAutocomplete(inputId, suggestionsId) {
-    const input = document.getElementById(inputId);
-    const suggestions = document.getElementById(suggestionsId);
-    if (!input || !suggestions) return;
+/**
+ * Extract distinct valid lowercase email addresses from raw text strings.
+ *
+ * @param {string} rawString - Delimited email string
+ * @returns {Array<string>} Normalized email addresses
+ */
+function extractEmailAddresses(rawString) {
+    if (!rawString || typeof rawString !== 'string') return [];
+    const emailRegex = /[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+/g;
+    const matches = rawString.match(emailRegex) || [];
+    return [...new Set(matches.map(e => e.trim().toLowerCase()))];
+}
+
+/**
+ * Resolves permitted domains for autocomplete suggestions:
+ * Customer Entity Group Domains + 'greenwaresolutions.com'.
+ *
+ * @returns {{groupName: string, allowedDomains: Set<string>, customerOnlyDomains: Set<string>}}
+ */
+function getCustomerGroupAndStaffDomains() {
+    const activeTicket = currentTickets.find(t => t.id === currentTicketRow || t.ticket_id === currentTicketIdStr);
+    const rawCustomerEmail = (activeTicket && activeTicket.customer_email) || 
+                             (document.getElementById('modal-email') ? document.getElementById('modal-email').textContent.trim() : '');
     
-    let activeIndex = -1;
+    const customerDomain = rawCustomerEmail.includes('@') ? rawCustomerEmail.split('@').pop().toLowerCase().trim() : '';
+    const group = customerDomain ? clientDomainToGroupMap.get(customerDomain) : null;
 
-    input.addEventListener('input', () => {
-        const parts = input.value.split(',');
-        const value = parts[parts.length - 1].trim();
+    const allowed = new Set();
+    const customerOnly = new Set();
 
-        if (value.length < 2) {
-            suggestions.style.display = 'none';
-            return;
-        }
-
-        const filtered = allContacts.filter(c =>
-            c.toLowerCase().includes(value.toLowerCase())
-        ).slice(0, 10);
-
-        if (filtered.length > 0) {
-            suggestions.innerHTML = filtered.map((c, i) =>
-                `<div class="autocomplete-suggestion" data-index="${i}">${c}</div>`
-            ).join('');
-            suggestions.style.display = 'block';
-            activeIndex = -1;
-        } else {
-            suggestions.style.display = 'none';
-        }
-    });
-
-    suggestions.addEventListener('click', (e) => {
-        const item = e.target.closest('.autocomplete-suggestion');
-        if (item) {
-            applySuggestion(input, item.textContent);
-            suggestions.style.display = 'none';
-        }
-    });
-
-    input.addEventListener('keydown', (e) => {
-        if (suggestions.style.display === 'none') return;
-
-        const items = suggestions.querySelectorAll('.autocomplete-suggestion');
-        if (e.key === 'ArrowDown') {
-            activeIndex = (activeIndex + 1) % items.length;
-            updateActive(items);
-            e.preventDefault();
-        } else if (e.key === 'ArrowUp') {
-            activeIndex = (activeIndex - 1 + items.length) % items.length;
-            updateActive(items);
-            e.preventDefault();
-        } else if (e.key === 'Enter') {
-            if (activeIndex > -1) {
-                applySuggestion(input, items[activeIndex].textContent);
-                suggestions.style.display = 'none';
-                e.preventDefault();
+    if (group && group.domains) {
+        group.domains.split(',').forEach(d => {
+            const clean = d.trim().toLowerCase();
+            if (clean) {
+                allowed.add(clean);
+                customerOnly.add(clean);
             }
-        } else if (e.key === 'Escape') {
-            suggestions.style.display = 'none';
-        }
-    });
+        });
+    } else if (customerDomain) {
+        allowed.add(customerDomain);
+        customerOnly.add(customerDomain);
+    }
+    
+    // Always include internal organization domain for autocomplete suggestions
+    allowed.add('greenwaresolutions.com');
 
-    document.addEventListener('click', (e) => {
-        if (!input.contains(e.target) && !suggestions.contains(e.target)) {
-            suggestions.style.display = 'none';
-        }
-    });
+    return {
+        groupName: (group && group.name) || customerDomain || 'Customer',
+        allowedDomains: allowed,
+        customerOnlyDomains: customerOnly
+    };
+}
 
-    function updateActive(items) {
-        items.forEach((item, i) => {
-            item.classList.toggle('active', i === activeIndex);
+/**
+ * Modern Email Tag Component managing chips, autocomplete, and hidden value syncing.
+ */
+class EmailTagInput {
+    constructor(containerId, inputId, hiddenId, suggestionsId) {
+        this.container = document.getElementById(containerId);
+        this.inlineInput = document.getElementById(inputId);
+        this.hiddenInput = document.getElementById(hiddenId);
+        this.suggestions = document.getElementById(suggestionsId);
+        this.emails = [];
+        this.activeIndex = -1;
+
+        if (this.container && this.inlineInput && this.hiddenInput) {
+            this.initEvents();
+        }
+    }
+
+    initEvents() {
+        this.inlineInput.addEventListener('keydown', (e) => this.handleKeydown(e));
+        this.inlineInput.addEventListener('input', () => this.handleInput());
+        this.inlineInput.addEventListener('paste', (e) => this.handlePaste(e));
+
+        if (this.suggestions) {
+            this.suggestions.addEventListener('click', (e) => {
+                const item = e.target.closest('.autocomplete-suggestion');
+                if (item && item.dataset.email) {
+                    this.addEmail(item.dataset.email);
+                    this.inlineInput.value = '';
+                    this.suggestions.style.display = 'none';
+                    this.inlineInput.focus();
+                }
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (!this.container.contains(e.target) && (!this.suggestions || !this.suggestions.contains(e.target))) {
+                if (this.suggestions) this.suggestions.style.display = 'none';
+            }
         });
     }
 
-    function applySuggestion(targetInput, email) {
-        const parts = targetInput.value.split(',').map(p => p.trim());
-        parts.pop(); // Remove the partial string
+    handleKeydown(e) {
+        const value = this.inlineInput.value.trim();
 
-        // Add the new email if not already present
-        if (!parts.includes(email)) {
-            parts.push(email);
+        // Autocomplete keyboard navigation
+        if (this.suggestions && this.suggestions.style.display === 'block') {
+            const items = this.suggestions.querySelectorAll('.autocomplete-suggestion');
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                this.activeIndex = (this.activeIndex + 1) % items.length;
+                this.updateActiveItem(items);
+                return;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                this.activeIndex = (this.activeIndex - 1 + items.length) % items.length;
+                this.updateActiveItem(items);
+                return;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (this.activeIndex > -1 && items[this.activeIndex]) {
+                    this.addEmail(items[this.activeIndex].dataset.email);
+                    this.inlineInput.value = '';
+                    this.suggestions.style.display = 'none';
+                    return;
+                }
+            } else if (e.key === 'Escape') {
+                this.suggestions.style.display = 'none';
+                return;
+            }
         }
 
-        targetInput.value = parts.filter(p => p !== '').join(', ') + ', ';
-        targetInput.focus();
+        // Convert to bubble on Enter, Comma, or Tab (if value present)
+        if (e.key === 'Enter' || e.key === ',' || (e.key === 'Tab' && value)) {
+            if (value) {
+                e.preventDefault();
+                this.addEmail(value);
+                this.inlineInput.value = '';
+                if (this.suggestions) this.suggestions.style.display = 'none';
+            }
+        } else if (e.key === 'Backspace' && this.inlineInput.value === '' && this.emails.length > 0) {
+            this.removeEmail(this.emails.length - 1);
+        }
     }
+
+    handleInput() {
+        const query = this.inlineInput.value.trim().toLowerCase();
+        if (query.length < 1 || !this.suggestions) {
+            if (this.suggestions) this.suggestions.style.display = 'none';
+            return;
+        }
+
+        // Filter allContacts by customer entity group domains + greenwaresolutions.com
+        const domainInfo = getCustomerGroupAndStaffDomains();
+        const allowedDomains = domainInfo.allowedDomains;
+
+        const filtered = allContacts.filter(contact => {
+            const email = contact.toLowerCase();
+            if (this.emails.includes(email)) return false;
+
+            const domain = email.includes('@') ? email.split('@').pop().trim() : '';
+            const matchesDomain = allowedDomains.has(domain) || [...allowedDomains].some(d => domain.endsWith('.' + d));
+            return matchesDomain && email.includes(query);
+        }).slice(0, 10);
+
+        if (filtered.length > 0) {
+            this.suggestions.innerHTML = filtered.map((c, i) => `
+                <div class="autocomplete-suggestion d-flex justify-content-between align-items-center" data-index="${i}" data-email="${escapeHtml(c)}">
+                    <span>${escapeHtml(c)}</span>
+                    <span class="badge ${c.endsWith('@greenwaresolutions.com') ? 'bg-secondary' : 'bg-success'}" style="font-size: 0.68rem;">
+                        ${c.endsWith('@greenwaresolutions.com') ? 'Internal' : 'Customer'}
+                    </span>
+                </div>
+            `).join('');
+            this.suggestions.style.display = 'block';
+            this.activeIndex = -1;
+        } else {
+            this.suggestions.style.display = 'none';
+        }
+    }
+
+    handlePaste(e) {
+        e.preventDefault();
+        const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+        if (!pasteData) return;
+
+        const tokens = extractEmailAddresses(pasteData);
+        if (tokens.length > 0) {
+            tokens.forEach(tok => this.addEmail(tok));
+        } else {
+            const rawTokens = pasteData.split(/[,\s;]+/).filter(Boolean);
+            rawTokens.forEach(tok => this.addEmail(tok));
+        }
+        this.inlineInput.value = '';
+    }
+
+    addEmail(emailStr) {
+        const clean = emailStr.replace(/[<>,;]/g, '').trim().toLowerCase();
+        if (!clean || !clean.includes('@') || this.emails.includes(clean)) return;
+
+        this.emails.push(clean);
+        this.render();
+    }
+
+    removeEmail(index) {
+        this.emails.splice(index, 1);
+        this.render();
+    }
+
+    setValues(emailArray) {
+        this.emails = (emailArray || [])
+            .map(e => (typeof e === 'string' ? e.replace(/[<>,;]/g, '').trim().toLowerCase() : ''))
+            .filter(e => e && e.includes('@'));
+        this.render();
+    }
+
+    commitPendingInput() {
+        const val = this.inlineInput.value.trim();
+        if (val) {
+            this.addEmail(val);
+            this.inlineInput.value = '';
+            if (this.suggestions) this.suggestions.style.display = 'none';
+        }
+    }
+
+    render() {
+        if (this.hiddenInput) {
+            this.hiddenInput.value = this.emails.join(', ');
+        }
+
+        const domainInfo = getCustomerGroupAndStaffDomains();
+        const chipsHtml = this.emails.map((email, idx) => {
+            const domain = email.split('@').pop();
+            const isExternal = !domainInfo.customerOnlyDomains.has(domain) && domain !== 'greenwaresolutions.com';
+
+            return `
+                <span class="email-bubble ${isExternal ? 'external-domain' : ''}" data-index="${idx}">
+                    <span class="bubble-text" title="${escapeHtml(email)}">${escapeHtml(email)}</span>
+                    <button type="button" class="bubble-remove" onclick="removeEmailTag('${this.hiddenInput.id}', ${idx})" tabindex="-1">&times;</button>
+                </span>
+            `;
+        }).join('');
+
+        const existingBubbles = this.container.querySelectorAll('.email-bubble');
+        existingBubbles.forEach(b => b.remove());
+        this.inlineInput.insertAdjacentHTML('beforebegin', chipsHtml);
+    }
+
+    updateActiveItem(items) {
+        items.forEach((item, i) => {
+            item.classList.toggle('active', i === this.activeIndex);
+        });
+    }
+}
+
+let tagInputs = {};
+
+function initEmailTagInputs() {
+    tagInputs['emailTo'] = new EmailTagInput('emailToContainer', 'emailToInput', 'emailTo', 'suggestionsTo');
+    tagInputs['emailCC'] = new EmailTagInput('emailCcContainer', 'emailCcInput', 'emailCC', 'suggestionsCC');
+    tagInputs['emailBCC'] = new EmailTagInput('emailBccContainer', 'emailBccInput', 'emailBCC', 'suggestionsBCC');
+}
+
+function removeEmailTag(inputId, index) {
+    if (tagInputs[inputId]) {
+        tagInputs[inputId].removeEmail(index);
+    }
+}
+
+function focusBubbleInput(inputId) {
+    const map = { emailTo: 'emailToInput', emailCC: 'emailCcInput', emailBCC: 'emailBccInput' };
+    const el = document.getElementById(map[inputId]);
+    if (el) el.focus();
+}
+
+/**
+ * Audit all recipients in To, CC, and BCC against authorized customer group domains.
+ *
+ * @returns {{isSafe: boolean, groupName: string, allowedCount: number, mismatched: Array<{field: string, email: string, domain: string}>}}
+ */
+function auditRecipientDomainsSafety() {
+    const domainInfo = getCustomerGroupAndStaffDomains();
+    const customerGroupDomains = domainInfo.customerOnlyDomains;
+
+    const fields = [
+        { name: 'To', inputId: 'emailTo' },
+        { name: 'CC', inputId: 'emailCC' },
+        { name: 'BCC', inputId: 'emailBCC' }
+    ];
+
+    const mismatched = [];
+
+    fields.forEach(f => {
+        const inputInstance = tagInputs[f.inputId];
+        const emails = inputInstance ? inputInstance.emails : extractEmailAddresses(document.getElementById(f.inputId)?.value || '');
+        
+        emails.forEach(email => {
+            const domain = email.split('@').pop().toLowerCase().trim();
+            const isMatch = customerGroupDomains.has(domain) || [...customerGroupDomains].some(d => domain.endsWith('.' + d));
+            if (!isMatch) {
+                mismatched.push({ field: f.name, email, domain });
+            }
+        });
+    });
+
+    return {
+        isSafe: mismatched.length === 0,
+        groupName: domainInfo.groupName,
+        allowedCount: customerGroupDomains.size,
+        mismatched
+    };
+}
+
+function showDomainSafetyModal(audit) {
+    const modal = document.getElementById('domainSafetyModal');
+    if (!modal) return;
+
+    const groupNameEl = document.getElementById('domainSafetyGroupName');
+    if (groupNameEl) groupNameEl.textContent = audit.groupName;
+
+    const badgeEl = document.getElementById('domainSafetyAllowedDomainsBadge');
+    if (badgeEl) badgeEl.textContent = `${audit.allowedCount} domain${audit.allowedCount !== 1 ? 's' : ''}`;
+
+    const listEl = document.getElementById('domainSafetyRecipientList');
+    if (listEl) {
+        listEl.innerHTML = audit.mismatched.map(m => `
+            <div class="d-flex align-items-center justify-content-between p-1 px-2 rounded" style="background: var(--bg-card); border: 1px solid var(--border-color); font-size: 0.82rem;">
+                <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                    <span class="badge ${m.field === 'To' ? 'bg-primary' : m.field === 'CC' ? 'bg-info text-dark' : 'bg-warning text-dark'}" style="font-size: 0.7rem; min-width: 32px;">${m.field}</span>
+                    <span class="text-truncate text-primary" style="font-weight: 500;">${escapeHtml(m.email)}</span>
+                </div>
+                <span class="badge bg-danger-subtle text-danger" style="font-size: 0.72rem; border: 1px solid rgba(239, 68, 68, 0.2);">${escapeHtml(m.domain)}</span>
+            </div>
+        `).join('');
+    }
+
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+}
+
+function closeDomainSafetyModal() {
+    const modal = document.getElementById('domainSafetyModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+    }
+}
+
+function confirmSendWithExternalDomains() {
+    closeDomainSafetyModal();
+    sendToCustomer(true);
 }
 
 const socket = io({ transports: ['websocket', 'polling'] });
@@ -1504,13 +1761,16 @@ async function openTicket(ticketId, rowNumber) {
 
     const emailToEl = document.getElementById('emailTo');
     if (emailToEl) {
+        const toVal = testMode ? testEmail : (ticket.customer_email || '');
+        emailToEl.value = toVal;
+        if (tagInputs['emailTo']) {
+            tagInputs['emailTo'].setValues(toVal ? [toVal] : []);
+        }
         if (testMode) {
-            emailToEl.value = testEmail;
             emailToEl.readOnly = true;
             emailToEl.classList.add('test-mode-input');
             emailToEl.title = "Email redirected to test receiver in Test Mode";
         } else {
-            emailToEl.value = ticket.customer_email || '';
             emailToEl.readOnly = false;
             emailToEl.classList.remove('test-mode-input');
             emailToEl.style.backgroundColor = "";
@@ -1662,16 +1922,23 @@ async function openTicket(ticketId, rowNumber) {
 
         if (emailCC && emailBCC && ccField && bccField) {
             if (testMode) {
-                emailCC.value = testCC || '';
+                const ccVal = testCC || '';
+                emailCC.value = ccVal;
                 emailBCC.value = '';
+                if (tagInputs['emailCC']) tagInputs['emailCC'].setValues(ccVal ? [ccVal] : []);
+                if (tagInputs['emailBCC']) tagInputs['emailBCC'].setValues([]);
                 if (testCC) ccField.classList.remove('hidden');
                 else ccField.classList.add('hidden');
                 bccField.classList.add('hidden');
             } else if (messages.length > 0) {
                 const sorted = [...messages].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                 const latest = sorted[0];
-                emailCC.value = latest.cc || '';
-                emailBCC.value = latest.bcc || '';
+                const ccVal = latest.cc || '';
+                const bccVal = latest.bcc || '';
+                emailCC.value = ccVal;
+                emailBCC.value = bccVal;
+                if (tagInputs['emailCC']) tagInputs['emailCC'].setValues(extractEmailAddresses(ccVal));
+                if (tagInputs['emailBCC']) tagInputs['emailBCC'].setValues(extractEmailAddresses(bccVal));
 
                 if (emailCC.value) ccField.classList.remove('hidden');
                 else ccField.classList.add('hidden');
@@ -1681,6 +1948,8 @@ async function openTicket(ticketId, rowNumber) {
             } else {
                 emailCC.value = '';
                 emailBCC.value = '';
+                if (tagInputs['emailCC']) tagInputs['emailCC'].setValues([]);
+                if (tagInputs['emailBCC']) tagInputs['emailBCC'].setValues([]);
                 ccField.classList.add('hidden');
                 bccField.classList.add('hidden');
             }
@@ -2352,6 +2621,11 @@ function closeModal() {
         if (currentTicketIdStr && socket && socket.connected) {
             socket.emit('unlock_ticket', { ticket_id: currentTicketIdStr });
         }
+
+        if (typeof tagInputs === 'object' && tagInputs) {
+            Object.values(tagInputs).forEach(t => t && typeof t.setValues === 'function' && t.setValues([]));
+        }
+        closeDomainSafetyModal();
 
         const modal = document.getElementById('ticketModal');
         if (modal) modal.classList.remove('active');
@@ -3907,11 +4181,16 @@ async function confirmSendWithTimerDecision(shouldStopTimer) {
     proceedWithSendToCustomer();
 }
 
-async function sendToCustomer() {
+async function sendToCustomer(bypassDomainSafety = false) {
     if (isTicketLocked || isSendingEmail) return;
 
+    // Automatically commit any uncommitted text typed into bubble inputs
+    if (typeof tagInputs === 'object' && tagInputs) {
+        Object.values(tagInputs).forEach(t => t && typeof t.commitPendingInput === 'function' && t.commitPendingInput());
+    }
+
     const emailContent = tiptapEditor ? tiptapEditor.getHTML() : '';
-    const sendTo = document.getElementById('emailTo').value;
+    const sendTo = document.getElementById('emailTo') ? document.getElementById('emailTo').value : '';
 
     const isEditorEmpty = !emailContent || emailContent.trim() === '' || emailContent === '<p></p>' || emailContent === '<p><br></p>';
     if (isEditorEmpty) {
@@ -3922,6 +4201,15 @@ async function sendToCustomer() {
     if (!sendTo) {
         alert('Recipient email is missing.');
         return;
+    }
+
+    // Safety Audit on To, CC, and BCC against Customer Group Domains
+    if (!bypassDomainSafety) {
+        const audit = auditRecipientDomainsSafety();
+        if (!audit.isSafe) {
+            showDomainSafetyModal(audit);
+            return;
+        }
     }
 
     // Check if there is an active co_worker_time_limit on this ticket
@@ -5112,9 +5400,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await fetchContacts();
     await loadAssignableUsers();
-    setupAutocomplete('emailTo', 'suggestionsTo');
-    setupAutocomplete('emailCC', 'suggestionsCC');
-    setupAutocomplete('emailBCC', 'suggestionsBCC');
+    initEmailTagInputs();
 
     await loadTickets();
 
@@ -6035,6 +6321,7 @@ async function confirmMergeExecution() {
  */
 function getActiveModalStack() {
     const modalOrder = [
+        { id: 'domainSafetyModal', close: closeDomainSafetyModal },
         { id: 'stopTimerModal', close: closeStopTimerModal },
         { id: 'quickAddModal', close: closeQuickAddModal },
         { id: 'mergeModal', close: closeMergeModal },

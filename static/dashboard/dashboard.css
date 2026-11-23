@@ -2427,6 +2427,89 @@ body.dark-mode .attachment-tile:hover {
     border-color: #2d6a4f;
 }
 
+.email-bubble-container {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    min-height: 38px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: text;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.email-bubble-container:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(45, 106, 79, 0.15);
+}
+
+.email-bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(45, 106, 79, 0.12);
+    color: var(--text-primary);
+    border: 1px solid rgba(45, 106, 79, 0.28);
+    border-radius: 14px;
+    padding: 2px 8px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    user-select: none;
+    transition: background 0.15s ease;
+}
+
+.email-bubble.external-domain {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.35);
+}
+
+.email-bubble .bubble-text {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.email-bubble .bubble-remove {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 2px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.email-bubble .bubble-remove:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+}
+
+.email-bubble-container .bubble-inline-input {
+    flex: 1;
+    min-width: 110px;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    padding: 3px 2px;
+    margin: 0;
+}
+
 .toggle-cc-bcc {
     display: flex;
     gap: 1rem;
